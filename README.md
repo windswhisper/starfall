@@ -6,6 +6,10 @@ Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的
 
 当前版本：**0.35**。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。完整参数见规则手册。
 
+![科研三选一界面示意图](docs/images/research-selection.png)
+
+*科研界面示意，具体项目与效果由 INI 配置决定。*
+
 项目名称已更新，现有的 `Starfall.dll`、`Starfall.ini` 和 INI 中的 `Starfall.*` 字段继续使用原名称，以兼容已有配置和存档。
 
 ## 在 Windows 上编译
@@ -33,7 +37,7 @@ cd starfall
 2. 使用与所选扩展版本匹配的 Syringe 或 SyringeEx 启动游戏。与 Phobos 同时使用时，应让 Starfall 先于 Phobos 加载，以保持心控免疫生效。战场右上角的图标打开科研面板。
 3. 可选：将 [tests/maps](tests/maps) 中的地图放入客户端的 `Maps/Custom/`。在 `Starfall - Research Points Test` 选择 1 号出生位，地图触发器先给 90 点，在 `[CAHOSP]` 配置 `Starfall.ResearchPoints=10` 和 `Starfall.ResearchInterval=150` 后，科技医院运行 150 帧即可补齐到 100 点。
 
-查字段、默认值和配置示例，可以访问 [在线规则手册](https://windswhisper.github.io/starfall/)，也可以下载项目后用浏览器打开 [HTML 查询手册](docs/规则说明书.html)，或直接阅读 [Markdown 说明书](docs/规则说明书.md)。保持科研项目 ID 稳定可以让后续版本继续识别存档中的研究记录。
+查字段、默认值和配置示例，可以访问 [在线规则手册](https://windswhisper.github.io/starfall/)，也可以下载项目后用浏览器打开 [HTML 查询手册](docs/manual.html)，或直接阅读 [Markdown 说明书](docs/manual.md)。保持科研项目 ID 稳定可以让后续版本继续识别存档中的研究记录。
 
 例如，下面的 `Starfall.ini` 让灰熊坦克每击杀一个敌人恢复 50 点生命：
 
