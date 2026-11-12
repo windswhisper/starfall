@@ -22,10 +22,15 @@ cd starfall
 
 ## 运行与测试
 
-当前版本针对《远征》测试环境的 `gamemd.exe`（Syringe 报告的 CRC 为 `0x54CC0A13`）。流火会在加载时检查此值。单位转换不再要求 Ares：未加载 Phobos 时使用流火内置转换；加载 Phobos 时需要它提供 `ConvertToType_Phobos` 公共接口。Phobos Dev Build #36 不提供该接口；已验证的新版开发构建提供该接口。其他游戏版本和扩展组合需另行验证。
+流火加载时要求 `gamemd.exe` 的 CRC 为 `0x54CC0A13`；不匹配时会拒绝加载。游戏本体及加载器需自行准备。
+
+### Ares 与 Phobos 兼容性
+
+- **Ares**：可与公版 Ares 配合使用，流火的单位转换不依赖 Ares。永久心控免疫针对 Ares 3.0p1 适配；其他版本或构建的兼容性需要验证，不匹配时会在 `Starfall.log` 记录。
+- **Phobos**：可与公版 Phobos 配合使用。未加载 Phobos 时，单位转换使用流火的内置实现；加载 Phobos 时，需要该版本提供 `ConvertToType_Phobos` 公共接口。若接口不存在，单位转换不可用，并在 `Starfall.log` 记录原因。不同版本和其他扩展组合的兼容性需要分别验证。
 
 1. 把编译出的 `Starfall.dll` 放在游戏根目录，与 `gamemd.exe` 同级。可在游戏实际加载的 `rulesmd.ini` 中配置流火，也可自行创建 `Starfall.ini`。默认科研面板、图标和示例音效已打包在 DLL 中，无需另行复制。自定义 PNG 图标和 WAV 音效需按配置放置。
-2. 使用与 Phobos 版本匹配的 Syringe 启动游戏。新版 SyringeEx 需要通过 `--args="-SPAWN -LOG -CD"` 传递游戏参数；当前《远征》测试环境须让 Starfall 先于 Phobos 加载，以保持心控免疫生效。战场右上角的图标打开科研面板。
+2. 使用与所选扩展版本匹配的 Syringe 或 SyringeEx 启动游戏。与 Phobos 同时使用时，应让 Starfall 先于 Phobos 加载，以保持心控免疫生效。战场右上角的图标打开科研面板。
 3. 可选：将 [tests/maps](tests/maps) 中的地图放入客户端的 `Maps/Custom/`。在 `Starfall - Research Points Test` 选择 1 号出生位，地图触发器先给 90 点，在 `[CAHOSP]` 配置 `Starfall.ResearchPoints=10` 和 `Starfall.ResearchInterval=150` 后，科技医院运行 150 帧即可补齐到 100 点。
 
 查字段、默认值和配置示例，可下载项目后用浏览器打开 [HTML 查询手册](docs/规则说明书.html)，或直接阅读 [Markdown 说明书](docs/规则说明书.md)。保持科研项目 ID 稳定可以让后续版本继续识别存档中的研究记录。
@@ -52,6 +57,6 @@ Starfall.Passives=SF_KillRepair
 
 - `src/` 是正式 DLL 源码，`assets/research/` 提供科研界面美术。
 - `assets/sound/`、`assets/research/` 中的内置资源由构建脚本打包进 DLL；`examples/` 包含示例配置和外部图标。
-- 独立的实机测试、配置和地图在 [tests/](tests/README.md)。本地验证记录保存在 `tests/local/`。
+- 独立的实机测试、配置和地图在 [tests/](tests/README.md)。
 - [YRpp](https://github.com/Phobos-developers/YRpp) 通过 Git 子模块固定版本，提供编译所需的游戏接口头文件。项目开发参考了 [Phobos](https://github.com/Phobos-developers/Phobos)。
 - Starfall Lab 的许可证见 [LICENSE](LICENSE)。外部依赖保留其上游声明。游戏本体、第三方 DLL 和加载器需自行准备。
