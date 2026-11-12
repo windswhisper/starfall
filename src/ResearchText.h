@@ -39,11 +39,14 @@ inline Mask raster(const wchar_t* text,int size) {
     SelectObject(dc,previous);if(font) DeleteObject(font);DeleteDC(dc);
     return result;
 }
-inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX) {
+inline const Mask& maskFor(const wchar_t* text,int size) {
     static std::map<std::pair<int,std::wstring>,Mask> cache;
     auto [it,fresh]=cache.try_emplace({size,text});
     if(fresh) it->second=raster(text,size);
-    const Mask& mask=it->second;
+    return it->second;
+}
+inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX) {
+    const Mask& mask=maskFor(text,size);
     auto surface=DSurface::Composite;
     if(mask.alpha.empty() || surface->GetBytesPerPixel()!=2) { surface->DrawText(text,x,y,color); return; }
     int width=std::min({mask.w,surface->GetWidth()-x,maxWidth}),height=std::min(mask.h,surface->GetHeight()-y);

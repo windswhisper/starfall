@@ -1,4 +1,8 @@
 /build/
+/tests/local/
+/release/
+/references/Phobos/*
+!/references/Phobos/YRpp/
 /.vs/
 *.obj
 *.pdb

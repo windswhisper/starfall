@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>流火实验室 · 星裂</title>
+<style>
+*{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101923;color:#f0f3f7;font:15px system-ui,sans-serif}main{text-align:center;padding:24px}#icon{width:min(76vw,390px);height:auto}h1{font-size:19px;letter-spacing:.12em;font-weight:550}.sizes{display:flex;justify-content:center;align-items:end;gap:24px}figure{margin:0}figcaption{color:#b8c5d0;font:12px monospace;margin:8px}a{display:inline-block;color:#ffb979;margin-top:18px}
+</style>
+<main><canvas id="icon" width="1024" height="1024" aria-label="四颗大小错落的蓝色彗星碎片，向右下方坠落"></canvas><h1>流火实验室 · 星裂</h1><div class="sizes"></div><a id="download" download="starfall-lab-comet-fragments.png">下载透明 PNG</a></main>
+<script>
+function draw(canvas){
+  const g=canvas.getContext('2d');
+  g.scale(canvas.width/512,canvas.height/512);
+  function fill(d,ink){g.fillStyle=ink;g.fill(new Path2D(d));}
+  function blend(x,y,xx,yy,stops){
+    const c=g.createLinearGradient(x,y,xx,yy);
+    for(const [at,color] of stops)c.addColorStop(at,color);
+    return c;
+  }
+  // Local origin is the impact-facing tip. Silhouettes vary in their fractures,
+  // not just size; all the long edges reinforce the same direction of travel.
+  function fragment(x,y,angle,width,length,cut,bright){
+    g.save();g.translate(x,y);g.rotate(angle*Math.PI/180);
+    g.scale(width/100,length/300);
+    const wake=blend(-28,-282,24,0,[[0,'#4263ef'],[.47,'#346ff1'],[.78,'#218ddd'],[1,'#55cbed']]);
+    const ice=blend(-24,-64,27,-2,[[0,bright?'#b7f4ff':'#89dcf8'],[.58,'#71d5fd'],[1,'#49acf0']]);
+    // Several planes meet at a common fracture; there are no detached sparks.
+    fill('M -26 -300 Q -14 -228 4 -162 L 14 -215 Q 19 -169 36 -115 L 49 -69 L 45 -34 L 17 -3 Q 13 2 7 -1 L -23 -14 L -49 -51 L -46 -91 L -55 -155 L -31 -128 Q -41 -198 -26 -300 Z',wake);
+    fill('M -26 -300 Q -21 -221 -9 -179 L 12 -116 L -5 -126 L -25 -86 L -31 -128 Q -41 -198 -26 -300 Z',
+      blend(-25,-270,2,-90,[[0,'#4779fb'],[.63,'#559ffd'],[1,'#6cc9fa']]));
+    fill('M 14 -215 Q 19 -169 36 -115 L 49 -69 L 26 -84 L 4 -162 Z','#2978de');
+    const ridge=cut===0?'2 -78':cut===1?'15 -73':'-8 -71';
+    fill('M -46 -62 L -25 -86 L '+ridge+' L 26 -84 L 49 -69 L 45 -34 L 17 -3 Q 13 2 7 -1 L -23 -14 L -49 -51 Z','#2177cd');
+    fill('M -46 -62 L -25 -86 L '+ridge+' L 8 -48 L -18 -29 L -49 -51 Z',ice);
+    fill('M '+ridge+' L 26 -84 L 49 -69 L 31 -52 L 8 -48 Z','#489ee5');
+    fill('M 8 -48 L 31 -52 L 45 -34 L 17 -3 Q 13 2 7 -1 L -18 -29 Z',
+      blend(2,-47,28,-5,[[0,'#398ecf'],[1,'#55bde7']]));
+    g.restore();
+  }
+  fragment(403,168,-38,40,122,1,false);
+  fragment(366,285,-34,65,231,2,false);
+  fragment(163,361,-39,50,158,0,false);
+  fragment(313,435,-35,109,408,1,true);
+}
+const icon=document.querySelector('#icon');draw(icon);
+const url=icon.toDataURL('image/png');document.querySelector('#download').href=url;
+for(const n of [64,32]){
+  const f=document.createElement('figure'),c=document.createElement('canvas'),t=document.createElement('figcaption');c.width=c.height=n;
+  const g=c.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(icon,0,0,n,n);
+  t.textContent=n+' × '+n;f.append(c,t);document.querySelector('.sizes').append(f);
+}
+if(location.hash==='#export'){
+  const c=document.createElement('canvas');c.height=c.width=400;
+  const g=c.getContext('2d');g.fillStyle='#101923';g.fillRect(0,0,400,400);g.imageSmoothingQuality='high';g.drawImage(icon,0,0,400,400);
+  const out=document.createElement('pre');out.id='output';out.textContent=JSON.stringify([url,c.toDataURL('image/png')]);document.body.replaceChildren(out);
+}
+</script></html>

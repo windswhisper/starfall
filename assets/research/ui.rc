@@ -1,0 +1,6 @@
+101 RCDATA "assets\\research\\sfrlab.png"
+104 RCDATA "assets\\research\\sfrdefault.png"
+108 RCDATA "assets\\research\\sfrcard.png"
+201 RCDATA "assets\\sound\\Cards.wav"
+202 RCDATA "assets\\sound\\Select.wav"
+203 RCDATA "assets\\sound\\Available.wav"
