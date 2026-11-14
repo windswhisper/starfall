@@ -40,7 +40,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
         check(ini->WriteString("Starfall.ResearchTypes","12","MergedDiagnostic") &&
             ini->WriteString("MergedDiagnostic","Effect","UnlockTech") &&
             ini->WriteString("MergedDiagnostic","Technology","NoSuchRulesUnit"),"merged rules fixture");
-        readResearch();
+        Research::readConfiguration(configPath);
         auto diagnostics=logText();
         for(auto expected:{"Starfall.ini:","[badsyntax] Credits 25","[badlicense] Technology=SF_MissingUnit",
             "[badbundle] summray=wrong key","[badpart] Technology= -","[badbundle] Effects=BadPart,MissingPart",
@@ -79,7 +79,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
         check(house->CanBuild(licensed,false,false)!=CanBuildResult::Buildable,"no access before research");
         Research::award(h,100);
         check(Research::purchase(h,6,house->Type->ID),"purchase production license");
-        check(!Research::canApply(h,6) && !hasProductionLicense(other,licensed),"license is local to purchaser");
+        check(!Research::canApply(h,6) && !Research::Detail::hasProductionLicense(other,licensed),"license is local to purchaser");
         check(house->CanBuild(licensed,false,false)==CanBuildResult::Buildable,"licensed unit buildable");
         auto limit=licensed->BuildLimit;
         licensed->BuildLimit=0;
@@ -95,7 +95,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
     }
     if(frame==32) {
         check(house->GetFactoryProducing(licensed)!=nullptr,"licensed unit in production queue");
-        check(hasProductionLicense(house,licensed) && !hasProductionLicense(other,licensed) &&
+        check(Research::Detail::hasProductionLicense(house,licensed) && !Research::Detail::hasProductionLicense(other,licensed) &&
             house->CanBuild(licensed,false,false)==CanBuildResult::Buildable,"loaded production license");
         std::ifstream snapshot("prices.txt");
         for(int i=0;i<6;++i) snapshot>>base[i]>>opponent[i];

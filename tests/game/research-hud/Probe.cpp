@@ -6,30 +6,16 @@
 #include <Drawing.h>
 
 EXPORT_FUNC(SF_ResearchDraw);
-EXPORT_FUNC(SF_ResearchInput);
+#include "../WindowMouse.h"
 namespace {
 void verify(bool ok,const char* label) {
     std::ofstream("hud.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
 }
 void input(Point2D point,int flags) {
-    REGISTERS regs{};
-    DWORD stack[20]{},key=123;
-    regs.ESP(stack);regs.Stack(0x1c,point);regs.Stack(0x34,flags);regs.Stack(0x38,&key);
-    verify(SF_ResearchInput(&regs)==0x4AAD19 && key==0,"consumed input");
+    verify(WindowMouse::button(point,flags),"engine blocks click through");
 }
 void click(Point2D point) {input(point,1);input(point,4);}
-void engineInput(Point2D point,int flags) {
-    auto keyboard=WWKeyboardClass::Instance;
-    int x=keyboard->MouseQX,y=keyboard->MouseQY;
-    keyboard->MouseQX=point.X;keyboard->MouseQY=point.Y;
-    DWORD key=123;
-    using ActionFn=int(__thiscall*)(void*,int,DWORD*,int);
-    auto action=reinterpret_cast<ActionFn>(0x4AAC10);
-    int result=action(reinterpret_cast<void*>(0x87F7E8),flags,&key,0);
-    keyboard->MouseQX=x;keyboard->MouseQY=y;
-    verify(result==1 && key==0,"engine blocks click through");
-}
 int pixel(int x,int y) {
     Point2D p{x,y};
     return DSurface::Composite->GetPixel(&p);
@@ -59,10 +45,20 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
     static const bool enabled=GetFileAttributesA("Starfall.test")!=INVALID_FILE_ATTRIBUTES;
     if(!enabled) return 0;
     int frame=Unsorted::CurrentFrame;
-    if(frame>=96) {TerminateProcess(GetCurrentProcess(),0);return 0;}
+    if(frame>=96) {
+        Research::clearPresentationCaches(true);
+        verify(ResearchAudio::voices().empty() && ResearchAudio::sampleCache().size()==0,"scenario reset releases voices and cached audio");
+        TerminateProcess(GetCurrentProcess(),0);return 0;
+    }
     const bool loading=GetFileAttributesA("reload.flag")!=INVALID_FILE_ATTRIBUTES;
     if(loading && frame<=45) return 0;
     if(frame!=20 && frame!=32 && frame!=45 && frame!=60 && frame!=88) return 0;
+    // Single-player launches can supply different engine seeds. Pin this fixture
+    // and clear any locally generated board before exercising all three refreshes.
+    if(frame==20) {
+        Game::Seed=static_cast<int>(3261594250u);
+        Research::savedOffers.clear();Research::seenOffers.clear();Research::clearOfferCache();
+    }
     Research::ensureReady();
     int house=HouseClass::CurrentPlayer->ArrayIndex;
     auto view=DSurface::ViewBounds;
@@ -80,14 +76,14 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
     const char* country=HouseClass::CurrentPlayer->Type->ID;
     static vector<int> initial;
     if(frame==20) {
-        verify(Research::options.size()==8,"registered projects");
+        verify(Research::options.size()==9,"registered projects");
         verify(Research::isEnabled(),"research enabled by default");
         Research::points[house]=100;
         const auto board=Research::offers(house,country);
         verify(!board.empty(),"funded board before disable");
         const auto savedBoard=Research::savedOffers.at(house);
         verify(WritePrivateProfileStringA("Starfall.Research","Enabled","no",configPath),"write disabled research");
-        readResearch();
+        Research::readConfiguration(configPath);
         Research::award(house,50);
         verify(!Research::isEnabled() && Research::offers(house,country).empty() &&
             !Research::purchase(house,board[0],country) && !Research::refresh(house,country,0,board[0]) &&
@@ -97,24 +93,42 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         DSurface::Composite->SetPixel(&border,marker);
         SF_ResearchDraw(nullptr);
         verify(pixel(border.X,border.Y)==marker,"disabled HUD not drawn");
-        REGISTERS regs{};DWORD stack[20]{},key=123;
-        regs.ESP(stack);regs.Stack(0x1c,tab);regs.Stack(0x34,1);regs.Stack(0x38,&key);
-        verify(SF_ResearchInput(&regs)==0 && key==123 && !Research::expanded,"disabled HUD passes input");
+        verify(!WindowMouse::button(tab,1) && !WindowMouse::button(tab,4) && !Research::expanded,"disabled HUD passes input");
         verify(WritePrivateProfileStringA("Starfall.Research","Enabled",nullptr,configPath),"restore research default");
-        readResearch();
+        Research::readConfiguration(configPath);
         verify(Research::isEnabled() && Research::offers(house,country)==board,"reenabled board retained");
         char originalPath[MAX_PATH]{};
         strcpy_s(originalPath,configPath);
         GetFullPathNameA("research-unregistered.ini",MAX_PATH,configPath,nullptr);
         {std::ofstream ini(configPath);ini<<"[Starfall.Research]\nOptions=SF_Repair\n";}
-        readResearch();
+        Research::readConfiguration(configPath);
         verify(Research::options.empty(),"legacy options ignored");
         {std::ofstream ini(configPath);ini<<"[Starfall.Research]\n";}
-        readResearch();
+        Research::readConfiguration(configPath);
         verify(Research::options.empty(),"unregistered projects empty");
+        {
+            std::ofstream ini(configPath);
+            ini<<"[Starfall.Research]\nAllowCardRefresh=yes\n[Starfall.ResearchTypes]\n";
+            for(int i=0;i<4;++i) ini<<i<<"=Red"<<i<<"\n";
+            for(int i=0;i<4;++i) ini<<"[Red"<<i<<"]\nRarity=Insane\nEffect=GiveCredits\nCredits=10\n";
+        }
+        Research::readConfiguration(configPath);Research::clearOfferCache();
+        verify(Research::options.size()==4 && Research::options[0].rarity==Research::Rarity::Insane &&
+            Research::offers(house,country).empty(),"insane disabled by default");
+        WritePrivateProfileStringA("Starfall.Research","RarityWeight.Insane","1",configPath);
+        Research::readConfiguration(configPath);Research::clearOfferCache();
+        const auto red=Research::offers(house,country);
+        verify(red.size()==3 && Research::refresh(house,country,0,red.front()) &&
+            Research::offers(house,country).front()!=red.front(),"insane draw and refresh");
+        WritePrivateProfileStringA("Starfall.Research","RarityWeight.Insane","0",configPath);
+        Research::readConfiguration(configPath);Research::clearOfferCache();
+        verify(Research::offers(house,country).empty(),"zero excludes saved insane offers");
+        Research::refreshedSlots.erase(house);
+        Research::savedOffers[house]=savedBoard;
+        Research::clearOfferCache();
         strcpy_s(configPath,originalPath);
-        readResearch();
-        verify(Research::options.size()==8,"registered projects restored");
+        Research::readConfiguration(configPath);
+        verify(Research::options.size()==9,"registered projects restored");
         verify(RulesClass::Instance->GenericClick>=0 && RulesClass::Instance->GenericClick<VocClass::Array.Count,"native click sound configured");
         verify(std::all_of(Research::soundFiles.begin(),Research::soundFiles.end(),[](const auto& p){return p=="ui-test.wav";}) && !ResearchAudio::load("ui-test.wav").data.empty(),"configured wav loaded");
         verify(!ResearchAudio::load("builtin:cards").data.empty() && !ResearchAudio::load("builtin:select").data.empty() &&
@@ -126,17 +140,33 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         auto oldVoices=ResearchAudio::voices().size();
         bool wavPlayed=ResearchAudio::play(Research::SoundCue::Button);
         verify(wavPlayed && (GameOptionsClass::Instance.SoundVolume<=0 || ResearchAudio::voices().size()>oldVoices),"wav playback queued");
+        auto playing=ResearchAudio::voices().size();
+        auto voice=playing?ResearchAudio::voices().back().get():nullptr;
+        auto data=voice?voice->header.lpData:nullptr;
+        for(int i=0;i<70;++i) ResearchAudio::sampleCache().get("eviction-"+std::to_string(i),[] {
+            ResearchAudio::Sample sample;sample.data.resize(32768);return sample;
+        },[](const auto& key,const auto& sample){return sample.data.capacity()+2*(key.size()+1)+sizeof(sample);});
+        verify(!ResearchAudio::sampleCache().contains("ui-test.wav"),"playing sound evicted from sample cache");
+        Research::readConfiguration(configPath);
+        verify(ResearchAudio::sampleCache().size()==0 && ResearchAudio::sampleCache().bytes()==0 &&
+               ResearchAudio::voices().size()==playing && (!voice || (voice->header.lpData==data &&
+               data==reinterpret_cast<LPSTR>(voice->data.data()) && voice->device)),"configuration reload preserves playing audio and clears cache");
         Research::points[house]=0;
         SF_ResearchDraw(nullptr);
         verify(pixel(x+24,y+1)==track && pixel(x+24,y+46)==track && pixel(x+1,y+24)==track,"empty border");
-        engineInput(tab,1);engineInput({tab.X-100,tab.Y+100},4);
-        engineInput(tab,16);engineInput(tab,64);
+        input(tab,1);input({tab.X-100,tab.Y+100},4);
+        input(tab,16);input(tab,64);
         click(tab);verify(!Research::expanded,"disabled at zero");
         Research::award(house,99);
         click(tab);verify(!Research::expanded,"disabled at 99");
         input(tab,1);Research::award(house,1);input(tab,4);
         verify(!Research::expanded,"funded mid-click");
-        click(tab);verify(Research::expanded,"opened at 100");
+        input(tab,1);
+        reinterpret_cast<WNDPROC>(0x7775C0)(Game::hWnd,WM_CANCELMODE,0,0);
+        input({view.X+3,view.Y+view.Height+3},4);
+        verify(!Research::expanded,"canceled HUD release cannot issue an order");
+        verify(WindowMouse::send(tab,WM_LBUTTONDBLCLK) && WindowMouse::button(tab,4) &&
+            Research::expanded,"opened at 100");
         SF_ResearchDraw(nullptr);
         int top=pixel(x+24,y+1);
         verify(top!=track && top==pixel(x+1,y+24) && top==pixel(x+24,y+46),"full border");
@@ -147,11 +177,11 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         Research::award(house,51);
         click(tab);
         verify(WritePrivateProfileStringA("Starfall.Research","AllowCardRefresh","no",configPath),"write disabled fixture");
-        readResearch(); Research::clearOfferCache();
+        Research::readConfiguration(configPath); Research::clearOfferCache();
         auto disabledBoard=Research::offers(house,country);
         verify(!Research::allowCardRefresh && !Research::refresh(house,country,0,disabledBoard.front()),"ini disables refresh");
         verify(WritePrivateProfileStringA("Starfall.Research","AllowCardRefresh","yes",configPath),"restore fixture");
-        readResearch(); Research::clearOfferCache();
+        Research::readConfiguration(configPath); Research::clearOfferCache();
         initial=Research::offers(house,country);
         verify(initial.size()==3,"three cards");
         WWMouseClass::Instance->XY1={cx,view.Y+4};
@@ -161,9 +191,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         Sleep(360);
         SF_ResearchDraw(nullptr);
         captureHud("research-cards.ppm",cx-(3*cw+2*gap)/2-18,view.Y+(view.Height-ch-72)/2-10,3*cw+2*gap+36,ch+92);
-        engineInput({cx,cy},1);engineInput({view.X+3,view.Y+view.Height-3},4);
+        input({cx,cy},1);input({view.X+3,view.Y+view.Height-3},4);
         verify(Research::expanded && Research::unlocked[house].empty(),"card drag cannot select behind");
-        engineInput({cx-cw-gap,refreshY},1);engineInput({cx-cw-gap,refreshY},4);
+        input({cx-cw-gap,refreshY},1);input({cx-cw-gap,refreshY},4);
     }
     if(frame==32) {
         auto rows=Research::offers(house,country);
@@ -176,7 +206,18 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
     if(frame==45) {
         verify(Research::refreshedSlots.at(house)==7 && Research::balance(house)==150,"three free refreshes");
         auto rows=Research::offers(house,country);
-        verify(std::set<int>(rows.begin(),rows.end()).size()==3 && std::all_of(rows.begin(),rows.end(),[](int i){return i<5;}),"unique eligible projects");
+        {
+            std::ofstream diagnostic("hud.log",std::ios::app);
+            diagnostic<<"INFO offers seed="<<static_cast<unsigned>(Game::Seed)<<" house="<<house<<" initial=";
+            for(int index:initial) diagnostic<<Research::options[index].id<<',';
+            diagnostic<<" refreshed=";
+            for(int index:rows) diagnostic<<Research::options[index].id<<',';
+            diagnostic<<'\n';
+        }
+        const std::set<string> eligible={"repair","drain","riposte","reserve","focus","extra"};
+        verify(std::set<int>(rows.begin(),rows.end()).size()==3 && std::all_of(rows.begin(),rows.end(),[&](int i){
+            return i>=0 && i<static_cast<int>(Research::options.size()) && eligible.contains(Research::options[i].id);
+        }),"unique eligible projects");
         {std::ofstream output("expected-cards.txt");for(int index:rows) output<<Research::options[index].id<<"\n";}
         click(tab); click(tab);
         verify(Research::offers(house,country)==rows && !Research::canRefresh(house,country,0),"reopen retains cards");
@@ -188,7 +229,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         for(int index:rows) {string id;expected>>id;verify(id==Research::options[index].id,"retained option");}
         verify(rows.size()==3 && Research::refreshedSlots.at(house)==7 && !Research::canRefresh(house,country,1),"retained refresh limits");
         if(!Research::expanded) click(tab);
-        engineInput({cx,cy},1);engineInput({cx,cy},4);
+        input({cx,cy},1);input({cx,cy},4);
         verify(Research::expanded,"purchase queued");
     }
     if(frame==88) {
@@ -225,7 +266,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         WWMouseClass::Instance->XY1=badge;
         SF_ResearchDraw(nullptr);
         verify(pixel(left,top)==Drawing::RGB_To_Int(182,159,255),"left badge hover");
-        engineInput({left+38,top+20},1);engineInput({left+38,top+20},4);
+        input({left+38,top+20},1);input({left+38,top+20},4);
         WWMouseClass::Instance->XY1=tab;
         SF_ResearchDraw(nullptr);
         auto cur=WWMouseClass::Instance->XY1;
@@ -233,7 +274,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         captureHud("hud-half.ppm",view.X+view.Width-276,y-2,276,128);
         verify(pixel(x+42,y+59)==Drawing::RGB_To_Int(14,23,36),"balance tooltip");
         Research::award(house,50);
-        verify(Research::offers(house,country).size()==2 && !Research::canRefresh(house,country,0) &&
+        verify(Research::offers(house,country).size()==3 && !Research::canRefresh(house,country,0) &&
             !Research::slotUsed(house,0),"no alternative preserves allowance");
     }
     WWMouseClass::Instance->SetCoords(previous);

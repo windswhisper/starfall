@@ -30,6 +30,21 @@ void capture(RectangleStruct rect) {
 DEFINE_HOOK(0x55B4EB,SF_TestHexIcons,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES || Unsorted::CurrentFrame!=20) return 0;
     Research::ensureReady();
+    {
+        const wchar_t* filename=L"图标验证.png";
+        HMODULE module=nullptr;
+        check(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&loadPng),&module),"PNG module");
+        auto resource=FindResourceW(module,MAKEINTRESOURCEW(104),MAKEINTRESOURCEW(10));
+        check(resource!=nullptr,"PNG resource");
+        auto size=SizeofResource(module,resource);
+        auto bytes=LockResource(LoadResource(module,resource));
+        std::ofstream file(filename,std::ios::binary);file.write(static_cast<const char*>(bytes),size);file.close();
+        PngImage decoded;
+        check(loadPng("图标验证.png",0,decoded) && !decoded.pixels.empty(),"UTF8 PNG file loaded");
+        DeleteFileW(filename);
+        std::ofstream("hex-icons.log",std::ios::app)<<"PASS UTF8 PNG file loaded\n";
+    }
     auto& projects=Research::options;
     check(projects.size()>=15,"project count");
     auto surface=DSurface::Composite;
@@ -99,8 +114,65 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexIcons,5) {
         drawProjectIcon(o,r);
         auto gold=snapshot(r);
         check(gold!=original && gold!=tinted && gold[15*30+15]==background && gold[4*30+15]!=background,"gold transparent PCX or fallback");
+        o.rarity=Research::Rarity::Insane;
+        surface->FillRect(&r,background);
+        drawProjectIcon(o,r);
+        auto red=snapshot(r);
+        auto p=red[4*30+15];
+        auto channel=[&](int left,int right){return ((p>>left)&(255>>right))<<right;};
+        int rr=channel(Drawing::RedShiftLeft,Drawing::RedShiftRight);
+        check(red[15*30+15]==background && rr>channel(Drawing::GreenShiftLeft,Drawing::GreenShiftRight)+20 &&
+              rr>channel(Drawing::BlueShiftLeft,Drawing::BlueShiftRight)+20,"red transparent PCX or fallback");
     }
     std::ofstream("hex-icons.log",std::ios::app)<<"PASS PCX and fallback\n";
+    {
+        auto common=Research::Rarity::Common;
+        Research::clearPresentationCaches();
+        auto hot=imageFor("sfrdefault.png",104,common,true);
+        check(!hot->pixels.empty() && imageFor("SFRDEFAULT.PNG",104,common,true)==hot,"image path aliases share cache");
+        for(int i=0;i<1000;++i) {
+            auto file="cache-icon-"+std::to_string(i)+".png";
+            check(!imageFor(file,104,common,true)->pixels.empty(),"load generated icon alias");
+            check(imageFor("sfrdefault.png",104,common,true)==hot,"keep frequently used icon");
+            check(imageCache().size()<=256 && imageCache().bytes()<=imageCache().maxBytes,"image cache bounds");
+        }
+        check(!imageCache().contains(ImageKey{"cache-icon-0.png",104,common}),"old icon evicted");
+        check(imageFor("cache-missing-image.png",0,common,true)->pixels.empty() &&
+              !imageFor("cache-missing-image.png",104,common,true)->pixels.empty(),"builtin fallback has independent cache identity");
+        for(int i=0;i<20;++i) imageCache().get(ImageKey{"generated-large-"+std::to_string(i),0,common},[] {
+            PngImage image;image.width=image.height=1024;image.pixels.resize(4*1024*1024);return image;
+        },[](const ImageKey& key,const PngImage& image){return image.pixels.capacity()+2*(std::get<0>(key).size()+1)+sizeof(PngImage);});
+        check(imageCache().bytes()<=imageCache().maxBytes &&
+              !imageCache().contains(ImageKey{"generated-large-0",0,common}) && !hot->pixels.empty(),"byte pressure evicts without invalidating held icon");
+        std::ofstream("hex-icons.log",std::ios::app)<<"PASS bounded image cache and LRU\n";
+
+        const char* file="cache-reload.png";
+        DeleteFileA(file);
+        check(imageFor(file,0,common,true)->pixels.empty(),"missing image cached");
+        auto writeResource=[&](int id) {
+            HMODULE module=nullptr;
+            check(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                reinterpret_cast<LPCWSTR>(&loadPng),&module)!=0,"reload image module");
+            auto resource=FindResourceW(module,MAKEINTRESOURCEW(id),MAKEINTRESOURCEW(10));
+            auto bytes=LockResource(LoadResource(module,resource));auto size=SizeofResource(module,resource);
+            check(bytes && size,"reload image resource");
+            std::ofstream out(file,std::ios::binary);out.write(static_cast<const char*>(bytes),size);
+        };
+        writeResource(104);
+        check(imageFor(file,0,common,true)->pixels.empty(),"missing image is not reopened every frame");
+        Research::clearPresentationCaches();
+        auto original=imageFor(file,0,common,true);
+        check(original->width==96,"missing image retried after invalidation");
+        writeResource(110);
+        check(imageFor(file,0,common,true)==original,"file stays cached until reload");
+        drawCardSkin({8,8,96,144});
+        check(!cardSkinCache().pixels.empty(),"card skin cached");
+        Research::clearPresentationCaches();
+        check(imageCache().size()==0 && imageCache().bytes()==0 && cardSkinCache().pixels.empty(),"all image caches cleared");
+        check(imageFor(file,0,common,true)->width==64 && original->width==96,"replaced image reloaded with safe old handle");
+        DeleteFileA(file);
+        std::ofstream("hex-icons.log",std::ios::app)<<"PASS image reload and card cache cleanup\n";
+    }
     TerminateProcess(GetCurrentProcess(),0);
     return 0;
 }

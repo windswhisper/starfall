@@ -32,6 +32,15 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveGained,5) {
         std::ofstream("gained.ids")<<u->UniqueID<<" "<<other->UniqueID;
         check(!skills.contains("expiredkey") && !skills.contains("badrange") && !skills.contains("badgrant") && !skills.contains("badduration"),"invalid rules");
         check(UnitHealth::read(u).maximum==base+10,"native gain");
+        auto flashCount=[&] {int n=0;for(auto a:AnimClass::Array) if(a->Type==AnimTypeClass::Find("PIFF") && a->OwnerObject==u) ++n;return n;};
+        int beforeFlash=flashCount();
+        grantToUnit(u,PassiveGrant{{"gainflash"},10});
+        check(flashCount()==beforeFlash+1,"gain animation on acquire");
+        grantToUnit(u,PassiveGrant{{"gainflash"},20});
+        observeGains(u);check(flashCount()==beforeFlash+1,"gain animation no renewal");
+        removeHeldPassive(u,"gainflash");
+        grantToUnit(u,PassiveGrant{{"gainflash"},-1});
+        check(flashCount()==beforeFlash+2,"gain animation reacquired");
         Research::points[h]=100;Research::points[v]=0;
         check(Research::purchase(h,0,house->Type->ID),"purchase");
         tickGains();dispatch();
@@ -68,6 +77,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveGained,5) {
         check(ScenarioClass::SaveGame("Saved Games\\PassiveGained.sav",L"PassiveGained"),"saved");
     }
     if(f==31) {
+        auto count=[&] {int n=0;for(auto a:AnimClass::Array) if(a->Type==AnimTypeClass::Find("PIFF") && a->OwnerObject==u) ++n;return n;};
+        int before=count();observeGains(u);
+        check(count()==before && includes(gainSeen[u->UniqueID],"gainflash"),"gain animation not replayed after load");
         check(UnitHealth::read(u).maximum==base+60 && Research::balance(h)==11,"no repeat after save");
         check(Research::balance(v)==18,"pending gain");
         check(other->FirepowerMultiplier==1.25,"renewed modifier");

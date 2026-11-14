@@ -1,1673 +1,1186 @@
-# Starfall Lab / 流火实验室 INI 规则说明书
+# Starfall Lab: Configuration and Lua Reference
 
-## 项目简介
+Document language: English. Audience: mod authors, AI assistants, and maintainers.
+Applies to: Starfall Lab 0.36, as implemented in this repository on 2026-11-14.
+Runtime: a 32-bit DLL extension for Command & Conquer: Yuri's Revenge.
 
-流火实验室（Starfall Lab，简称流火）是《红色警戒 2：尤里的复仇》的 DLL 扩展。模组作者可以通过 INI 配置单位被动能力和战场中的三选一科研升级。
+This is a reference for the implemented interfaces, not a proposal for future features. Field names in code font are literal configuration keys. `required` means that omission makes the described configuration invalid. Defaults apply when a field is omitted, subject to configuration inheritance. Native game fields such as `Spawns`, `Locomotor`, and `SuperWeapon` belong to the game or another extension; Starfall does not redefine them.
 
-## 使用指南
+## Contents
 
-适用版本：0.35。单位能力从「单位自带被动」开始查阅，科研卡片从「科研项目参数」开始查阅。
+1. [Authoring contract](#authoring-contract)
+2. [Installation and configuration sources](#installation-and-configuration-sources)
+3. [Registries and a complete passive example](#registries-and-a-complete-passive-example)
+4. [Triggers, targets, and event execution](#triggers-targets-and-event-execution)
+5. [Filters and state conditions](#filters-and-state-conditions)
+6. [Continuous modifiers and passive ownership](#continuous-modifiers-and-passive-ownership)
+7. [Action reference](#action-reference)
+8. [Numeric formulas](#numeric-formulas)
+9. [Research projects](#research-projects)
+10. [External grants and map integration](#external-grants-and-map-integration)
+11. [Active skills](#active-skills)
+12. [Lua API](#lua-api)
+13. [ActionSequence superweapons](#actionsequence-superweapons)
+14. [Animation, icons, and audio](#animation-icons-and-audio)
+15. [Persistence, multiplayer, and compatibility](#persistence-multiplayer-and-compatibility)
+16. [Diagnostics and removed interfaces](#diagnostics-and-removed-interfaces)
+17. [Build, tests, and source map](#build-tests-and-source-map)
 
-科研卡没有出现或被动未生效时，查看游戏根目录的 `Starfall.log`。科研配置错误会列出段名、字段、读取到的值和原因；可定位到独立 `Starfall.ini` 的字段还会标出行号。来自 `rulesmd.ini`、地图或包含文件的字段按游戏合并后的规则检查。
+## Authoring contract
 
-## 一、被动能力
+When generating configuration or scripts:
 
-### 1. 单位自带被动
+- Register a passive ID, define its section, and give it to a unit through a binding or grant. Registration alone does not give the passive to anyone.
+- Use distinct, stable IDs for passives, research projects, action sections, and grant presets. References use IDs, not localized display names.
+- Choose the correct execution context before choosing an action: ordinary event, damage interception, continuous state, active skill, or superweapon/map script.
+- Use only the keys and enumerations documented for that context. Unknown `Action.*` fields and incompatible combinations can disable the entire passive.
+- Use `Action` for one native result, `Actions` for an ordered list of action sections, and `Effects` for research effects. These three interfaces are different.
+- Use `Trigger=WhileState` with `Modifier.*` for reversible conditions. Event actions such as `ChangeFirepower` permanently change the individual unit's accumulated value.
+- Distinguish percentage points, multipliers, and percentages of a value. `Action.Percent=+25%`, `Modifier.FirepowerMultiplier=1.25`, and `$(25%)` have different roles.
+- Explicitly select the action target when intent could be ambiguous. `Filter.TargetKind` filters the event counterpart; it does not select the action recipient.
+- In Lua, use colon calls, ordered arrays with `ipairs`, and Starfall's synchronized random functions. Do not invent engine methods or assume unrestricted Lua libraries.
+- Keep delayed state in `ctx.state` or task `data`. Module locals and globals do not persist between callbacks.
+- Merge registry entries into unused slots and append unit bindings to existing lists. Do not replace another feature's bindings accidentally.
+- Treat examples marked **fragment** as partial configuration. Native unit, weapon, warhead, animation, and country IDs must exist in the target ruleset.
+- For implementation questions, inspect the source map at the end of this document. Do not infer an unsupported option from similar Ares or Phobos syntax.
 
-#### 简要介绍
+Terminology:
 
-##### 三个 INI 段怎样配合
+| Term | Meaning |
+| --- | --- |
+| Holder / `Self` | Unit whose passive is executing; special contexts are identified explicitly below. |
+| Counterpart / formula `Target` | Other participant in the event, independently of `Action.Target`. |
+| House | A player's owning faction instance, identified by a runtime index. A house index is not a starting-position number. |
+| Cell | Map coordinate, not a screen pixel. Integer cell coordinates are in `0..511` and must be inside the playable map. |
+| Frame | Simulation frame. Starfall's seconds-based settings use 15 frames per game second; wall-clock duration varies with game speed. |
+| Snapshot | Data captured for an event. It can remain usable after the original object disappears. |
+| Unit handle | Lua reference to a unit ID. Check `unit:alive()` before relying on live properties. |
+| Owned passive | A passive available through at least one source. Owning it does not imply a positive stack count. |
 
-给单位配置自带被动，需要用同一个被动 ID 串起三个 INI 段。以 `SF_KillHeal` 为例：
+## Installation and configuration sources
 
-1. **注册被动**　在 `[Starfall.PassiveTypes]` 中用一个空闲数字键登记 `SF_KillHeal`。数字是注册表的位置，后面引用技能时填写 `SF_KillHeal`。
-2. **定义规则**　新建同名段 `[SF_KillHeal]`，写明什么时候判断、哪些情况算数、满足后做什么。
-3. **绑定单位**　在兵种段 `[MTNK]` 中填写 `Starfall.Passives=SF_KillHeal`。这样各方的灰熊都自带该技能。已有其他被动时，用英文逗号把新 ID 追加到原列表。
+Build with Visual Studio 2022 / MSVC v143, x86 C++ tools, and a Windows SDK. Run `build.cmd` at the repository root. The output is `build/Starfall.dll`.
 
-#### 参数列表和对应说明
+Place the DLL beside `gamemd.exe` and load it with a compatible Syringe loader. The handshake requires game executable CRC `0x54CC0A13`. The game and loader are not supplied by this project. With Phobos, load Starfall before Phobos; the automated tests use explicit extension order. See [compatibility](#persistence-multiplayer-and-compatibility) for conversion and mind-control restrictions.
 
-##### 一个被动由哪些部分组成
+| Location | Purpose |
+| --- | --- |
+| Game-root `Starfall.ini` | Optional Starfall-specific definitions and overrides. |
+| Engine-loaded `rulesmd.ini` and merged rules | Starfall fields can coexist with native rules. Native object definitions must be loaded by the game. |
+| Map unit-type sections | `Starfall.Passives` adds map-specific unit bindings; these bindings are saved. |
+| Map action definitions | Supported ActionSequence and map-script fields have a persisted map overlay. |
+| Game-root `*.lua` | Lua source files, top directory only; no recursive discovery. |
+| `artmd.ini` animation section | Native animation properties. |
+| Game-root `Starfall.log` | Configuration and runtime diagnostics. |
 
-普通事件可从 `Trigger` 和一项带所需参数的 `Action` 写起，再按玩法添加条件、次数和表现。
+Important lookup rules:
 
-| 组成 | 常用字段 | 什么时候填写 |
-|---|---|---|
-| 触发方式 | `Trigger` | 单选：`OnKill`、`OnBeforeDealDamage`、`OnDealDamage`、`OnTakeDamage`、`OnBeforeTakeDamage`、`OnDeath`、`OnFire`、`OnBeforeFire`、`OnDeploy`、`OnPromote`、`OnPromoteVeteran`、`OnPromoteElite`、`OnPassiveGained`、`OnPassengerConsumed`、`OnSignal`、`OnInterval`、`WhileState`。定时触发还需填写 `Interval`。 |
-| 事件对方 | `Filter.TargetHouse` / `Filter.TargetKind` | 阵营可选 `All`、`Self`、`Allies`、`Enemies`、`Neutral`、`None`；类别可选 `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None`。每个字段可用英文逗号多选。 |
-| 公式条件 | `Condition.Formula` | 可用比较表达式判断层数、生命、弹药、乘客及其他公式变量。 |
-| 次数、概率和冷却 | `Condition.Count`、`Chance`、`Cooldown`、`MaxTriggers` | 分别控制合格事件数、成功概率、冷却帧数和成功触发次数上限。 |
-| 事件结果 | `Action` / `Actions` | `Action` 单选：`Heal`、`Damage`、`SetDamage`、`BlockDamage`、`GiveCredits`、`GiveResearchPoints`、`ChangeAmmo`、`ChangeMaxHealth`、`ChangeSpeed`、`ChangeFirepower`、`ChangeArmor`、`ChangeFireRate`、`ChangeWeaponRange`、`ChangeProjectileScale`、`ChangeScale`、`SpawnCrate`、`SpawnUnit`、`ChangeOwner`、`Transform`、`SelfDestruct`、`ConsumePassenger`、`SendSignal`、`GrantPassive`、`StealPassive`、`RemovePassive`、`ChangePassiveStack`、`FireWeapon`、`DetonateWarhead`、`ReplaceWeapon`。`SetDamage`、`BlockDamage` 可用于 `OnBeforeDealDamage` 和 `OnBeforeTakeDamage`，`ReplaceWeapon` 仅用于 `OnBeforeFire`。组合多个结果时，用 `Actions` 引用结果段 ID。 |
-| 被动层数 | `Stack.Max` | 可选，填正整数限制层数上限。每个单位的每项被动从 0 层开始。用 `ChangePassiveStack` 增减手动层数，也可由开启叠加的乘客提供层数；公式用 `This.Stack` 读取总层数。 |
-| 动画表现 | `Anim` / `Anim.Always` / `TriggerAnim` / `TriggerAnim.Target` | 动画名取自游戏已注册的动画类型。`Anim.Always` 控制附着动画是否常驻；`TriggerAnim.Target` 单选 `Self` 或 `Target`，默认 `Self`。 |
+1. Ordinary passive fields first read `Starfall.ini`, then fall back to the engine's merged rules if the file value is empty. An empty passive override is therefore not a reliable way to erase an inherited rules value.
+2. Research configuration has a separate reader: an explicitly present file field wins, including an empty value; otherwise it falls back to merged rules.
+3. ActionSequence fields merge engine rules, then file fields, then the captured map overlay. Do not assume this precedence applies to every subsystem.
+4. Passive registry values from the available sources are collected and normalized. Research registration uses nonnegative numeric keys; file entries replace merged-rule entries with the same numeric key.
 
-#### 示例代码
+Use UTF-8 for authored files. IDs and most enumerated values are normalized case-insensitively; prefer consistent ASCII IDs. Display text and `Script.Param.*` values preserve case. UTF-8 display text falls back to the Windows code page if necessary. Semicolons introduce configuration comments; do not depend on semicolons inside a string value being preserved.
 
-##### 完整示例：击杀回血
+Use `yes` or `no` for booleans unless a field explicitly documents additional forms. Most passive booleans do not accept `true` or `1`. Lists normally use ASCII commas. List duplicate behavior is context-specific: ordinary ID lists deduplicate; passive `Actions` preserves repeated steps; research `Effects` deduplicates effect IDs.
 
-`Filter.TargetHouse` 筛选被击杀者，`Action.Target=Self` 把治疗给持有者。每辆灰熊分别累计击杀次数。
+Keep IDs and values short. Skill/project IDs should not exceed 127 bytes. Many ordinary INI fields use a 2,048-byte read buffer. Avoid huge action lists and split complex logic into scripts or reusable sections.
+
+## Registries and a complete passive example
+
+| Registry / binding | Entry format | Meaning |
+| --- | --- | --- |
+| `[Starfall.PassiveTypes]` | `0=SF_KillHeal` | Register a passive or active skill section. |
+| Unit type: `Starfall.Passives` | `SF_KillHeal,SF_LastStand` | Give those IDs to every unit of that type, regardless of owner. |
+| `[Starfall.ResearchTypes]` | `0=SF_FieldRepair` | Register a research project section. |
+| `[Starfall.PassiveGrants]` | `1=SF_RepairGrant` | Register a grant preset; map/team action 9601 uses the numeric key. |
+| `[Starfall.MapScripts]` | `1=SF_WaveScript` | Register a map Lua preset; map action 9602 uses the numeric key. |
+| Native `[SuperWeaponTypes]` | `SF01=FieldSupply` | Register an engine superweapon that may use `Type=ActionSequence`. |
+
+For grant and map-script preset numbers, use canonical nonnegative decimal integers without leading zeros. Use unused numeric slots in passive/research registries when merging into an existing mod.
+
+**Complete Starfall.ini example**, assuming the native `MTNK` unit type exists:
 
 ```ini
 [Starfall.PassiveTypes]
 0=SF_KillHeal
+1=SF_LastStand
+
+[MTNK]
+Starfall.Passives=SF_KillHeal,SF_LastStand
 
 [SF_KillHeal]
 Trigger=OnKill
-Filter.TargetHouse=Enemies,Neutral
+Filter.TargetHouse=Enemies
 Condition.Count=3
 Action=Heal
 Action.Target=Self
 Action.Amount=50
 
-[MTNK]
-Starfall.Passives=SF_KillHeal
-```
-
-##### 持续状态的写法
-
-例如，让灰熊在半血及以下获得 25% 火力加成，可以另建下面的被动，注册后追加到 `[MTNK]` 的 `Starfall.Passives`。`WhileState` 至少需要一个状态条件；持续属性写在 `Modifier.*` 中。生命恢复到 50% 以上时，这份加成立即随状态解除。
-
-```ini
 [SF_LastStand]
 Trigger=WhileState
 Condition.Formula=$(Self.Health <= Self.MaxHealth * 50%)
 Modifier.FirepowerMultiplier=1.25
 ```
 
-#### 额外补充说明
+Each tank counts its own qualifying kills. Every third kill attempts to heal that tank by 50. The continuous modifier adds a separate 1.25 multiplier only while the tank is at or below half health.
 
-注册只让流火识别技能。写在单位类型上的 `Starfall.Passives` 是**各方该兵种的自带能力**，支持多个 ID，例如 `SF_KillHeal,SF_PoweredDrive`。若能力只应在科研后获得，就注册并定义它，通过第二部分的 `GrantPassive` 授予。一个单位从多个来源获得同一个被动 ID，只执行一份。
+## Triggers, targets, and event execution
 
-### 2. 触发时机总览
+### Trigger catalog
 
-#### 简要介绍
-
-流火支持 12 种事件触发时机和 1 种持续状态判定。点击表中的触发器名称可查看对应示例。普通事件可以按目标筛选，并设置计数、概率和冷却。
-
-#### 参数列表和对应说明
-
-| `Trigger` | 判定时机 | 筛选中的“对方” |
-|---|---|---|
-| [`OnKill`](#timing-onkill) | 持有者获得一次击杀 | 被击杀者 |
-| [`OnBeforeDealDamage`](#timing-onbeforedealdamage) | 攻击者即将使一个目标损失生命时同步判定 | 本次实际受击单位 |
-| [`OnDealDamage`](#timing-ondealdamage) | 持有者使目标实际损失生命 | 受害者 |
-| [`OnTakeDamage`](#timing-ontakedamage) | 持有者实际损失生命 | 攻击者 |
-| [`OnBeforeTakeDamage`](#timing-onbeforetakedamage) | 正数伤害即将扣除生命前同步判定 | 攻击者，可能为空 |
-| [`OnDeath`](#timing-ondeath) | 持有者被登记为摧毁；一次死亡结算一次 | 击杀者（可能为空） |
-| [`OnFire`](#timing-onfire) | 标准武器一次实际发射，不要求命中；连发按实际发射次数计，失败尝试不计 | 射击目标；点地时可用落点 |
-| [`OnDeploy`](#timing-ondeploy) | 步兵或简易部署车辆由未部署转为已部署；车辆成功展开为建筑；部署开火车辆完成部署射击 | 无对方，默认作用于自身，展开为建筑时作用于新建筑 |
-| [`OnPromote`](#timing-onpromote) | 观察到持有者等级上升；新造即精英、读档保持原等级均不计。一次观察中跨两级只算一次 | 无对方，默认作用于自身 |
-| [`OnPromoteVeteran`](#timing-onpromote) | 观察到持有者晋升为老兵 | 无对方，默认作用于自身 |
-| [`OnPromoteElite`](#timing-onpromote) | 观察到持有者晋升为精英 | 无对方，默认作用于自身 |
-| [`OnPassiveGained`](#timing-onpassivegained) | 首次在地图上拥有本被动时触发。自带、科研及临时授予均可触发，科研覆盖现役和之后登场的单位。持续持有期间，续期、来源重叠、进出运输车及读档不会重复触发。完全失去后重新获得可再触发。血量等条件在获得时检查。 | 无对方，默认作用于自身 |
-| `OnSignal` | 收到指定自定义信号 | 信号附带目标，发送者可单独筛选 |
-| [`OnPassengerConsumed`](#timing-onpassengerconsumed) | 流火成功消耗一名乘客后，持有该乘客的运输单位触发 | 被消耗的乘客 |
-| [`OnBeforeFire`](#6-开火前替换武器) | 每轮标准齐射前同步选择本轮武器 | 射击目标；点地时没有单位对方 |
-| [`OnInterval`](#5-定时触发) | 每经过 Interval 个游戏帧判定一次 | 当前射击目标，可能为空 |
-| [`WhileState`](#3-持续的状态条件) | 每个游戏帧检查持有者状态 | 检查持有者、所属玩家及配置的附近单位条件 |
-
-#### 各触发时机的目标
-
-`Filter.TargetKind` 用于筛选事件对方，可用英文逗号多选。`Action.Target` 指定结果作用于谁，每个动作单选，造成伤害前和 `StealPassive` 默认 `Target`，其余默认 `Self`。例如受到载具攻击时要给自己回血，填 `Filter.TargetKind=Vehicle` 和 `Action.Target=Self`。
-
-| 触发时机 | 可匹配的 `Filter.TargetKind` | `Action.Target` 可选值与指向 |
+| `Trigger` | When it runs | Event counterpart / formula `Target` |
 | --- | --- | --- |
-| `OnKill` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other` | `Self`、`Attacker` 指击杀者。`Target`、`Victim` 指被击杀者。`VictimLocation` 为死者位置。 |
-| `OnBeforeDealDamage` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other` | `Target`（默认）或 `Victim`，均指本次实际受击单位。 |
-| `OnDealDamage` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other` | `Self`、`Attacker` 指造成伤害的持有者。`Target`、`Victim` 指受害者。`VictimLocation` 为受害者受击时的位置。 |
-| `OnTakeDamage` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | `Self`、`Victim` 指受伤的持有者。`Target`、`Attacker` 指攻击者，可能为空。`VictimLocation` 为持有者受击时的位置。 |
-| `OnBeforeTakeDamage` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | 结果仅可作用于 `Self`；筛选和公式中的 `Target` 为攻击者，可能为空。 |
-| `OnDeath` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | `Self`、`Victim` 指已死亡的持有者。`Target`、`Attacker` 指击杀者，可能为空。`VictimLocation` 为死亡位置。给死者原所属方发钱或科研点用 `Self`。 |
-| `OnFire` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | `Self`、`Attacker` 指开火者。`Target`、`Victim` 指射击目标单位。`VictimLocation` 为发射时记录的目标位置，点地时为瞄准的地面格。 |
-| `OnDeploy` | `All`、`None` | `Self`、`Target`、`Attacker`、`Victim` 均指部署后的单位。载具展开为建筑时均指新建筑。`VictimLocation` 为部署时记录的位置。 |
-| `OnPromote` | `All`、`None` | `Self`、`Target`、`Attacker`、`Victim` 均指持有者。`VictimLocation` 为事件发生时持有者的位置。 |
-| `OnPromoteVeteran`、`OnPromoteElite` | `All`、`None` | 与 `OnPromote` 相同。 |
-| `OnPassiveGained` | `All`、`None` | `Self`、`Target`、`Attacker`、`Victim` 均指持有者。`VictimLocation` 为事件发生时持有者的位置。 |
-| `OnPassengerConsumed` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Other` | `Self` 指运输单位；公式中的 `Target` 是被消耗乘客的信息快照。`StealPassive` 可从记录中夺取该乘客的被动。 |
-| `OnSignal` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | `Self` 为接收者，`Target` 为附带目标，`Sender` 为发送者；发送者可单独筛选。 |
-| `OnBeforeFire` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | 仅 `Self`。`ReplaceWeapon` 替换持有者本轮的武器；筛选条件检查此次瞄准的对象。 |
-| `OnInterval` | `All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None` | `Self`、`Attacker` 指持有者。`Target`、`Victim` 指到点时瞄准的单位。`VictimLocation` 为当时瞄准的单位或地面格的位置。没有目标时，只有自身可用。 |
-| `WhileState` | 使用 `Condition.Nearby.Kinds` 筛选附近单位。 | 不填写 `Action.Target`。持续修正作用于持有者；`Modifier.SpawnPassives` 授予其直属子机。光环按所属方和类型授予范围内的单位。 |
+| `OnKill` | Holder receives a kill. | Killed unit; recorded damage is zero. |
+| `OnBeforeDealDamage` | Synchronous attacker interception before positive health loss. | Actual victim. |
+| `OnDealDamage` | Holder causes actual health loss. | Victim. |
+| `OnBeforeTakeDamage` | Synchronous victim interception before positive health loss. | Attacker, possibly absent. |
+| `OnTakeDamage` | Holder actually loses health. | Attacker, possibly absent. |
+| `OnDeath` | Holder is registered as destroyed; once per death. | Killer, possibly absent. |
+| `OnFire` | A standard shot is emitted, including supported spawned missiles. Burst shots count individually. | Aimed unit; a ground target can supply a recorded point. |
+| `OnBeforeFire` | Before the first shot of a standard volley. | Aimed object; see the restricted replacement contract below. |
+| `OnDeploy` | Supported infantry/simple-deployer posture enters deployed, vehicle deploys into a building, or deploy-fire completes. | No counterpart; action target aliases resolve to the resulting holder/building. |
+| `OnPromote` | Observed rank increases. A direct two-rank jump is one generic event. | None. |
+| `OnPromoteVeteran` | Observed promotion reaches veteran. | None. |
+| `OnPromoteElite` | Observed promotion reaches elite. | None. |
+| `OnPassiveGained` | This passive becomes newly available on the holder. | None. |
+| `OnPassengerConsumed` | Holder's direct passenger is consumed by Starfall's action. | Consumed passenger's saved information. |
+| `OnBuildingUpgrade` | A native building upgrade is successfully installed. | Host building; `Self` is also the host. Bind this passive to the **upgrade type**, not merely the host type. |
+| `OnSignal` | A queued signal matching `Signal` is delivered. | Optional unit attached to the signal; sender is separate. |
+| `OnInterval` | Holder's positive `Interval` elapses while eligible and on-map. | Current aimed unit or ground target at that time. |
+| `WhileState` | Continuous evaluation while eligible. | Current target, where a formula needs it. No action list. |
+| `Active` | A validated player command activates a selected holder. | Selected unit for unit-target skills. Requires Lua. |
 
-只有 `FireWeapon`、`DetonateWarhead`、`SpawnUnit`、`SpawnCrate` 支持 `VictimLocation`。这四项填 `Victim` 时优先使用目标单位；单位已消失或目标为地面格时，使用事件记录的位置。治疗、变形等需要存活单位的动作，在目标死亡或缺失时跳过。`SelfDestruct` 只作用于自身。
+Use `Active`, not the internal name `OnCast`. `OnSuperWeapon`, `OnMapTrigger`, and `OnScheduled` are internal execution contexts, not ordinary `Trigger` values to register.
 
-**事件型被动的筛选与频率**
+Newly created veteran/elite units and rank restored from a save do not count as promotions. Renewing a passive, overlapping sources, reapplying stacks, or loading a save does not repeat acquisition events. Completely losing the passive and later acquiring it can trigger acquisition again.
 
-| 字段 | 默认 | 规则 |
-|---|---|---|
-| `Filter.TargetHouse` | `All` | 多选，英文逗号分隔：`All`、`Self`、`Allies`、`Enemies`、`Neutral`、`None`。`Self` 为同一玩家，`Allies` 为其他盟友，`None` 表示无可判定所属方。 |
-| `Filter.TargetKind` | `All` | 多选，英文逗号分隔：`All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`、`Other`、`None`。`Other` 为其他单位类别，`None` 表示没有对方单位。 |
-| `Condition.MinDamage` | `0` | 本次伤害至少达到该整数才计数。受伤前检查当前待扣生命值；受伤后检查实际损失生命值。 |
-| `Condition.Count` | `1` | 正整数。每个单位的每项技能分别累计 |
-| `Chance` | `100%` | 每轮达标后的触发概率，整数 0～100，可写百分号 |
-| `Cooldown` | `0` | 成功执行后进入冷却，单位为**游戏帧**；冷却中暂停计数 |
-| `MaxTriggers` | `0` | 单位的这项被动最多成功触发几次，0 表示不限。 |
+`OnBuildingUpgrade` obtains its skill list from the installed upgrade type's bindings, then executes against the host. Its event stack snapshot is 1. Failed installations do not emit this event. It does not grant the upgrade's entire passive list permanently to the host.
 
-#### 示例代码
+### Target names
 
-```ini
-[SF_ThirdKillRepair]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Condition.Count=3
-Action=Heal
-Action.Target=Self
-Action.Amount=50
-```
-
-#### 额外补充说明
-
-`OnDealDamage` 和 `OnTakeDamage` 按**实际损失的生命**结算；扣血前先结算攻击者的 `OnBeforeDealDamage`，再结算受击者的 `OnBeforeTakeDamage`。一次范围攻击伤到三个单位，各单位分别判定。击杀事件记录的伤害量为 0，因此击杀回血应使用固定值。普通事件型能力记录事件发生时的血量、电力和隐形状态，随后结算；除死亡事件外，结算时持有者须存活。死亡事件保留死亡位置和所属方，因此可以在自身原位置引爆弹头，或给原所属玩家发钱；死亡后对自己回血不能复活。部署、晋升建议保持默认的阵营与类别筛选 `All`。
-
-不同条件须同时满足；一个筛选字段列多个值时，满足任一值即可。先筛选、检查冷却，再累计次数。到达门槛就清零并判定概率。概率失败，或满血导致实际治疗量为 0，都不开始冷却。比如 `Count=3`（完整键名为 `Condition.Count`）配 `Chance=30%`，就是每三次有效事件获得一次 30% 的机会。
-
-### 3. 持续的状态条件
-
-#### 简要介绍
-
-设置 `Trigger=WhileState` 后，单位在场时每帧检查状态。条件成立并达到等待时间后应用持续结果，条件中断时撤销。
-
-用状态与数量条件判断单位当前是否符合要求。多项条件同时满足时，被动才能生效。
-
-检测附近单位时，按指定范围、阵营和单位类型统计数量，再判断数量是否达到门槛。
-
-#### 参数列表和对应说明
-
-| 字段 | 取值 | 判断内容 |
-|---|---|---|
-| `Condition.OwnerPower` | `Sufficient` / `Low` | 所属玩家基地是否电力充足 |
-| `Condition.SelfMoving` | `yes` / `no` | 按单位移动控制器的实际运动状态判断；驻停写 `no`，建筑按驻停处理。可用于事件和持续被动 |
-| `Condition.SelfPowered` | `Yes` / `No` | 对象自身是否在线供能；停用或受 EMP 时为否 |
-| `Condition.SelfCloak` | `Uncloaked` / `Cloaking` / `Cloaked` / `Uncloaking` | 完全显形、正在隐形、完全隐形、正在显形。取单位自己的状态，与敌方是否探测到它分开判断 |
-| `Condition.Formula` | 如 `$(This.Stack >= 5)` | 表达式非零时满足；支持持续状态和事件条件。 |
-
-
-##### WhileState 的等待时间与部署姿态
-
-| 字段 | 用法 |
-|---|---|
-| `Condition.SelfDeployed` | 只用于 `WhileState`。`yes` 在游戏判定持有者已部署时满足，收起后撤销加成。`no` 在可部署步兵或简易部署车辆处于未部署姿态时满足。普通驻停、展开后生成的建筑、没有部署姿态的单位都不会获得这项已部署加成。 |
-| `Condition.StateDurationSeconds` | 可选，默认 `0`，立即生效。1 游戏秒 = 15 帧，支持最多三位小数，不足一帧向上取整；暂停不走时 |
-
-##### 检测附近单位
-
-| 字段（均以 `Condition.Nearby.` 开头） | 取值与默认 |
-|---|---|
-| `Range` | 使用范围条件时必填 |
-| `Houses` | 多选，英文逗号分隔：`All`、`Self`、`Allies`、`Enemies`、`Neutral`。默认 `All`；`Self` 指同一玩家的其他单位。 |
-| `Kinds` | 多选，英文逗号分隔：`All`、`Infantry`、`Vehicle`、`Aircraft`、`Building`。默认 `All`。 |
-| `CountAtLeast` / `CountAtMost` | 含等号。均省略时要求至少 1 个；只写上限时下限为 0。判断孤立可写 `CountAtMost=0` |
-| `ScanInterval` | 默认 10 个游戏帧，必须为正整数。各持有者错帧扫描，中间复用结果，首次采样前视为未满足；缓存和下次扫描时间随存档保存 |
-
-#### 示例代码
-
-基地供电充足且单位完全隐形满 3 游戏秒时，移速提高 20%。任一条件中断，等待计时重置，已生效的加成撤销。
-
-```ini
-[SF_CloakedDrive]
-Trigger=WhileState
-Condition.OwnerPower=Sufficient
-Condition.SelfCloak=Cloaked
-Condition.StateDurationSeconds=3
-Modifier.SpeedMultiplier=1.20
-```
-
-**部署姿态示例。** 把下面的被动绑定到美国大兵（`E1`）、重装大兵（`GGI`）或辐射工兵（`DESO`），部署期间射速提高 25%。如需在架设后再等待 2 个游戏秒，加上 `Condition.StateDurationSeconds=2`；中途收起会重新计时。需要在部署瞬间执行一次动作时使用 `OnDeploy`。
-
-```ini
-[SF_EntrenchedFire]
-Trigger=WhileState
-Condition.SelfDeployed=yes
-Modifier.FireRateMultiplier=1.25
-```
-
-```ini
-[SF_EscortArmor]
-Trigger=WhileState
-Condition.Nearby.Range=4
-Condition.Nearby.Houses=Self
-Condition.Nearby.Kinds=Vehicle
-Condition.Nearby.CountAtLeast=2
-Modifier.ArmorMultiplier=1.20
-```
-
-#### 额外补充说明
-
-`Condition.Formula` 使用 `$(表达式)`。表达式结果非零时满足条件，0 不满足；比较运算返回 1 或 0，可用乘法组合多个必须同时满足的比较。`Self.Ammo` 是当前弹药（无限弹药为 -1），`Self.Passengers` 是当前乘客人数，空载为 0。持续状态每帧读取当前数据；事件型被动读取事件发生时的快照。条件中缺少目标、除零或结果无效时视为不满足，持续状态的等待计时会重置。
-
-```ini
-[SF_FiveStacks]
-Trigger=WhileState
-Stack.Max=10
-Condition.Formula=$(This.Stack >= 5)
-Modifier.FirepowerMultiplier=1.25
-
-[SF_LoadedCarrier]
-Trigger=WhileState
-Condition.Formula=$((Self.Ammo >= 1) * (Self.Passengers >= 2))
-Modifier.SpeedMultiplier=1.20
-```
-
-旧的 `Condition.SelfHealthAtLeast/AtMost`、`Condition.AmmoAtLeast/AtMost`、`Condition.PassengersAtLeast/AtMost` 已移除，继续使用将停用该被动并记录到 `Starfall.log`。例如半血及以下改为 `Condition.Formula=$(Self.Health <= Self.MaxHealth * 50%)`；弹药为 1～3 改为 `Condition.Formula=$((Self.Ammo >= 1) * (Self.Ammo <= 3))`。
-
-**单位不在地图时。** 当游戏将进入建筑或载具的单位标记为不在地图上或处于 `InLimbo` 时，流火暂停该单位的 `WhileState` 条件计算并撤销对应的持续修正。单位返回地图后，若被动仍有效且条件满足，持续修正会重新生效；配置的状态等待时间需要重新计算。`OnInterval` 在此期间不触发，返回后从头计算周期。之前通过事件累计获得的属性变化独立保存，不会仅因临时被动到期而自动撤销。
-
-`WhileState` 段支持 `Trigger`、上述状态条件、等待秒数、持续修正和动画字段。混入 `Action.*`、`Action`、`Filter.*`、`Chance`、`Cooldown` 或 `Condition.Count` 等不兼容字段时，整项技能不加载。可在游戏根目录的 `Starfall.log` 查看冲突字段。
-
-用 `Condition.Nearby.Range` 指定 1～32 格的整数半径，按地图格的平面圆形范围统计。持有者自己不计，跨格建筑和重复枚举的对象只计一次。非友方隐形单位须在本方探测覆盖内，伪装单位须能被本方识破。
-
-大规模对局可缩小检测半径或延长扫描间隔，以减少扫描次数和范围。
-
-### 4. 事件触发时机详解
-
-<a id="timing-onkill"></a>
-
-#### 击杀时
-
-##### 简要介绍
-
-当游戏把一次击杀归给被动持有者时，持有者判定一次。阵营和单位类型筛选针对被击杀的单位。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnKill` | 持有者消灭一个目标时判定，事件对方是被击杀者。 |
-| `Filter.TargetHouse=Enemies` | 按事件对方的所属方筛选。 |
-| `Action=GiveCredits` | 给动作目标的所属方增加资金。 |
-| `Action.Amount=75` | 本次奖励或治疗的固定点数。 |
-
-##### 示例代码
-
-每击杀一个敌人，给持有者所属方增加 75 资金。
-
-```ini
-[SF_KillBounty]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Action=GiveCredits
-Action.Amount=75
-```
-
-##### 额外补充说明
-
-击杀事件中的伤害值为 0。计算击杀奖励时可填固定金额，按伤害比例吸血应使用 `OnDealDamage`。
-
-<a id="timing-onbeforedealdamage"></a>
-
-#### 造成伤害前
-
-持有者对单位造成正数伤害时，在装甲和弹头计算后、扣血前判定。范围攻击对每个受击单位分别判定。先处理攻击方被动，再将剩余伤害交给受击方的 `OnBeforeTakeDamage`。伤害归零后停止。
-
-| 参数 | 说明 |
+| Name | Ordinary event meaning |
 | --- | --- |
-| `Self`、`Target` | 公式中的 `Self` 是攻击者，`Target` 是本次实际受击单位。双方血量取扣血前的值。 |
-| `Action` | `SetDamage` 用 `Action.Amount` 设置本次伤害，小数向下取整。`BlockDamage` 将其归零。两种动作均可用于 `Actions`。 |
-| `Event.Damage` | 当前待扣生命值，后续动作会读到前一步修改后的值。 |
+| `Self` | Holder. For death actions, the saved owner/location remains usable by appropriate actions. |
+| `Target` | Counterpart: victim for outgoing damage/kill; attacker for incoming damage/death; aimed unit for firing/interval; attached unit for signals. |
+| `Attacker` | Recorded attacker. It need not be alive when the queued action executes. |
+| `Victim` | Recorded victim. Positional actions can fall back to its recorded location. |
+| `VictimLocation` | Recorded impact/victim position; only positional actions accept this. |
+| `Sender` | Signal sender; allowed only in `OnSignal`. |
 
-给攻击者绑定以下被动后，对低于半血的敌人造成 150% 伤害。目标恰好半血时按原伤害结算。
+For deploy, promotion, and passive-acquisition actions, `Target` resolves to `Self`, although their event counterpart for filtering/formulas is absent. Building-upgrade events explicitly use the host as both holder and counterpart.
 
-```ini
-[SF_Finisher]
-Trigger=OnBeforeDealDamage
-Filter.TargetHouse=Enemies
-Condition.Formula=$(Target.Health < Target.MaxHealth * 50%)
-Action=SetDamage
-Action.Amount=$(Event.Damage * 150%)
-```
+Default `Action.Target` is `Target` for `StealPassive` and `OnBeforeDealDamage`; otherwise it is `Self`. `SelfDestruct` and `ReplaceWeapon` require `Self`. Damage-interception targeting is more restrictive than ordinary targeting.
 
-<a id="timing-ondealdamage"></a>
+The positional actions are exactly `FireWeapon`, `DetonateWarhead`, `SpawnUnit`, `SpawnCrate`, `PlayAnim`, `PlaySound`, `ShakeScreen`, and `SpawnParticleSystem`. They accept `VictimLocation`; Lua can supply a point table as their `Target`. A missing/dead unit does not become a valid heal or transformation target merely because its old position is known.
 
-#### 造成伤害时
+### Event pipeline and snapshots
 
-##### 简要介绍
+Filters and conditions must pass together. Values within one filter list are alternatives. Cooldown suppresses counting. Qualifying events increment `Condition.Count`; reaching the threshold resets the count and rolls `Chance`. Failed probability or an entirely ineffective action group does not start cooldown. Successful action groups start cooldown and count toward `MaxTriggers`.
 
-当被动持有者造成的伤害使目标实际损失生命值时，持有者判定一次。一次范围攻击伤到多个单位，会按每个受害者分别判定。
+Ordinary events are queued. Event health, cost, ammo, passenger count, stack count, and relevant position/state values are snapshots. Earlier healing or stacking in the same action group does not rewrite the original formula snapshot. Native actions still check live object eligibility. `ConsumePassenger` is a specific exception: it supplies the consumed passenger's snapshot to subsequent steps in that action context.
 
-##### 参数列表和对应说明
+Except for supported death/location/owner paths, an ordinary queued callback needs a living holder. Healing a dead holder does not resurrect it. Area damage is evaluated separately for each actual victim. Damage caused by a Starfall passive is protected against normal passive-damage feedback; do not design an unbounded retaliation chain around it.
 
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnDealDamage` | 持有者使一个目标实际损失生命时判定，事件对方是受害者。 |
-| `Condition.MinDamage` | 可选。单次实际损失的生命值达到此门槛才计入，默认 0。 |
+### Synchronous damage interception
 
-##### 示例代码
+Order: attacker `OnBeforeDealDamage`, then victim `OnBeforeTakeDamage`, then health loss, then actual-loss events. `Event.Damage` in interception is the current pending health loss after preceding changes, rather than the weapon's nominal damage.
 
-每次伤到敌人，按实际损血的 25% 治疗自身。例如造成 40 点实际伤害可恢复 10 点。
+- Allowed INI actions: `SetDamage`, `BlockDamage`, and `RunScript` callbacks using the interception API.
+- Outgoing interception targets `Target` or `Victim`; incoming interception targets `Self`.
+- Lua native action calls during interception are limited to `SetDamage` and `BlockDamage`, acting on this victim.
+- `SetDamage` requires a nonnegative integer or supported formula. `BlockDamage` takes no amount.
+- These actions cannot be moved into an ordinary delayed callback to alter damage that already happened.
+- Zero/negative engine damage, healing, forced damage that bypasses the relevant engine path, and damage absorbed before health loss are not interchangeable with this path.
 
-```ini
-[SF_LifeDrain]
-Trigger=OnDealDamage
-Filter.TargetHouse=Enemies
-Action=Heal
-Action.Target=Self
-Action.PercentOfDamage=25%
-```
-
-##### 额外补充说明
-
-范围弹头伤到多个单位时按受害者分别结算。护盾吸收全部伤害时不会触发。
-
-<a id="timing-onbeforetakedamage"></a>
-
-#### 受到伤害前
-
-`Trigger=OnBeforeTakeDamage` 在本次正数伤害经过装甲和弹头伤害计算后、扣除生命前同步执行。`Event.Damage` 是此时的待扣生命值，可能高于当前生命；`Self` 是受击者，`Target` 是攻击者。支持常规筛选、`Condition.Count`、`Condition.MinDamage`、`Chance`、`Cooldown`、`MaxTriggers` 和触发动画。
+**Fragment** to halve incoming pending damage:
 
 ```ini
-[Starfall.PassiveTypes]
-0=SF_BlockOnce
-1=SF_HalfDamage
-
-; 每个单位首次受到有效伤害时抵挡这次伤害。
-[SF_BlockOnce]
-Trigger=OnBeforeTakeDamage
-MaxTriggers=1
-Action=BlockDamage
-
-; 只受敌人造成的伤害，伤害按 50% 结算。
 [SF_HalfDamage]
 Trigger=OnBeforeTakeDamage
-Filter.TargetHouse=Enemies
 Action=SetDamage
+Action.Target=Self
 Action.Amount=$(Event.Damage * 50%)
 ```
 
-`BlockDamage` 将本次待扣生命值设为 0；`SetDamage` 将其设为 `Action.Amount` 指定的非负整数或公式结果，小数向下取整，结果为 0 同样完全抵挡。超出整数范围、负数、除零或缺少公式需要的攻击者时，本动作跳过。此触发时机只支持这两个动作，也可用 `Actions` 列表组合；它们只作用于自身。列表和多个被动按处理顺序执行，后续公式读取前一步修改后的 `Event.Damage`，伤害为 0 后不再执行后续受伤前被动。
-
-每次对单位的伤害结算单独判定，同一帧的连发也逐次判定。原始输入为零或治疗、已被原生免疫或第三方护盾完全吸收的伤害不消耗次数；原游戏或其他扩展可能把零伤害转换为最少 1 点，这种原生扣血仍可能发生。强制伤害按游戏的绕过防御规则处理，不触发本能力。完全抵挡后没有实际损血，不触发 `OnTakeDamage` 或 `OnDealDamage`；弹头的其他效果由游戏和相关扩展处理。
-
-`MaxTriggers` 是同一单位、同一被动的累计成功上限，随存档保存；暂时移除后重新授予同名被动不会重置。若要周期性抵挡，可以不设置上限，改用 `Cooldown`。有效的 `SetDamage` 即使算出与原伤害相同，也算一次成功；无效公式不计成功次数。
-
-<a id="timing-ontakedamage"></a>
-
-#### 受到伤害时
-
-##### 简要介绍
-
-当被动持有者受到伤害并实际损失生命值时，从受击方判定。事件记录本次损失的生命值；若有攻击者，攻击者就是事件对方。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnTakeDamage` | 持有者实际损失生命时判定，事件对方是攻击者。 |
-| `Condition.MinDamage` | 可选。单次实际损失的生命值达到此门槛才计入，默认 0。 |
-
-##### 示例代码
-
-一次实际损血达到 20 点，就给受击者所属方增加 2 科研点。
-
-```ini
-[SF_DamageStudy]
-Trigger=OnTakeDamage
-Condition.MinDamage=20
-Action=GiveResearchPoints
-Action.Amount=2
-```
-
-##### 额外补充说明
-
-门槛按单次损血判断，两次各损失 10 点不能合并达到门槛。
-
-<a id="timing-ondeath"></a>
-
-#### 死亡时
-
-##### 简要介绍
-
-当被动持有者被摧毁时，针对这次死亡判定一次。事件保留持有者死亡时的位置和所属方；若有击杀者，击杀者就是事件对方。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnDeath` | 持有者被摧毁时判定一次，事件对方是击杀者。 |
-
-##### 示例代码
-
-单位被摧毁时，给它死亡时的所属方返还 100 资金。
-
-```ini
-[SF_LossRefund]
-Trigger=OnDeath
-Action=GiveCredits
-Action.Target=Self
-Action.Amount=100
-```
-
-##### 额外补充说明
-
-击杀者可能为空。对已经死亡的持有者执行治疗不能复活它。
-
-<a id="timing-onfire"></a>
-
-#### 实际开火时
-
-##### 简要介绍
-
-当被动持有者的标准武器成功发射时判定，无需等待命中。同一轮连发中，每次实际发射都单独判定。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnFire` | 持有者的标准武器成功发射时判定，事件对方是射击目标。 |
-
-##### 示例代码
-
-每实际发射四次，给本方增加 1 科研点。
-
-```ini
-[SF_FiringDrill]
-Trigger=OnFire
-Condition.Count=4
-Action=GiveResearchPoints
-Action.Amount=1
-```
-
-##### 额外补充说明
-
-按实际发射次数计数，连发中的各发分别计数。无需命中；未能发射的尝试不计。
-
-<a id="timing-ondeploy"></a>
-
-#### 部署时
-
-##### 简要介绍
-
-当被动持有者完成部署时判定，包括步兵架设、简易部署车辆进入部署姿态、车辆展开为建筑，以及部署开火车辆完成部署射击。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnDeploy` | 步兵架设、简易部署车辆进入部署姿态、车辆展开为建筑或完成部署射击时判定。 |
-
-##### 示例代码
-
-部署成功时为自身恢复 30 点生命。车辆展开为建筑时，治疗作用于新建筑。
-
-```ini
-[SF_DeployRepair]
-Trigger=OnDeploy
-Action=Heal
-Action.Target=Self
-Action.Amount=30
-```
-
-##### 额外补充说明
-
-收起不触发。若希望在整个部署期间持续增益，使用 `WhileState` 和 `Condition.SelfDeployed=yes`。
-
-<a id="timing-onpromote"></a>
-
-#### 晋升时
-
-##### 简要介绍
-
-当游戏观察到被动持有者的等级上升时判定。单位登场或读档时已经拥有的等级作为起点。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnPromote` | 持有者的等级上升时判定。 |
-| `Trigger=OnPromoteVeteran` | 持有者晋升为老兵时判定。 |
-| `Trigger=OnPromoteElite` | 持有者晋升为精英时判定。 |
-
-##### 示例代码
-
-每次观察到晋升，给本方增加 200 资金；晋升精英时额外恢复 100 点生命。
-
-```ini
-[SF_PromotionBonus]
-Trigger=OnPromote
-Action=GiveCredits
-Action.Amount=200
-
-[SF_EliteBonus]
-Trigger=OnPromoteElite
-Action=Heal
-Action.Amount=100
-```
-
-##### 额外补充说明
-
-新造时已有的等级、读档时恢复的等级都不计。一次观察中从新兵直接升为精英时，`OnPromote` 和 `OnPromoteElite` 各判定一次，`OnPromoteVeteran` 不判定。若单位同时持有通用和对应等级的晋升被动，两者都会分别判定。
-
-<a id="timing-onpassivegained"></a>
-
-#### 获得被动时
-
-##### 简要介绍
-
-当单位在地图上首次持有这项被动时判定。自带、科研和临时授予均可触发；完全失去该被动后重新获得，可再次判定。
-
-##### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnPassiveGained` | 单位首次在地图上持有这项被动时判定。单位自带、科研授予和临时授予均可触发。 |
-
-##### 示例代码
-
-单位获得这项被动时，给本方增加 3 科研点。
-
-```ini
-[SF_EntryBonus]
-Trigger=OnPassiveGained
-Action=GiveResearchPoints
-Action.Amount=3
-```
-
-##### 额外补充说明
-
-同名来源重叠、临时授予续期或读档不会重复发放。完全失去该被动后重新获得，可再次触发。
-
-### 自定义信号
-
-`Action=SendSignal` 向持有 `Trigger=OnSignal` 的单位发送自定义信号。信号 ID 不需要注册，英文名称不区分大小写。
-
-| 参数 | 说明 |
-|---|---|
-| `Action.Signal` | 发送的信号 ID，必填。 |
-| `Action.Target` | 接收范围的中心单位，默认 `Self`；`Target`、`Attacker`、`Victim` 均可用于事件对应的单位。 |
-| `Action.Signal.Range` | `0` 只发送给中心单位；正数为范围半径（格），最大 128；`-1` 为全图。默认 `0`。 |
-| `Action.Signal.Houses` | 相对发送者的 `Self`、`Allies`、`Enemies`、`Neutral`、`All`，默认 `Self`，可多选。 |
-| `Action.Signal.IncludeSelf` | 范围或全图广播是否包含发送者，默认 `no`；直接发送给自身不受此项影响。 |
-| `Action.Signal.Target` | 附带的单位，填 `Self`、`Target`、`Attacker`、`Victim`，在信号接收事件中还可填 `Sender`；省略表示没有附带目标。 |
-| `Action.Signal.Value` | 携带的数值，可填数值或公式，默认 `0`；在发送时计算并保存。 |
-| `Trigger=OnSignal`、`Signal` | 收到指定 `Signal` 时判定，支持普通次数、概率和冷却。 |
-| `Filter.SenderHouse`、`Filter.SenderKind` | 筛选发送者的所属方与单位类别，默认 `All`；所属方相对接收者。`Filter.TargetHouse` 和 `Filter.TargetKind` 筛选附带目标。 |
-
-```ini
-[Starfall.PassiveTypes]
-100=SF_FireSignal
-101=SF_ReceiveFocus
-
-[SF_FireSignal]
-Trigger=OnFire
-Action=SendSignal
-Action.Signal=FocusFire
-Action.Target=Self
-Action.Signal.Range=5
-Action.Signal.Houses=Self
-Action.Signal.Target=Target
-Action.Signal.Value=10
-
-[SF_ReceiveFocus]
-Trigger=OnSignal
-Signal=FocusFire
-Filter.SenderHouse=Self
-Filter.TargetHouse=Enemies
-Condition.Formula=$(Target.Health < Target.MaxHealth * 50%)
-Action=FireWeapon
-Action.Target=Target
-Action.Weapon=SupportWeapon
-```
-
-`SupportWeapon` 应换成已注册的武器 ID。接收时 `Self` 是接收者，`Target` 是附带目标，`Sender` 是发送者；公式支持 `Target.Health`、`Target.MaxHealth`、`Target.Cost`、`Sender.Health`、`Sender.MaxHealth`、`Sender.Cost`、`Event.SignalValue`。`Event.Distance` 为接收者到附带目标的距离。`Action.Target=Sender` 可将结果作用于仍存活的发送者。
-
-发送时固定接收者、附带目标和数值等快照，排队于后续帧结算。死亡或失去接收被动的接收者跳过；附带目标或发送者已失效时仍可读取快照，但需要存活对象的结果跳过。只向地图上存活单位发送，车内乘客和驻军不作为独立接收者。有效投递至少一份即算发送成功；最终动作是否生效由接收方判定。单条连锁最多 16 层、1024 次投递，超限停止并记录日志；待处理信号和预算随存档保存。
-
-<a id="timing-onpassengerconsumed"></a>
-
-#### 消耗乘客时
-
-流火的 `Action=ConsumePassenger` 成功消耗乘客后，运输单位持有的 `Trigger=OnPassengerConsumed` 被动触发。`Self` 是运输单位，`Target` 是被消耗乘客：公式可以读取乘客消耗前的 `Target.Health`、`Target.MaxHealth` 和基础 `Target.Cost`，筛选条件也使用乘客的类别和所属方。`Self.Passengers` 是消耗后的剩余数量。
-
-```ini
-[Starfall.PassiveTypes]
-0=SF_EatPassenger
-1=SF_DigestPassenger
-
-[SF_EatPassenger]
-Trigger=OnInterval
-Interval=150
-Action=ConsumePassenger
-
-[SF_DigestPassenger]
-Trigger=OnPassengerConsumed
-Filter.TargetKind=Infantry
-Action=Heal
-Action.Target=Self
-Action.Amount=$(Target.Cost * 50%)
-
-[YOUR_TRANSPORT]
-Starfall.Passives=SF_EatPassenger,SF_DigestPassenger
-```
-
-流火在消耗前记录直属乘客实际持有的被动及层数。将上例的消化被动替换为下例，就会从列表中的每项被动最多夺取 2 层。0 层被动也可整项获得。
-
-```ini
-[SF_DigestPassenger]
-Trigger=OnPassengerConsumed
-Action=StealPassive
-Action.Target=Target
-Action.Passive=SF_Rage,SF_Armor
-Action.Amount=2
-```
-
-也可在同一组 `Actions` 中先消耗、再夺取。后续动作和运输单位的消耗事件共用这名乘客的剩余层数。每次夺取只扣除实际转移的部分；每名乘客单独记录。事件结算完毕后，未夺取的部分随记录释放。
-
-`ConsumePassenger` 每次从目标的乘客列表中移除首个乘客，通常是最后进入的一名。如果首位乘客也是载具，会从内向外消耗它和全部嵌套乘客，外层运输单位只触发一次 `OnPassengerConsumed`。`Target.Health`、`Target.MaxHealth` 和 `Target.Cost` 只取这名直属乘客消耗前的值。正常装载时，被寄生的单位无法登车。若运输单位空载，或现有乘客列表异常（如强制装载了被寄生的乘客），本次动作失败；同一 `Actions` 列表中它后面的动作不再执行，之前执行的动作不回滚。成功后，同一列表里后续公式的 `Target` 快照也改为刚消耗的乘客；其他被动仍读取原事件的对方。乘客已经移除，后续要求存活目标的 `Action.Target=Target` 不会作用于原事件对方。这个结果处理运输单位的乘客列表，不包括驻扎建筑的独立驻军列表。
-
-乘客消耗事件在移除后排队结算，信息和待处理事件随存档保存。它只由流火的 `ConsumePassenger` 产生，不覆盖其他扩展或游戏原生的乘客消耗逻辑。流火不会因此主动产生乘客死亡或击杀被动事件。
-
-### 5. 定时触发
-
-#### 简要介绍
-
-持有被动的单位在地图上每经过一个指定周期判定一次。周期按游戏帧计算，单位静止时也会计时。
-
-#### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnInterval` | 每个单位的每项技能独立计时。 |
-| `Interval` | 必填正整数，单位为游戏帧。90 帧约为 6 个游戏秒。 |
-
-#### 示例代码
-
-```ini
-[SF_PeriodicRepair]
-Trigger=OnInterval
-Interval=90
-Action=Heal
-Action.Target=Self
-Action.Amount=15
-```
-
-#### 额外补充说明
-
-`Trigger=OnInterval` 必须填写正整数 `Interval`。单位在地图上拥有该技能后，先等满一个周期；不同单位、不同技能各自计时。到点时再检查血量、电力、目标筛选、次数、概率和冷却，本次未生效仍按原周期继续。筛选中的对方是单位当前的攻击目标。没有攻击目标时可照常对自身执行动作，普通单位目标动作须有存活目标。离开地图或失去技能会重置计时，存读档保留进度。
-
-示例中若加上 `Condition.Count=2`，则每两次合格的定时事件治疗一次。
-
-### 6. 开火前替换武器
-
-#### 简要介绍
-
-被动持有者开始一轮标准武器齐射时，在第一发射出前同步判定一次。同一轮连发沿用这次判定。
-
-#### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Trigger=OnBeforeFire` | 在当前齐射开始时同步判定。 |
-| `Action=ReplaceWeapon` | 使用一个替换武器动作。 |
-| `Action.Weapon` | 填准备替换使用的武器 ID。 |
-
-#### 示例代码
-
-```ini
-[SF_SpecialShot]
-Trigger=OnBeforeFire
-Filter.TargetHouse=Enemies
-Action=ReplaceWeapon
-Action.Weapon=120mm
-```
-
-#### 额外补充说明
-
-筛选中的对方是射击目标。点地开火时没有单位对方。
-
-`OnBeforeFire` 与其他事件的延迟结算不同：它在当前一轮开火时同步执行，只支持一个 `Action=ReplaceWeapon` 和一个 `Action.Weapon`，按确定的条件选择替代武器。
-
-单位使用原武器寻找目标并准备开火；如果替代武器未配置完整、不支持对空或对地、被禁用，或未通过开火和射程检查，本轮沿用原武器。替代武器射程更长不会扩大原武器的寻敌范围。同一轮连发保持首次选定的武器，即使被动在连发途中失效；连发中的选择随存档保存。单位成功开火后仍按原规则触发 `OnFire`。本版针对标准主、副武器槽；特殊多武器、乘员开火和扩展自定义武器判定需要另外验证。
-
-允许目标所属方、目标类别和普通自身状态筛选；不支持 `Actions` 多结果、`Chance` 随机概率、`Cooldown`、`MaxTriggers`、`Condition.Count`（须为默认 1）、`Condition.MinDamage` 或 `TriggerAnim`。多个开火前替换被动同时符合条件时使用处理顺序中的第一个；被选武器不能使用时回退原武器，不再尝试其他被动。
-
-### 7. 一次性结果总表
-
-事件触发时，每个 `Action` 执行一次。直接写 `Action=` 可指定一个结果，通过 `Actions=` 可依次执行多个结果。治疗、生成单位等动作立即结算，永久属性修正则保存在目标单位身上。
-
-| `Action` | 配套参数 | 适用目标 | 效果 |
+### Synchronous weapon replacement
+
+`OnBeforeFire` requires exactly one `ReplaceWeapon` action and a valid `Action.Weapon`. It rejects `Actions`, non-default count/probability/cooldown/trigger limits/minimum damage, and `TriggerAnim`. Use default `Condition.Count=1`, `Chance=100%`, `Cooldown=0`, `MaxTriggers=0`, and `Condition.MinDamage=0`.
+
+The first qualifying replacement is considered. If it cannot fire at the target, the original weapon is used; subsequent replacements are not tried. Original targeting/pursuit does not gain the replacement weapon's longer range. The selected weapon remains fixed through the volley and is saved mid-burst. Standard primary/secondary slots are the supported scope; unusual extension-specific firing paths require separate validation.
+
+## Filters and state conditions
+
+### Ordinary event fields
+
+| Field | Default | Type and constraint |
+| --- | --- | --- |
+| `Filter.TargetHouse` | `All` | List: `All,Self,Allies,Enemies,Neutral,None`. `Self` means same owner; `Allies` means other allies. |
+| `Filter.TargetKind` | `All` | List: `All,Infantry,Vehicle,Aircraft,Building,Other,None`. |
+| `Condition.MinDamage` | `0` | Nonnegative integer. Actual lost health for damage events; pending loss for interception. |
+| `Condition.Count` | `1` | Positive integer; per unit and passive. |
+| `Chance` | `100%` | Integer `0..100`, optional `%` suffix. |
+| `Cooldown` | `0` | Nonnegative frame count after success. |
+| `MaxTriggers` | `0` | Nonnegative successful-trigger cap; zero means unlimited. |
+| `Interval` | none | Positive frames, required only for `OnInterval`; invalid on other triggers. |
+| `Stack.Max` | `2147483647` | Positive stack cap. Initial stacks are zero. |
+| `Condition.Formula` | none | `$(...)`; nonzero means true. See formula restrictions. |
+
+`None` matches an absent counterpart/owner. For deploy/promotion/acquisition, leave filters at `All` unless deliberately testing absence. `Vehicle` includes ships; flying infantry remain `Infantry` because categories follow engine object types.
+
+### Shared holder-state conditions
+
+| Field | Allowed values | Meaning |
+| --- | --- | --- |
+| `Condition.OwnerPower` | `Sufficient`, `Low` | Owning house's power situation. |
+| `Condition.SelfPowered` | `yes`, `no` | Holder's own online/powered state. |
+| `Condition.SelfMoving` | `yes`, `no` | Actual locomotor movement; buildings are stationary. |
+| `Condition.SelfCloak` | `Uncloaked`, `Cloaking`, `Cloaked`, `Uncloaking` | Holder's own cloak state, distinct from enemy detection. |
+| `Condition.Formula` | expression | Event snapshot for events; current values for continuous evaluation. |
+
+### WhileState-only conditions
+
+| Field | Default | Constraint / behavior |
+| --- | --- | --- |
+| `Condition.SelfDeployed` | omitted | `yes` / `no` for supported infantry/simple-deployer postures. A stationary unit or a deployed-into building is not automatically a deployed-posture unit. |
+| `Condition.StateDurationSeconds` | `0` | Nonnegative decimal game seconds, up to three decimal places; multiply by 15 and round fractional frames upward. Interruption resets the wait. |
+| `Condition.Nearby.Range` | none | Required when using nearby conditions; integer `1..32` cells. |
+| `Condition.Nearby.Houses` | `All` | List: `All,Self,Allies,Enemies,Neutral`. |
+| `Condition.Nearby.Kinds` | `All` | List: `All,Infantry,Vehicle,Aircraft,Building`. |
+| `Condition.Nearby.CountAtLeast` | `1`, or `0` if only an upper bound is supplied | Nonnegative inclusive bound. |
+| `Condition.Nearby.CountAtMost` | `2147483647` | Inclusive bound, at least the lower bound. |
+| `Condition.Nearby.ScanInterval` | `10` | Positive frames; staggered sampling, cached between scans. Before first sample, condition is false. |
+
+Nearby counting uses a planar circular cell range, excludes the holder, and deduplicates objects/buildings. Hostile cloaked/disguised objects must satisfy the visibility/detection checks. Nearby cache progress is saved.
+
+A `WhileState` definition needs a state condition and a modifier or supported visual result. Use `Condition.Formula=$(1)` for an always-true condition. Passenger support via `Modifier.TransportPassives` is the exception that can omit a condition. Event-only fields such as `Action.*`, `Actions`, `Filter.*`, `Chance`, and `Condition.Count` are invalid in `WhileState`.
+
+Leaving the map or entering limbo normally suspends continuous evaluation and removes its modifiers; re-entry restarts any wait. Interval progress restarts when the holder becomes eligible again. Timed grant expiry still advances while the unit is inside a transport or building. See the passenger-support exception below.
+
+## Continuous modifiers and passive ownership
+
+### Modifier catalog
+
+All following fields belong to a `WhileState` passive. Omitted numeric multipliers contribute identity `1`; omitted switches contribute no effect.
+
+| Field | Accepted value | Effect |
+| --- | --- | --- |
+| `Modifier.SpeedMultiplier` | Number or formula, `0 < value <= 100` | Mobile unit speed. |
+| `Modifier.FirepowerMultiplier` | Number or formula, `0 < value <= 100` | Firepower. |
+| `Modifier.ArmorMultiplier` | Number or formula, `0 < value <= 100` | Armor strength; higher means more resistant. |
+| `Modifier.WeaponRangeMultiplier` | Number or formula, `0 < value <= 100` | Standard maximum weapon range. |
+| `Modifier.FireRateMultiplier` | Number or formula, `0 < value <= 100` | Divide standard volley rearm delay by this value; does not rewrite intra-burst delays. |
+| `Modifier.PowerMultiplier` | Number or formula, `0 <= value <= 100` | This building's supply or drain; zero is allowed. |
+| `Modifier.VisualScale` | Fixed number `0.01..2.00` | Mobile-unit drawing scale, not footprint. |
+| `Modifier.ProjectileScale` | Fixed number `0.50..2.00` | Projectile, impact explosion, and existing `CellSpread` scale at launch. |
+| `MultiShot` or `Modifier.MultiShot` | Nonnegative integer, formula, `yes`, or `no` | Extra distinct targets; specify only one alias. `yes` means `$(This.Stack)`, `no` means zero. |
+| `Modifier.DisablePrimary` | `yes` / `no` | Disable standard primary slot. |
+| `Modifier.DisableSecondary` | `yes` / `no` | Disable standard secondary slot. |
+| `Modifier.PrimaryWeapon` | Existing weapon ID | Replace standard primary slot. |
+| `Modifier.SecondaryWeapon` | Existing weapon ID | Replace standard secondary slot. |
+| `Modifier.EMP` | `yes` / `no` | Starfall-managed stoppage; airborne vehicles/aircraft can crash. |
+| `Modifier.Berserk` | `yes` / `no` | Non-building berserk behavior, including friendly attacks. |
+| `Modifier.Mirage` | `yes` / `no` | Vehicle stationary disguise behavior. |
+| `Modifier.Cloakable` | `yes` / `no`, default `no` | Grant native cloaking capability while the state is active; retain native cloak/decloak rules. |
+| `Modifier.Immune` | `yes` / `no` | Native-style immunity to ordinary health damage. |
+| `Modifier.ImmuneToMindControl` | `yes` / `no` | Block supported new mind-control attempts; does not release existing control. |
+| `Modifier.SpawnPassives` | Registered passive ID list | Give passives to direct native `Spawns=` children. |
+| `Modifier.TransportPassives` | Registered passive ID list | Passenger grants passives to its direct ground-vehicle transport. |
+| `Modifier.TransportPassives.Stack` | `yes` / `no`, default `no` | Each contributing passenger provides one source-owned layer when enabled. Requires `Modifier.TransportPassives`. |
+
+Continuous multipliers from different active passives multiply. Permanent event changes are a separate base: accumulated firepower 120% and continuous multiplier 1.5 produce 180%; leaving the state returns to 120%.
+
+Permanent event bases are bounded by `[Starfall.PassiveLimits]`. Each upper/lower limit is a positive integer percentage, optionally suffixed with `%`; lower must not exceed upper. These limits bound accumulated event values, not the final product with continuous multipliers.
+
+| Upper-limit field | Default upper | Lower-limit field | Default lower |
 | --- | --- | --- | --- |
-| `Heal` | `Action.Amount`（正整数或公式）与 `Action.PercentOfDamage`（实际伤害的正整数百分比）二选一 | 单位 | 恢复目标的生命，最多恢复到当前生命上限。 |
-| `Damage` | `Action.Amount`（正整数或公式）与 `Action.PercentOfDamage`（实际伤害的正整数百分比）二选一 | 单位 | 对目标造成基础伤害，实际掉血由游戏结算。 |
-| `SetDamage` | `Action.Amount`（非负整数或公式） | 受击者 | 用于造成伤害前或受到伤害前，将本次待扣生命值设为指定数值；0 表示抵挡。 |
-| `BlockDamage` | 无专用参数 | 受击者 | 用于造成伤害前或受到伤害前，完全抵挡本次待扣生命值。 |
-| `GiveCredits` | `Action.Amount`（正整数或公式）与 `Action.PercentOfDamage`（实际伤害的正整数百分比）二选一 | 单位 | 给目标的所属方增加资金。 |
-| `GiveResearchPoints` | `Action.Amount`（正整数或公式）与 `Action.PercentOfDamage`（实际伤害的正整数百分比）二选一 | 单位 | 给目标的所属方增加科研点。 |
-| `ChangeMaxHealth` | `Action.Amount`（非零整数，可正可负）与 `Action.MaxHealthPercent`（1%～10000%）二选一 | 单位 | 永久调整最大生命。百分比按生效前的上限计算，只能增加。上限增加时同步回血，降低时只截去超过新上限的生命。 |
-| `ChangeAmmo` | `Action.Amount`（非零整数，可正可负） | 单位 | 补充或扣除弹药，结果限于 0 至弹仓容量。 |
-| `ConsumePassenger` | 无专用参数 | 单位 | 消耗目标的首位乘客及其全部嵌套乘客；仅为直属乘客触发一次目标的 `OnPassengerConsumed`。 |
-| `ChangeFirepower` | `Action.Percent`（非零整数百分点或公式） | 单位 | 永久调整火力。 |
-| `ChangeArmor` | `Action.Percent`（非零整数百分点或公式） | 单位 | 永久调整装甲强度，正值使目标更耐打。 |
-| `ChangeSpeed` | `Action.Percent`（非零整数百分点或公式） | 单位 | 永久调整步兵、载具或飞行器的移速。 |
-| `ChangeWeaponRange` | `Action.Percent`（非零整数百分点或公式） | 单位 | 永久调整常规武器的最大射程。 |
-| `ChangeFireRate` | `Action.Percent`（非零整数百分点或公式） | 单位 | 永久调整射速。射速提高 25% 时，原本 60 帧的齐射间隔变为 48 帧。 |
-| `ChangeScale` | `Action.Percent`（非零整数百分点） | 单位 | 永久调整步兵、载具或飞行器的显示尺寸，占地保持原值。 |
-| `ChangeProjectileScale` | `Action.Percent`（非零整数百分点） | 单位 | 调整目标之后发射的弹体、命中爆炸动画和已有的 `CellSpread` 半径。 |
-| `GrantPassive` | `Action.Passive`（被动 ID）；可选 `Action.Duration`、`Action.StackOnReapply` | 单位 | 授予已注册的被动。同一被动再次授予时，取较长的剩余时长，永久优先。 |
-| `StealPassive` | `Action.Passive`（英文逗号分隔的被动 ID）；`Action.Amount`（每项最多夺取的层数，正整数，默认 1） | 单位，默认 `Target` | 从目标夺取列表中持有的被动，交给触发者。相同 ID 只处理一次。 |
-| `SendSignal` | `Action.Signal` 等，详见自定义信号 | 单位或范围 | 向指定接收者排队发送信号，可附带目标和数值。 |
-| `RemovePassive` | `Action.Passive`（一个或多个被动 ID，英文逗号分隔） | 单位，默认 `Self` | 一次移除目标持有的所有匹配项，清除各项层数、计数和等待进度。缺少某一项时继续处理其余项。 |
-| `ChangePassiveStack` | `Action.Passive`（被动 ID）和 `Action.Amount`（非零整数，可正可负） | 单位 | 调整目标已持有的指定被动层数，上限由该被动的 `Stack.Max` 决定。 |
-| `ReplaceWeapon` | `Action.Weapon`（武器 ID） | 仅自身 | 仅用于 `OnBeforeFire`，替换本轮开火所用的武器。 |
-| `FireWeapon` | `Action.Weapon`（武器 ID） | 单位或落点 | 向指定目标或位置发射指定武器。 |
-| `DetonateWarhead` | `Action.Warhead`（弹头 ID）；可选 `Action.Amount`（非负整数，默认 0） | 单位或落点 | 在指定位置引爆弹头，`Action.Amount` 是基础伤害。 |
-| `SpawnUnit` | `Action.UnitType`（单位类型 ID）；可选 `Action.Owner` | 单位或落点 | 生成一个步兵、载具或飞行器，目标格无法放置时向外查找最多三圈。 |
-| `Transform` | `Action.UnitType`（新形态的单位类型 ID） | 单位 | 原地永久变形，保留所属方和星级。两个形态须同属步兵、载具或飞行器中的一类，并使用相同的 `Locomotor`。转换接口和安全限制见科研转换说明。 |
-| `ChangeOwner` | 可选 `Action.Owner` | 单位 | 把存活目标移交给指定所属方。目标已属该方或正受心灵控制时跳过。 |
-| `SpawnCrate` | 可选 `Action.CrateType` | 单位或落点 | 在目标处放置一个升级箱，拾取方获得效果。 |
-| `SelfDestruct` | 无专用参数 | 仅自身 | 使持有者自毁，按正常死亡流程结算。 |
+| `Speed` | `300%` | `Speed.Min` | `1%` |
+| `Firepower` | `300%` | `Firepower.Min` | `1%` |
+| `Armor` | `300%` | `Armor.Min` | `1%` |
+| `Scale` | `300%` | `Scale.Min` | `25%` |
+| `ProjectileScale` | `300%` | `ProjectileScale.Min` | `1%` |
+| `WeaponRange` | `300%` | `WeaponRange.Min` | `1%` |
+| `FireRate` | `300%` | `FireRate.Min` | `1%` |
 
-| 参数 | 可选值与用法 |
-| --- | --- |
-| `Action.Target` | 造成伤害前和 `StealPassive` 默认 `Target`（事件对方），其余默认 `Self`（持有者）。表中“单位”可选 `Self`、`Target`（事件对方）、`Attacker`（攻击者）、`Victim`（受害者）。“单位或落点”还可选 `VictimLocation`（事件记录的受害者位置）。“仅自身”使用 `Self`。 |
-| `Action.Duration` | 可选 `-1`（永久，默认值）或正整数（游戏帧），用于授予被动。 |
-| `Action.StackOnReapply` | `no`（默认）或 `yes`。填 `yes` 时，目标已持有该被动就增加 1 层，最多到 `Stack.Max`。首次获得从 0 层开始。 |
-| `Action.Owner` | `Self`、`Attacker`、`Victim`、`Neutral`、`Player1`、`Player2`、`Player3`、`Player4`、`Player5`、`Player6`、`Player7`、`Player8`。默认 `Self`。前三项取对应单位的所属方，`Neutral` 为中立方，`Player1` 至 `Player8` 对应出生位。 |
-| `Action.CrateType` | `Random`、`Money`、`Unit`、`HealBase`、`Cloak`、`Explosion`、`Napalm`、`Squad`、`Darkness`、`Reveal`、`Armor`、`Speed`、`Firepower`、`ICBM`、`Invulnerability`、`Veteran`、`IonStorm`、`Gas`、`Tiberium`、`Pod`。默认 `Random`，按当前规则的 `[Powerups]` 权重抽取。 |
+For example, `[Starfall.PassiveLimits] Firepower=200%` caps accumulated event firepower at twice its base. Invalid limits are logged and replaced by defaults, with the default minimum reduced if necessary to fit the maximum.
 
-按伤害比例结算时取本次实际伤害并向下取整。例如实际造成 43 点伤害，`Action.PercentOfDamage=20%` 可恢复 8 点生命。表中支持公式的字段使用 `$(...)`，写法见[数值公式](#11-数值公式)。
+Weapon-slot disabling takes precedence over replacement. Multiple active replacements use the last in processing order; do not use registry numbering as an assumed ordering API. Native rank/deploy weapon changes are still resolved. `FireWeapon` uses its explicitly named weapon instead of the slot replacement.
 
-`Action.Percent` 从 100% 的基础值按百分点累加。例如连续两次 `+10%` 后为 120%。体型默认下限为 25%，其余六项为 1%，默认上限均为 300%。每项的上下限可在 [全局配置](#三全局配置) 的 `[Starfall.PassiveLimits]` 中单独设置。
+Projectile scale is captured at launch; later state changes do not resize an already launched shot. Scaling an original `CellSpread=0` does not create an area. Multishot chooses nearest eligible extra enemies, at most one extra projectile per target; contributions add, fractional counts round down, and negative formula results contribute zero. Extra shots do not consume additional ammo or recursively emit `OnFire`. Native spawner and `LimboLaunch` weapons keep their own behavior.
 
-#### 示例代码
+Starfall EMP is separate from Ares timers and native `IsUnderEMP`. Multiple Starfall sources must all expire before it releases. Native iron curtain/force shield presentation takes precedence over tint; ordinary immunity does not promise to block forced damage or every third-party effect.
 
-**夺取与批量移除被动**
+`Modifier.Cloakable=yes` grants the ability to cloak, not immediate or undetectable invisibility. Native cloak delay, `CloakStop`, firing, detection, and object-specific restrictions still apply. Multiple active sources combine with OR; losing one does not cancel another. When all Starfall sources end, the engine reevaluates cloaking using the remaining native/extension capabilities and normally decloaks if none permits it. The modifier never overwrites the unit's native `Cloakable` flag or its shared type, so innate and crate-granted capability is preserved. `no` contributes no capability; it does not force decloak or disable another source. Off-map/transported holders suspend this modifier. Active capability and state-wait progress survive save/load.
 
-将示例中的被动 ID 换成已注册的技能。从存活目标夺取，或从刚消耗的直属乘客记录中继承。每个匹配项分别转移，最多取指定层数。接收方永久获得被动，受该被动的 `Stack.Max` 限制，放不下的层数留给原单位。最后一层被夺走时，原单位失去该被动。普通的 0 层被动也能整项夺走，接收方已有同名被动时跳过该 0 层项。
+**Fragment**: after remaining stationary for two game seconds, a unit gains cloaking capability. Register and bind `SF_StationaryCloak` to the intended unit types. Movement breaks this condition and resets its wait; re-entry still follows native cloaking rules. Avoid using `Condition.SelfCloak=Uncloaked` as the sole condition unless an oscillating grant/withdraw cycle is intended.
 
 ```ini
-[SF_Siphon]
-Trigger=OnDealDamage
-Filter.TargetHouse=Enemies
-Action=StealPassive
-Action.Passive=SF_Rage,SF_Armor
-Action.Amount=2
-
-[SF_Dispel]
-Trigger=OnFire
-Action=RemovePassive
-Action.Target=Target
-Action.Passive=SF_Rage,SF_Armor
-```
-
-**击杀叠加装甲**
-
-注册下列两项被动，将 `SF_ReinforceOnKill` 绑定给单位。第一次击杀获得 150 帧的强化，重复击杀每次加 1 层，每层提高 10% 装甲。若单位已自带该强化，第一次击杀就加 1 层。层数或授予时长有变化都算动作成功；满层且时长未延长时，这一步不启动冷却。
-
-```ini
-[SF_ReinforcedArmor]
+[SF_StationaryCloak]
 Trigger=WhileState
-Condition.Formula=$(1)
-Stack.Max=5
-Modifier.ArmorMultiplier=$(1 + This.Stack * 10%)
-
-[SF_ReinforceOnKill]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Action=GrantPassive
-Action.Passive=SF_ReinforcedArmor
-Action.Duration=150
-Action.StackOnReapply=yes
+Condition.SelfMoving=no
+Condition.StateDurationSeconds=2
+Modifier.Cloakable=yes
 ```
 
-##### 获得被动、限时授予和科研点奖励
+See [the complete cloaking example](../examples/Cloakable/Starfall.ini) for registration and a tank binding.
 
-以下四项均须在 `[Starfall.PassiveTypes]` 注册。通过科研授予重型底盘，可让符合条件的单位各增加一次生命上限。将狂热绑定到单位，即可在每三次敌方击杀后获得 75 帧的射速加成。
+### Aura fields
 
-```ini
-[SF_HeavyChassis]
-Trigger=OnPassiveGained
-Action=ChangeMaxHealth
-Action.Amount=+100
-
-[SF_BattleAnalysis]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Filter.TargetKind=Vehicle
-Condition.Count=5
-Action=GiveResearchPoints
-Action.Amount=10
-
-[SF_FrenzyOnKill]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Condition.Count=3
-Action=GrantPassive
-Action.Passive=SF_TimedFrenzy
-Action.Duration=75
-
-[SF_TimedFrenzy]
-Trigger=WhileState
-Condition.Formula=$(Self.Health >= Self.MaxHealth * 0%)
-Modifier.FireRateMultiplier=1.50
-```
-
-##### 永久修改最大生命
-
-```ini
-[SF_KillMaxHealth]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Action=ChangeMaxHealth
-Action.Target=Self
-Action.Amount=+50
-```
-
-第一个被动在受击时向攻击者还击，第二个在击杀后于死者位置引爆弹头。
-
-```ini
-[SF_ReturnShot]
-Trigger=OnTakeDamage
-Filter.TargetHouse=Enemies
-Cooldown=90
-Action=FireWeapon
-Action.Target=Attacker
-Action.Weapon=120mm
-
-[SF_DeathBlast]
-Trigger=OnKill
-Filter.TargetHouse=Enemies
-Action=DetonateWarhead
-Action.Target=VictimLocation
-Action.Warhead=HE
-Action.Amount=80
-```
-
-
-每次触发独立结算，效果保存在目标单位身上，可叠加并随存档保存。提高上限时，当前生命增加同样的实际点数。降低上限时，当前生命只在超出新上限时截断。例如将上限从 500 降至 400，350 点生命仍为 350，450 点生命则降到 400。上限最低为 1。调整上限本身不会产生受伤或击杀事件。
-
-流火的生命条件、公式和实际伤害事件使用调整后的生命点数。游戏原生血条使用原兵种刻度显示同一比例，因此直接读取引擎原始 Health / Strength 的其他扩展可能显示原刻度的数字。
-
-### 8. 持续性结果总表
-
-`Trigger=WhileState` 的条件满足时，写在同一被动里的 `Modifier.` 字段一起生效；条件结束时撤回对应修正。每个字段都可独立填写。
-
-#### 属性与电力倍率
-
-| 持续结果字段 | 可选值 | 效果 |
+| Field | Default | Constraint |
 | --- | --- | --- |
-| `Modifier.SpeedMultiplier` | 倍率或公式，结果大于 0 且不超过 100 | 调整可移动单位的移速。 |
-| `Modifier.FirepowerMultiplier` | 倍率或公式，结果大于 0 且不超过 100 | 调整火力。 |
-| `Modifier.ArmorMultiplier` | 倍率或公式，结果大于 0 且不超过 100 | 调整装甲强度，倍率越高越耐打。 |
-| `Modifier.WeaponRangeMultiplier` | 倍率或公式，结果大于 0 且不超过 100 | 调整常规武器的最大射程。 |
-| `Modifier.FireRateMultiplier` | 倍率或公式，结果大于 0 且不超过 100 | 调整射速。齐射间隔除以该倍率，同一轮连发的子弹间隔沿用原配置。 |
-| `Modifier.PowerMultiplier` | 倍率或公式，0～100（含两端） | 按同一倍率调整该建筑的电力。发电建筑调整供电量，耗电建筑调整耗电量。 |
+| `Modifier.Aura.Passives` | required | Registered non-aura passive IDs. |
+| `Modifier.Aura.Range` | required | Integer `1..32` cells or `-1` for whole map. |
+| `Modifier.Aura.Houses` | `Self` | Nonempty list: `Self,Allies,Enemies,Neutral,All`. |
+| `Modifier.Aura.TargetTypes` | `*` | Concrete IDs, `*`, `@Infantry`, `@Vehicle`, `@Aircraft`, `@Building`; mixed lists allowed. |
+| `Modifier.Aura.IncludeSelf` | `no` | `yes` / `no`; holder must also pass the filters. |
 
-这些倍率以 `1` 为原值，也支持[数值公式](#11-数值公式)。多个被动修改同一属性时，持续倍率相乘。例如永久火力已升至 120%，再获得 `1.50` 倍持续火力，总火力为 180%，退出状态后回到 120%。
+Aura coverage uses horizontal center distance, includes the boundary, and refreshes every 15 frames. Loss of the source or its condition withdraws that source. An aura cannot directly grant a passive that itself defines an aura. A transport-support passive cannot directly grant another transport-support passive.
 
-#### 单位与弹体缩放
+Passenger support is evaluated for passengers even while they are transported. It cannot use spatial nearby conditions or target/distance-dependent conditions. Normal on-map continuous effects are suspended off-map, but supported passenger combat evaluation can retain firepower, weapon range, fire rate, and multishot for relevant firing paths; spatial/distance restrictions still apply. Do not assume every off-map modifier remains active. The direct transport relationship matters, not arbitrary nesting.
 
-| 持续结果字段 | 可选值 | 效果 |
+### Sources, stacks, and removal
+
+Sources include unit bindings, map bindings, research, temporary/permanent grants, auras, spawn parents, and passenger support. One unit executes one copy of a given passive ID even when sources overlap.
+
+- Manual stacks start at zero, are separate from ownership, and are capped by `Stack.Max` together with effective contributions.
+- `ChangePassiveStack` changes manual layers of a passive already held by the recipient.
+- `StackOnReapply=yes` adds one layer only if the recipient already holds the passive. First acquisition still starts at zero.
+- Temporary grants merge durations by keeping the longer remaining duration; permanent wins. Expiry removes that source, not independent sources.
+- Losing the last source clears the relevant progress; reacquisition starts fresh. A completed permanent action, such as extra maximum health, is not undone when the granting passive expires.
+- `RemovePassive` removes/suppresses the current held passive and clears its stacks/counting/wait state. It is not a global deletion of the registered definition; later valid grants can make it available again.
+- `StealPassive` transfers manual layers from a live donor; passenger-support layers are not transferable inventory. A zero-stack base ability can transfer once if the receiver does not already own it.
+- After `ConsumePassenger`, stealing uses the consumed passenger's recorded layers and consumes that record, preventing repeated inheritance of the same layers.
+
+## Action reference
+
+### Action catalog
+
+The following table describes ordinary INI action sections. Context restrictions in the trigger, active-skill, Lua, and superweapon sections take precedence.
+
+| `Action` | Required / optional action fields | Result |
 | --- | --- | --- |
-| `Modifier.VisualScale` | 固定倍率 0.01～2.00 | 缩放单位的战场模型，不改变占地。 |
-| `Modifier.ProjectileScale` | 固定倍率 0.50～2.00 | 按发射时倍率缩放弹体、命中爆炸动画及已有的 `CellSpread` 半径。 |
+| `Heal` | Exactly one of positive `Action.Amount` or positive `Action.PercentOfDamage`; amount can be a formula. | Heal up to current maximum health. |
+| `Damage` | Same amount choice as `Heal`; optional `Action.Warhead`. | Damage one selected unit; specified warhead supplies armor verses and death behavior. |
+| `SetDamage` | `Action.Amount`: nonnegative integer or formula. | Replace current pending health loss; damage interception only. |
+| `BlockDamage` | No amount field. | Set pending loss to zero; damage interception only. |
+| `ApplyIronCurtain` | `Action.Duration`: positive frames. | Apply native iron curtain, preserving a longer existing duration; existing force shield takes precedence. |
+| `GiveCredits` | Same amount choice as `Heal`. | Add money to recipient's owner, or the explicit owner context in a sequence. |
+| `GiveResearchPoints` | Same amount choice as `Heal`. | Add research points; respects the research enable switch. |
+| `ChangeMaxHealth` | Nonzero signed integer `Action.Amount` **or** `Action.MaxHealthPercent=1%..10000%`. | Permanently change maximum health; percentage only increases it. |
+| `ChangeAmmo` | Nonzero signed integer `Action.Amount`. | Change finite ammo, clamped to magazine bounds. |
+| `ChangeSpeed` | Nonzero signed integer percentage points or formula in `Action.Percent`. | Permanently change speed base. |
+| `ChangeFirepower` | Same `Action.Percent` contract. | Permanently change firepower base. |
+| `ChangeArmor` | Same `Action.Percent` contract. | Permanently change armor-strength base. |
+| `ChangeWeaponRange` | Same `Action.Percent` contract. | Permanently change standard weapon range base. |
+| `ChangeFireRate` | Same `Action.Percent` contract. | Permanently change standard fire-rate base. |
+| `ChangeScale` | Nonzero signed integer percentage points in `Action.Percent`; no formula. | Permanently change mobile-unit drawing size. |
+| `ChangeProjectileScale` | Nonzero signed integer percentage points in `Action.Percent`; no formula. | Change future projectile/explosion/spread scale. |
+| `SpawnUnit` | `Action.UnitType`; optional `Action.Owner=Self`. | Spawn infantry, vehicle, or aircraft, searching up to three rings if necessary; no buildings. |
+| `Transform` | `Action.UnitType`. | Convert a living unit in place; see conversion restrictions. |
+| `ChangeOwner` | Optional `Action.Owner=Self`. | Transfer a living unit; skip if already owned by that house or under mind control. |
+| `SpawnCrate` | Optional `Action.CrateType=Random`. | Place a crate near the target position. |
+| `SelfDestruct` | `Action.Target=Self` only. | Destroy the holder through the supported normal death path. |
+| `ConsumePassenger` | No `Action.Amount`. | Consume first direct passenger and its nested cargo; emit one direct-passenger event. |
+| `GrantPassive` | `Action.Passive`; optional `Action.Duration=-1`, `Action.StackOnReapply=no`. | Give one registered passive, permanently or for positive frame duration. |
+| `StealPassive` | `Action.Passive` list; optional positive integer `Action.Amount=1`. | Transfer at most that many layers per ID from recipient/donor to holder. |
+| `RemovePassive` | `Action.Passive` list. | Remove matching held IDs; continue past absent IDs. |
+| `ChangePassiveStack` | `Action.Passive`, nonzero signed integer `Action.Amount`. | Change manual layers of an already held passive. |
+| `ResetStateTimer` | `Action.Passive`. | Restart an existing timed `WhileState` wait; no effect if not held/timed/started. |
+| `Promote` | Optional `Action.Levels=1`, allowed `1` or `2`. | Promote a trainable unit, capped at elite. |
+| `RunScript` | `Action.Script`, `Action.Function`. | Invoke a discovered Lua module callback. |
+| `SendSignal` | `Action.Signal` plus optional signal fields below. | Queue a signal to qualifying receivers. |
+| `ReplaceWeapon` | `Action.Weapon`, target `Self`. | Replace one volley; `OnBeforeFire` only. |
+| `FireWeapon` | `Action.Weapon`. | Emit the specified weapon toward a unit or position. |
+| `DetonateWarhead` | `Action.Warhead`; optional nonnegative integer `Action.Amount=0`. | Detonate at the target position; amount is base damage, not a formula here. |
+| `PlayAnim` | `Action.Anim`. | Play a registered animation once; a live-unit attachment follows that unit. |
+| `PlaySound` | `Action.Sound`. | Native sound ID or `wav:` followed by a PCM WAV path. |
+| `ShakeScreen` | `Action.ShakeX=0`, `Action.ShakeY=4`, `Action.ShakeLocal=yes`. | Native screen shake; axes `0..32`, at least one nonzero. |
+| `SpawnParticleSystem` | `Action.ParticleSystem`. | Create an existing particle-system type at or toward the target. |
+| `ForceMove` | `Action.ForceMove.*` fields below. | Schedule forced ground-unit movement/lift. |
+| `ChronoTeleport` | `Action.Destination=X,Y`; optional `Action.SearchRadius=3`. | Teleport a supported on-map ground mobile unit to an available cell. |
 
-弹体倍率在发射时确定，飞行途中状态结束也不会改变这发弹体；原 `CellSpread` 为零时仍为单点。
+For signed integer amounts, `+10` and `-10` are valid; zero is invalid where the table says nonzero. Percent-of-damage amounts round down. Fixed event percentage changes accumulate in percentage points: two `+10%` actions produce 120% from a 100% base, not 121%.
 
-#### 主副武器槽
+Maximum-health increases also add the increase to current health; decreases only trim health that exceeds the new maximum. Percentage growth uses the pre-action maximum. Native iron curtain can kill infantry/organic targets according to the target ruleset; it is not a universal harmless invulnerability buff.
 
-| 持续结果字段 | 可选值 | 效果 |
-| --- | --- | --- |
-| `Modifier.DisablePrimary` | `yes`、`no` | 禁用主武器槽。 |
-| `Modifier.PrimaryWeapon` | 武器 ID | 用指定武器替换主武器槽，保留该槽的发射位置。 |
-| `Modifier.DisableSecondary` | `yes`、`no` | 禁用副武器槽。 |
-| `Modifier.SecondaryWeapon` | 武器 ID | 用指定武器替换副武器槽，保留该槽的发射位置。 |
+`Damage` defaults to the game's `C4Warhead` path if no warhead is specified. It damages only the selected unit. Warhead `AffectsAllies`, `AffectsOwner` (fallback to `AffectsAllies`), `AffectsEnemies` (default yes), and `AffectsNeutral` constrain ownership relationships. Sequence damage uses the launching owner even without a unit caster.
 
-#### 特殊状态与免疫
+`Action.Owner` accepts `Self,Attacker,Victim,Neutral,Player1,Player2,Player3,Player4,Player5,Player6,Player7,Player8`. Player numbers refer to starting positions. The `Owner` target/owner alias belongs to sequence contexts, not arbitrary ordinary passives.
 
-| 持续结果字段 | 可选值 | 效果 |
-| --- | --- | --- |
-| `Modifier.Berserk` | `yes`、`no` | 使非建筑单位陷入混乱，可以攻击友军。 |
-| `Modifier.Mirage` | `yes`、`no` | 使载具获得幻影坦克式静止伪装。 |
-| `Modifier.Immune` | `yes`、`no` | 按原生 `Immune=yes` 免疫常规生命值伤害。 |
-| `Modifier.ImmuneToMindControl` | `yes`、`no` | 免疫普通心控、心灵控制器及适配的 Ares 永久心控。已存在的心控继续有效。 |
+`Action.CrateType` accepts `Random,Money,Unit,HealBase,Cloak,Explosion,Napalm,Squad,Darkness,Reveal,Armor,Speed,Firepower,ICBM,Invulnerability,Veteran,IonStorm,Gas,Tiberium,Pod`. `Random` uses the current native `[Powerups]` weights.
 
-开关字段填 `yes` 表示启用，填 `no` 或省略表示该被动不提供此效果。
+### Multiple actions
 
-#### 子机与光环的被动授予
-
-| 持续结果字段 | 可选值 | 效果 |
-| --- | --- | --- |
-| `Modifier.SpawnPassives` | 一个或多个已注册的被动 ID，以英文逗号分隔 | 授予母体的直属 `Spawns=` 子机，包括后来补充的子机。条件结束或子机脱离时撤回该来源。 |
-| `Modifier.TransportPassives` | 一个或多个已注册的被动 ID，以英文逗号分隔 | 由乘客持有，满足条件时授予其直属地面载具；可省略条件表示上车即生效。 |
-| `Modifier.TransportPassives.Stack` | `yes`、`no` | 默认 `no`。`yes` 时每名符合条件的乘客为所授予的每个被动提供一层，随来源消失而撤回。 |
-| `Modifier.Aura.Passives` | 已注册的被动 ID，可用英文逗号列出多个，必填 | 授予范围内符合条件的单位。可授予事件型和持续型被动；不能直接授予另一个带光环的被动。 |
-| `Modifier.Aura.Range` | `1`～`32` 的整数，或 `-1`，必填 | 按持有者与受益单位中心的水平距离计算，单位为格，包含边界。`-1` 表示全图。 |
-| `Modifier.Aura.Houses` | `Self`、`Allies`、`Enemies`、`Neutral`、`All`，可多选 | 默认 `Self`，指与持有者同一玩家。`Allies` 指其他盟友。 |
-| `Modifier.Aura.TargetTypes` | `*`、`@Infantry`、`@Vehicle`、`@Aircraft`、`@Building` 或具体类型 ID，可混写 | 默认 `*`。命中任一类型即可，例如 `@Vehicle,SHK` 包括所有载具和磁暴步兵。 |
-| `Modifier.Aura.IncludeSelf` | `yes`、`no` | 默认 `no`。设为 `yes` 时，持有者自己也要通过阵营和类型筛选。 |
-
-#### 示例代码
-
-**乘客为载具提供火力**
-
-以下工程师每人提供一层，每层增加载具 30% 火力，最多计算三层。编号需换成注册表中空闲的编号。
-
-```ini
-[Starfall.PassiveTypes]
-100=SF_PassengerSupport
-101=SF_TransportFirepower
-
-[SF_PassengerSupport]
-Trigger=WhileState
-Modifier.TransportPassives=SF_TransportFirepower
-Modifier.TransportPassives.Stack=yes
-
-[SF_TransportFirepower]
-Trigger=WhileState
-Condition.Formula=$(1)
-Stack.Max=3
-Modifier.FirepowerMultiplier=$(1 + This.Stack * 30%)
-
-[ENGINEER]
-Starfall.Passives=SF_PassengerSupport
-```
-
-乘客层数与载具原有的手动层数相加，由受授被动的 `Stack.Max` 限制公式实际读取的总层数。下车只撤回乘客贡献的层数；`ChangePassiveStack` 修改手动层数，不能移除仍在车内的乘客贡献。上限限制生效层数，不会因暂时超出上限而删除已有手动层数。
-
-未开启叠加时，相同被动仍只生效一份，不会自动增加层数；多个来源中只有开启叠加的乘客提供层数。同一乘客通过多项支援能力提供同一个被动时，最多贡献一层。相同被动的其他来源仍然保留；当最后一个来源失效后，被动才会真正消失。完全失去后重新获得可再次触发 `OnPassiveGained`。
-
-`Modifier.TransportPassives` 只检查直属地面载具的乘客列表，不包括建筑驻军或航空器。乘客被消耗、离车、死亡、失去支援被动或不再满足条件时，撤回对应来源；已结算的一次性结果不回滚。乘客的支援条件以乘客为 `Self`，可使用自身生命、弹药、层数等条件以及状态延时，但支援被动不能使用 `Condition.Nearby.*`、`Event.Distance` 或 `Target` 条件，也不能授予另一个带 `Modifier.TransportPassives` 的被动。载具收到的被动以载具为 `Self`。读档恢复载客关系，不会因读档重复触发获得事件。
-
-**乘客自身的火力、射程与射速**
-
-把这个被动注册并绑定给乘客兵种。乘客自己的血量不高于一半时，火力变为 150%，射程变为 125%，完整装填间隔减半。乘客回血后重新计算，下车后继续按自身状态判定。同车乘客独立结算。车内支持自身血量条件和倍率公式，依赖地图距离或附近单位的判定仍在场上进行。开放式载具中的乘客使用这些倍率射击；普通运输车仍按原有规则限制乘客开火。
-
-```ini
-[SF_WoundedGunner]
-Trigger=WhileState
-Condition.Formula=$(Self.Health <= Self.MaxHealth * 50%)
-Modifier.FirepowerMultiplier=1.5
-Modifier.WeaponRangeMultiplier=1.25
-Modifier.FireRateMultiplier=2
-```
-
-**部署支援光环**
-
-把 `SF_SupportAura` 绑定给能架设的单位。架设后，5 格内符合条件的己方和盟友单位获得 20% 装甲加成。将 `Modifier.Aura.Range` 改为 `-1` 即覆盖全图，阵营和类型筛选仍然生效。
-
-```ini
-[Starfall.PassiveTypes]
-70=SF_SupportAura
-71=SF_AuraArmor
-
-[SF_SupportAura]
-Trigger=WhileState
-Condition.SelfDeployed=yes
-Modifier.Aura.Range=5
-Modifier.Aura.Houses=Self,Allies
-Modifier.Aura.TargetTypes=@Vehicle,SHK
-Modifier.Aura.Passives=SF_AuraArmor
-
-[SF_AuraArmor]
-Trigger=WhileState
-Condition.Formula=$(1)
-Modifier.ArmorMultiplier=1.20
-```
-
-每 15 个游戏帧更新一次范围内的单位。来源死亡、被移除或持续条件中断时撤回该来源。同名被动由多个光环、单位自带、科研或临时授予共同提供时只生效一份，最后一个来源消失才失去。重叠覆盖期间不会重复触发 `OnPassiveGained`，完全离开后再次获得可重新触发。击杀回血等已经结算的事件结果会保留。
-
-建筑生命至少为一半时，电力乘以 0.75。同一个被动绑给耗电 40 点的兵营，耗电降到 30 点；绑给供电 200 点的电厂，供电降到 150 点。
-
-```ini
-[SF_BuildingPower]
-Trigger=WhileState
-Condition.Formula=$(Self.Health * 2 >= Self.MaxHealth)
-Modifier.PowerMultiplier=0.75
-```
-
-电力倍率只作用于持有被动的建筑。旧配置中的 `Modifier.PowerOutputMultiplier` 和 `Modifier.PowerDrainMultiplier` 须改为 `Modifier.PowerMultiplier`。多个被动的电力倍率相乘，按建筑的实际电量计算并四舍五入到整数。`0` 表示供电或耗电降为零，条件结束后恢复。用所属方是否缺电作条件时，如果效果本身会改变供电状态，倍率可能反复启停。
-
-**部署免疫。** 以下示例只给已部署的持有者提供免疫。需要等待时，可在同一段中加 `Condition.StateDurationSeconds=2`。绕过防御的强制伤害（例如流火自毁）仍按引擎规则执行；弹头附加状态和第三方护盾有各自的判定。
-
-```ini
-[SF_EntrenchedImmunity]
-Trigger=WhileState
-Condition.SelfDeployed=yes
-Modifier.Immune=yes
-```
-
-**免疫心灵控制。** 例如生命不高于 50% 时，单位免疫新的心灵控制：
-
-```ini
-[SF_MindShield]
-Trigger=WhileState
-Condition.Formula=$(Self.Health <= Self.MaxHealth * 50%)
-Modifier.ImmuneToMindControl=yes
-```
-
-例如，自己的航母生命值至少为 50% 时，其舰载机获得 25% 火力加成。注册编号选用空位，航母已有被动时将新 ID 追加到原列表。
-
-```ini
-[Starfall.PassiveTypes]
-60=SF_CarrierCommand
-61=SF_DroneFirepower
-
-[CARRIER]
-Starfall.Passives=SF_CarrierCommand
-
-[SF_CarrierCommand]
-Trigger=WhileState
-Condition.Formula=$(Self.Health >= Self.MaxHealth * 50%)
-Modifier.SpawnPassives=SF_DroneFirepower
-
-[SF_DroneFirepower]
-Trigger=WhileState
-Condition.Formula=$(Self.Health >= Self.MaxHealth * 0%)
-Modifier.FirepowerMultiplier=1.25
-```
-
-
-该效果按单位生效，不修改同类型单位的原生属性；条件中断或最后一份来源失效后恢复原有判定，状态随存档保存。生效前已存在的心控不会自动解除，心灵控制器的伤害也不受此效果影响。Ares 永久心控适配《远征》使用的 Ares 3.0p1；版本或入口不兼容时会在 `Starfall.log` 记录，永久心控保护无法保证。其他扩展直接改换所属方的特殊逻辑（包括 Phobos `ChangeOwner.SetAsMindControl`）和地图脚本强制易主不属于已适配的心控入口。
-
-主槽对应索引 0，副槽对应索引 1。普通双武器单位只有一个槽被禁用时，会尝试选用另一把已配置的武器；射程、弹药等仍按游戏规则。特殊多武器、乘员炮塔和盖特阶段沿用游戏原选槽规则。多个生效技能同时修改同一槽时，任一禁用都会阻止发射；多个替换按技能处理顺序取最后一个，某项退出后回到仍有效的替换或当前原生武器。原生武器随星级、部署等变化。仅影响该单位的常规武器槽；`Action=FireWeapon` 仍使用动作里指定的独立武器。
-
-通常至少指定一个状态条件，并配置持续结果或进入状态时播放的触发动画；乘客的 `Modifier.TransportPassives` 可以省略条件。例如 `Condition.Formula=$(Self.Health <= Self.MaxHealth * 30%)` 搭配 `Modifier.Berserk=yes` 表示持有者生命不高于 30% 时陷入混乱。等待时长可用于延迟状态生效。持续状态和等待进度支持存读档。
-
-### 9. 多结果
-
-单结果沿用 `Action=`。多结果用 `Actions=` 引用一个或多个结果段，按英文逗号分隔，按书写顺序执行。同一结果被列两次就执行两次。只有主技能需要注册和绑定，结果段可跨技能复用。
-
-结果段只填写 `Action` 和相应的 `Action.*` 字段。次数、概率和冷却写在主技能上。主段使用 `Actions` 时不能同时填写 `Action` 或 `Action.*`，结果段也不能再嵌套 `Actions`。缺少结果段、空列表项、无效动作或上述冲突都会停用整项技能，并在游戏根目录的 `Starfall.log` 记录字段。若希望两个结果分别判定概率，可将其配置为两个被动。
+**Fragment**; register and bind only `SF_KillReward`:
 
 ```ini
 [SF_KillReward]
 Trigger=OnKill
 Filter.TargetHouse=Enemies
-Condition.Count=3
-Actions=SF_KillReward_Heal,SF_KillReward_Crate
+Actions=SF_HealStep,SF_MoneyStep
 
-[SF_KillReward_Heal]
+[SF_HealStep]
 Action=Heal
 Action.Target=Self
 Action.Amount=50
 
-[SF_KillReward_Crate]
-Action=SpawnCrate
-Action.Target=VictimLocation
-Action.CrateType=Random
+[SF_MoneyStep]
+Action=GiveCredits
+Action.Target=Self
+Action.Amount=100
 ```
 
-每第三次有效击杀共用一次概率判定。通过后，先尝试恢复 50 生命，再在死者附近生成随机箱。满血仍会掉箱。只要一项成功就按主技能开始冷却，全部无效时不进冷却。后一步可以使用上一步改变后的状态；例如先自毁再在自身位置掉箱，会使用持有者最后的位置。需要存活单位的步骤在对应单位死亡后跳过。
+`Actions` preserves order and duplicate section IDs. The parent cannot also contain `Action` or `Action.*`; child sections contain only one `Action` and its fields, with no nested `Actions`. Empty items, missing sections, unknown action fields, or invalid steps reject the passive. All steps share one count/chance/cooldown decision. One successful step is enough for success; a failed heal does not prevent the money step. No transactional rollback is promised for already executed steps.
 
-### 10. 动画
+`ConsumePassenger` has a deliberate exception: failure stops the remaining steps in that INI `Actions` list or Lua `ctx:actions` call. Previous steps are not rolled back. Success replaces the following steps' counterpart snapshot with the consumed passenger, so a live-target action does not accidentally fall back to the original enemy. The direct passenger's recorded layers are shared with its queued consumption event and can only be transferred once. Nested cargo is removed without emitting a separate consumption event for every nested unit. This interface operates on passenger lists, not a building's separate garrison list, and does not synthesize ordinary passenger kill/death passive events.
 
-动画字段写在注册的被动主段里。可与单结果 `Action=`、多结果 `Actions=` 或持续性 `Modifier.*` 同用。
+### ForceMove fields
 
-| 字段 | 行为 |
-|---|---|
-| `Anim=动画ID` | 挂载一份随单位移动的循环动画，动画大小实时跟随单位体型比例。失去被动时移除；隐形或离开地图期间隐藏，返回后重新判断是否显示 |
-| `Anim.Always` | `no`（默认）时，满足被动的自身状态条件才显示；`WhileState` 还需满足等待时间，条件不再满足时隐藏。`yes` 时，持有被动期间不受这些条件影响。未配置自身状态条件时，`no` 也会持续显示。事件的目标筛选、次数、概率和冷却不控制附着动画 |
-| `TriggerAnim=动画ID` | 事件通过筛选、计数、冷却和概率判定后播放一次，先于整组结果执行。即使满血使治疗无效，动画也照常播放。`WhileState` 在满足条件和等待时长后播放一次，退出再进入时可再次播放 |
-| `TriggerAnim.Target=Self` 或 `Target` | 默认 `Self`。写 `Target` 时，受击或死亡取攻击者，攻击或击杀取受害者，部署和晋升取自身，`WhileState` 取生效瞬间的当前目标。死亡时自身动画可在死亡位置播放，受害者消失或点地开火时可使用记录的落点。没有对应对象或坐标时跳过这次播放 |
+All INI fields in this table have the full `Action.ForceMove.` prefix. They are not native unit locomotor settings.
 
-持有者常驻光环，造成伤害时在受害者身上播放闪光。
+| Field | Default | Constraint / meaning |
+| --- | --- | --- |
+| `Action.ForceMove.Offset` | none | `dx,dy`, each finite `-512..512` cells; supports fractions. Mutually exclusive with Mode, Center, and Distance. |
+| `Action.ForceMove.Mode` | required if Offset omitted | `Push`, `Pull`, `Launch`. Do not write `Mode=Offset`; supply Offset instead. |
+| `Action.ForceMove.Center` | `Self` | `Self` or `Impact`. Only for non-Offset modes. |
+| `Action.ForceMove.Distance` | `0` | Finite `0..512` cells. Push/Pull require a positive effective distance; Launch can omit it. |
+| `Action.ForceMove.Height` | `1` for Launch, otherwise `0` | Finite `0..512` cells of visual lift. |
+| `Action.ForceMove.Duration` | required | Positive integer simulation frames. |
+| `Action.ForceMove.Easing` | `Linear` | `Linear,EaseIn,EaseOut,EaseInOut`; affects horizontal progress. |
+| `Action.ForceMove.Tilt` | `yes` | `yes` / `no`; supported voxel vehicles lean and settle afterward. |
+| `Action.ForceMove.IgnoreCollision` | `yes` | Pass through obstacles and resolve landing, or stop before blocking obstacles when `no`. |
+| `Action.ForceMove.BlowWeight` | omitted | Finite threshold; target native `Weight` must be **strictly less**. Omitted means no weight threshold. |
+| `Action.ForceMove.AffectsIronCurtain` | `no` | Allow true iron-curtained targets if `yes`; force shield is not classified as true iron curtain by this check. |
+
+At least one effective horizontal offset/distance or height must be nonzero. Coordinates are rounded to engine sub-cell units. Pull does not overshoot the chosen center. Targets must be supported living, on-map ground infantry/vehicles; carried, airborne, deploying, sinking, warping, and other incompatible locomotor states are rejected.
+
+During movement, ordinary movement, firing, deployment, and active skills are blocked, but damage can still occur. A new ForceMove replaces the current movement from its current location/lift. With `IgnoreCollision=yes`, landing can crush ground units regardless of owner; a building receives base impact damage based on the falling unit's current health and the falling unit dies; impassable landing terrain can also kill it. With `no`, horizontal travel stops at an obstacle, lift completes, and landing collision damage is not applied. Both modes respect map boundaries.
+
+**Fragment**:
 
 ```ini
-[SF_AnimatedHit]
+[SF_Knockback]
 Trigger=OnDealDamage
-Anim=YURICNTL
-TriggerAnim=PIFF
-TriggerAnim.Target=Target
+Action=ForceMove
+Action.Target=Target
+Action.ForceMove.Mode=Push
+Action.ForceMove.Center=Self
+Action.ForceMove.Distance=3
+Action.ForceMove.Height=1
+Action.ForceMove.Duration=12
+Action.ForceMove.Easing=EaseOut
+Action.ForceMove.IgnoreCollision=no
+Action.ForceMove.BlowWeight=5
 ```
 
+`ChronoTeleport` is a separate action. Its `Action.Destination` uses integer cells `0..511`; `Action.SearchRadius` is an integer `0..32`, default 3. It tries the center then the nearest valid cell in the circular search, avoiding reserved teleport destinations. Zero radius only tries the exact cell. Failure leaves the unit in place.
+
+### Signals
+
+| Field | Default | Constraint / meaning |
+| --- | --- | --- |
+| `Action.Signal` | required | Nonempty case-insensitive ID, at most 127 bytes; no registry needed. |
+| `Action.Target` | `Self` | Receiver or broadcast center unit. |
+| `Action.Signal.Range` | `0` | Integer: 0 direct to center, `1..128` local broadcast, `-1` whole map. |
+| `Action.Signal.Houses` | `Self` | List: `Self,Allies,Enemies,Neutral,All`, relative to sender. |
+| `Action.Signal.IncludeSelf` | `no` | Include sender in broadcast; direct self-send is independent of this flag. |
+| `Action.Signal.Target` | none | Attached unit: `Self,Target,Attacker,Victim`; also `Sender` inside OnSignal. |
+| `Action.Signal.Value` | `0` | Finite number or formula; computed when sending. |
+| Receiver `Signal` | required for OnSignal | ID to match. |
+| `Filter.SenderHouse` | `All` | Sender house filter, relative to receiver; same enum as Filter.TargetHouse. |
+| `Filter.SenderKind` | `All` | Sender kind filter; same enum as Filter.TargetKind. |
+
+On receipt, `Self` is receiver, `Target` is attached unit, and `Sender` is sender. `Filter.Target*` tests the attached unit, not sender. `Action.Target=Sender` requires that sender to remain valid for live-unit actions.
+
+Receivers must be living on-map units; transported/garrisoned units are not separate broadcast recipients. Delivery is queued. Sender/target snapshots and value remain readable after objects disappear, but live-target actions can fail. A signal chain is limited to 16 levels and 1,024 deliveries; excess is stopped and logged. Chain progress and queued signals are saved.
+
+## Numeric formulas
+
+Formulas are a small expression language, not Lua. Wrap the complete expression in `$(...)`.
+
+| Supported location | Interpretation |
+| --- | --- |
+| `Condition.Formula` | Nonzero true, zero false. |
+| `Modifier.SpeedMultiplier`, `Modifier.FirepowerMultiplier`, `Modifier.ArmorMultiplier`, `Modifier.WeaponRangeMultiplier`, `Modifier.FireRateMultiplier`, `Modifier.PowerMultiplier` | Multiplier result within the field's allowed range. |
+| `Action.Percent` for speed/firepower/armor/range/fire rate | Fraction converted to percentage-point change: `$(10%)` adds 10 points. No formula for Scale/ProjectileScale. |
+| `Action.Amount` for Heal/Damage/GiveCredits/GiveResearchPoints/SetDamage | Nonnegative finite amount, floored to integer; range overflow or negative result fails. |
+| `MultiShot` / `Modifier.MultiShot` | Extra-target count, floored; negative contributes zero. |
+| `Action.Signal.Value` | Finite numeric payload. |
+
+Operators: unary `+ -`, arithmetic `+ - * /`, parentheses, comparisons `> >= < <= == !=`. Functions: `min(a,b)`, `max(a,b)`, `clamp(x,low,high)`, and `if(condition,thenValue,elseValue)`. Names are case-insensitive. Decimal literals and percentage literals are supported; `1.5%` is `0.015`.
+
+Comparisons bind less tightly than arithmetic and return 0 or 1. Chained comparisons such as `1 < x < 5` are invalid. Combine comparisons explicitly, for example `$( (Self.Ammo >= 1) * (Self.Ammo <= 3) )`. There are no `&&`, `||`, Lua `and/or`, arbitrary functions, or arbitrary unit properties.
+
+`if` evaluates only the selected branch. However, context restrictions still apply to every referenced variable at configuration validation time. A forbidden `Event.Damage` reference is not made valid by putting it in an unselected branch.
+
+| Variable | Value and scope |
+| --- | --- |
+| `Self.Health`, `Self.MaxHealth` | Holder health and extended current maximum. |
+| `Self.Cost` | Holder type's base Cost, before country/factory/research discounts. |
+| `Self.Ammo` | Ammo count; unlimited ammo is `-1`. |
+| `Self.Passengers` | Direct passenger count. |
+| `Target.Health`, `Target.MaxHealth`, `Target.Cost` | Counterpart snapshot/current target values, not Action.Target's values. A real unit is required. |
+| `This.Stack` | Executing passive's stack snapshot/current effective count. |
+| `Event.Damage` | Actual lost health for OnDealDamage/OnTakeDamage; current pending loss for the two before-damage events. Restricted to those damage triggers. |
+| `Event.Distance` | Horizontal distance in cells from holder to counterpart/target point; ignores height. |
+| `Sender.Health`, `Sender.MaxHealth`, `Sender.Cost` | Signal sender snapshot; OnSignal only. |
+| `Event.SignalValue` | Captured signal payload; OnSignal only. |
+
+Missing variables, division by zero, non-finite results, reversed clamp bounds, or a result outside the destination field's range fail the affected runtime calculation. Missing data in older saves is not fabricated. Invalid syntax disables the passive. The parser limits a formula to 512 bytes, 96 compiled instructions, and nesting depth 24.
+
+Examples:
+
 ```ini
-[SF_WoundedGlow]
-Trigger=WhileState
+; Separate fragments: merge a line only into a compatible definition.
 Condition.Formula=$(Self.Health <= Self.MaxHealth * 50%)
-Condition.StateDurationSeconds=1
-Anim=YURICNTL
-Anim.Always=no
+Modifier.FirepowerMultiplier=$(1 + This.Stack * 10%)
+Action.Amount=$(min(Event.Damage * 25%, 100))
+Action.Percent=$(5%)
 ```
 
-生命值不高于 50% 持续 1 秒后显示附着动画，生命值恢复后隐藏；改为 `Anim.Always=yes` 则持有被动时持续显示。该动画随单位体型实时缩放，`TriggerAnim` 播放的一次性动画不受此设置影响。
+The amount example requires a supported damage event. A constant formula does not require a valid target merely because other expressions can reference one.
 
-动画 ID 取自当前游戏已注册的动画类型。只需要始终显示的特效时，注册的被动段可以只写 `Anim=`；只需要有条件的附着特效时，可在 `WhileState` 中只配置条件与 `Anim=`。只需要事件特效时，可省略动作，由实际播放启动该技能配置的冷却。已有动作的技能仍按动作是否成功决定冷却。多个结果共用一次触发动画。存读档保留附着动画和状态进入记录。
+## Research projects
 
-### 11. 数值公式
+### Project schema
 
-#### 简要介绍
+Register every project in `[Starfall.ResearchTypes]`. Ordinary purchase costs exactly **100 research points** per project, once per house/project ID. There is no configurable `Price` field.
 
-用 `$(...)` 让被动数值随血量、层数、伤害或距离变化。`Self` 指持有被动的单位，`This` 指正在执行公式的被动。
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `Name` | Project ID, except built-in legacy defaults | Display name. |
+| `Summary` | empty, except legacy defaults | Short card description. |
+| `Detail` | generated where supported | Hover description; supported placeholders below. |
+| `Icon` | built-in fallback | PNG or engine-loadable PCX path. |
+| `Countries` | unrestricted | Country IDs or `*`; comma-separated. |
+| `Prerequisites` | none | Research project IDs, all owned by the purchasing house. |
+| `Rarity` | `Common` | `Common,Rare,Epic,Insane`. Invalid value excludes project. |
+| `Effect` | `GrantPassive` | One effect from the next table. |
+| `Effects` | absent | Ordered list of effect sections; overrides the single-effect fields when present. Empty list is invalid. |
+| `Passive` | required for GrantPassive | Registered passive ID. |
+| `TargetTypes` | required where specified below | Recipient or production-type list, depending on effect. |
+| `Credits` | `0` | GiveCredits amount; must be positive for that effect. |
+| `Technology` | none | UnlockTech's existing techno type ID. |
+| `FromType`, `ToType` | none | Conversion source/destination IDs. |
+| `CostModifier`, `Category` | none | Cost effect parameters. |
 
-#### 参数列表和对应说明
+Unknown prerequisites, cycles, and chains depending on invalid references block affected projects. Country restrictions and prerequisites are evaluated separately from immediate target availability. A valid conversion project may be visible while temporarily having no eligible conversion targets.
 
-移速、火力、装甲、射程和射速的持续倍率字段，以及对应事件结果的 `Action.Percent`，都支持公式。建筑的 `Modifier.PowerMultiplier` 也支持公式。持续倍率 `1.25` 表示乘以 1.25；事件增量 `$(10%)` 表示增加 10 个百分点。
+### Effect catalog
 
-治疗、伤害、发放资金和科研点的 `Action.Amount` 也支持公式，例如 `$(min(Event.Damage * 25%, 100))`。结果向下取整，负数或超出整数范围时跳过，零无效果。此写法与 `Action.PercentOfDamage` 互斥。
+| `Effect` | Required fields | Behavior |
+| --- | --- | --- |
+| `GrantPassive` | `Passive`, `TargetTypes` | Current and future matching units of purchaser receive the passive; ownership changes use the new owner's research. |
+| `GiveCredits` | Positive integer `Credits` | One-time money award. |
+| `UnlockTech` | `Technology` | Purchaser gains production permission for one existing type. Factory compatibility, funds, and build limits still apply. |
+| `ConvertInfantry` | Different valid infantry `FromType`, `ToType` | Convert currently eligible owned infantry; future production is unchanged. |
+| `ConvertVehicle` | Different valid vehicle `FromType`, `ToType` | Convert currently eligible owned vehicles, including supported ships; future production is unchanged. |
+| `ModifyTypeCost` | Concrete type IDs in `TargetTypes`; nonzero signed integer `CostModifier`, optionally `%` | Permanent per-house production price change for those types. |
+| `ModifyCategoryCost` | `Category`; nonzero signed percentage `CostModifier` | Permanent price change for one sidebar category. |
 
-支持小数、正负号、四则运算、括号和 `min(a,b)`、`max(a,b)`、`clamp(x,下限,上限)`。变量和函数名忽略大小写，`1.5%` 等于 `0.015`。
+GrantPassive `TargetTypes` accepts concrete IDs, `*`, `@Infantry`, `@Vehicle`, `@Aircraft`, and `@Building`; lists may mix them. Unknown `@` categories are invalid. These selectors are not universally supported by other fields with the same name. Cost targeting requires real type IDs.
 
-比较运算支持 `>`、`>=`、`<`、`<=`、`==`、`!=`，结果为成立 `1` 或不成立 `0`。比较的优先级低于四则运算；多个比较需分别用括号表达，不支持 `1 < x < 5` 这种连写。比较小数时，`==` 和 `!=` 按计算结果精确比较。
+Cost categories: `Building` means ordinary buildings; `Defense` means `BuildCat=Combat` buildings; `Infantry` means infantry; `Vehicle` includes ground vehicles, ships, and aircraft. After native country/factory modifiers, add all research percentage deltas, then fixed credit deltas, round to nearest integer, and clamp at zero. A native quote of 700 with `-20%` and `-100` becomes 460. Production orders lock their price when started; cancellation refunds the paid amount.
 
-`if(条件, 成立值, 不成立值)` 根据条件选择结果：条件为 `0` 表示不成立，非 `0` 表示成立。`if` 可嵌套，且只计算被选中的分支；未选中分支里的除零或缺少目标不会影响结果。配置时仍须满足变量的使用范围，例如 `Event.Damage` 只能用于伤害事件，即使它位于未选中的分支。
+Effects lists deduplicate repeated effect section IDs while preserving first occurrence. Each effect section must explicitly define its `Effect`; it does not inherit the parent project's fields. Any invalid effect makes the project unavailable. At purchase time, temporarily inapplicable effects are skipped; at least one successful effect is needed to charge points and record ownership. Executed effects are not rolled back if a later effect fails, and skipped instant effects are not granted later.
 
-| 变量 | 含义 |
-|---|---|
-| `Self.Health / Self.MaxHealth` | 持有者的当前生命和最大生命。 |
-| `Target.Health / Target.MaxHealth` | 对方单位的当前生命和最大生命。造成伤害或击杀时取受害者，受伤或死亡时取攻击者；开火或定时事件取当时的目标，`WhileState` 取当前目标；消耗乘客时读取乘客消耗前的快照。部署、晋升和获得被动事件没有对方。 |
-| `Self.Cost` | 被动持有者当前类型的基础造价，不计折扣。事件读取触发时的造价，持续状态读取当前造价。没有目标时也能使用。例如 `Action.Amount=$(Self.Cost * 10%)` 按自身造价的 10% 计算。 |
-| `Target.Cost` | 对方单位类型在当前规则中的基础造价 `Cost`，不计国家、工业工厂或科研折扣。事件触发时记录造价，持续状态读取当前目标的造价。 |
-| `Self.Ammo` | 持有者当前弹药数量；无限弹药为 -1。事件读取发生时快照。 |
-| `Self.Passengers` | 持有者当前乘客数量，空载为 0。事件读取发生时快照。 |
-| `This.Stack` | 正在执行公式的被动层数。 |
-| `Event.Damage` | `OnDealDamage`、`OnTakeDamage` 读取实际损失生命；`OnBeforeDealDamage`、`OnBeforeTakeDamage` 依次读取当前待扣生命值，含前面动作的修改。护盾完全吸收伤害时没有损血事件。 |
-| `Event.Distance` | 持有者与对方的水平直线距离，以格为单位，可含小数，忽略高度。造成伤害或击杀时取受害者，受伤或死亡时取攻击者，开火或定时事件取当时的目标（可为地面格）。`WhileState` 取当前目标。 |
+Use canonical `UnlockTech`. The parser retains `UnlockTeck` as a compatibility spelling, but new configuration should not generate it. The legacy project IDs `SF_Repair`, `SF_Drain`, and `SF_Riposte` have built-in text/passive defaults; they still need registration and usable referenced passives. Define all fields explicitly for new projects.
 
-#### 示例代码
+### Selection, refresh, and global settings
 
-当前目标距离超过 5 格时，持续火力提高 30%；等于 5 格时不提高：
+Candidates exclude owned, invalid, wrong-country, and unmet-prerequisite projects. First select one nonempty rarity according to its weight, then offer up to three projects from that rarity. Opening the local panel does not consume the simulation RNG. Chosen project IDs, seen cards, and used refresh slots are saved.
+
+Refresh requires a balance of at least 100, but is free. Each card slot may refresh once per offer round, only to an eligible unseen project of the same rarity. No alternative means no refresh allowance is consumed. Closing/reopening retains the board. Purchasing starts the next round.
+
+Fields in `[Starfall.Research]`:
+
+| Field | Default | Constraint / behavior |
+| --- | --- | --- |
+| `Enabled` | `yes` | `yes,true,1` enable; `no,false,0` disable research UI, point awards, purchases, and free building research. Stored ownership/points are retained. |
+| `AllowCardRefresh` | `yes` | Same boolean forms; controls ordinary card refresh. |
+| `Title` | Built-in Chinese text meaning “Choose an upgrade” | Set explicitly for an English interface. |
+| `InitialPoints` | `0` | Nonnegative integer initial points per participating house. |
+| `PeriodicPoints` | `0` | Nonnegative integer award each period. |
+| `PeriodicIntervalSeconds` | `0` | Nonnegative integer game seconds, at most `INT_MAX/15`; both amount and interval must be positive to enable. |
+| `RarityWeight.Common` | `5` | Nonnegative integer. |
+| `RarityWeight.Rare` | `4` | Nonnegative integer. |
+| `RarityWeight.Epic` | `1` | Nonnegative integer. |
+| `RarityWeight.Insane` | `0` | Nonnegative integer; zero disables this rarity. |
+
+Initial/periodic awards include human and AI houses in player slots; neutral, defeated, and observer houses are excluded. Campaign handling also considers the current player. Pause does not advance the timer. Saves preserve progress and prevent duplicate initial awards; older saves lacking that record do not receive a retroactive initial award.
+
+**Complete research configuration**, assuming `MTNK` exists:
 
 ```ini
-[SF_LongRangePower]
-Trigger=WhileState
-Condition.Formula=$(Self.Health >= Self.MaxHealth * 0%)
-Modifier.FirepowerMultiplier=$(if(Event.Distance > 5, 1.30, 1.00))
-```
+[Starfall.PassiveTypes]
+0=SF_ResearchRepair
 
-如果距离等于 5 格也要生效，将 `>` 改为 `>=`。多阶段也可以嵌套，例如 `$(if(Event.Distance > 8, 1.50, if(Event.Distance > 5, 1.30, 1.00)))`。没有目标时，距离无法计算，这项倍率不会生效。
-
-按命中距离回血，每格 5 点，上限 50 点。
-
-```ini
-[SF_DistanceHeal]
-Trigger=OnDealDamage
-Action=Heal
-Action.Amount=$(min(Event.Distance * 5, 50))
-```
-
-造成伤害时，根据受害者已损失生命的 10% 获得科研点：
-
-```ini
-[SF_TargetWounds]
-Trigger=OnDealDamage
-Action=GiveResearchPoints
-Action.Amount=$((Target.MaxHealth - Target.Health) * 10%)
-```
-
-击杀敌方单位后，获得其基础造价的 25%。例如击杀造价 800 的单位，持有者所属方获得 200 资金。
-
-```ini
-[SF_KillBountyByCost]
+[SF_ResearchRepair]
 Trigger=OnKill
 Filter.TargetHouse=Enemies
-Action=GiveCredits
-Action.Amount=$(Target.Cost * 25%)
-```
-
-以下两项分别演示半血时持续火力乘以 1.75，以及半血击杀时累计增加 0.75 个百分点。
-
-```ini
-[SF_WoundedFirepower]
-Trigger=WhileState
-Condition.Formula=$(Self.Health <= Self.MaxHealth * 100%)
-Modifier.FirepowerMultiplier=$(1 + ((Self.MaxHealth-Self.Health)/Self.MaxHealth) * 150%)
-
-[SF_WoundedTraining]
-Trigger=OnKill
-Action=ChangeFirepower
+Action=Heal
 Action.Target=Self
-Action.Percent=$(((Self.MaxHealth-Self.Health)/Self.MaxHealth) * 1.5%)
+Action.Amount=50
+
+[Starfall.ResearchTypes]
+0=SF_FieldRepair
+1=SF_SupplyPackage
+
+[Starfall.Research]
+Title=Choose an upgrade
+InitialPoints=100
+PeriodicPoints=10
+PeriodicIntervalSeconds=30
+
+[SF_FieldRepair]
+Name=Field Repair
+Summary=Owned tanks heal after a kill.
+Rarity=Common
+Effect=GrantPassive
+Passive=SF_ResearchRepair
+TargetTypes=MTNK
+
+[SF_SupplyPackage]
+Name=Supply Package
+Rarity=Common
+Effects=SF_SupplyMoney,SF_SupplyDiscount
+
+[SF_SupplyMoney]
+Effect=GiveCredits
+Credits=500
+
+[SF_SupplyDiscount]
+Effect=ModifyTypeCost
+TargetTypes=MTNK
+CostModifier=-10%
 ```
 
-以下被动每层提供 5% 的持续火力加成，最多 20 层：
+Do not also bind `SF_ResearchRepair` to `MTNK` if the intended design requires research first.
 
-```ini
-[SF_StackedFirepower]
-Trigger=WhileState
-Condition.Formula=$(Self.Health >= Self.MaxHealth * 0%)
-Stack.Max=20
-Modifier.FirepowerMultiplier=$(1 + This.Stack * 5%)
-```
+### Buildings and free research
 
-层数初始为 0，可由 `ChangePassiveStack` 动作修改，也可由开启叠加的乘客提供。多结果中的 `This.Stack` 读取触发这些结果的主被动的总层数。
+| Building-type field | Default | Behavior |
+| --- | --- | --- |
+| `Starfall.ResearchPoints` | `0` | Positive points per completed building interval. |
+| `Starfall.ResearchInterval` | `150` | Positive frames; both fields must be positive. |
+| `Starfall.ResearchOptions` | empty | One to three registered project IDs; more than three invalidates the reward list. |
+| `Starfall.ResearchOptions.AllowEngineerCapture` | `no` | Permit reward authorization after successful engineer capture. |
+| `Starfall.ResearchOptions.AllowSpyInfiltration` | `no` | Permit authorization for the spy's owner after successful infiltration. |
 
-#### 额外补充说明
+Each working building has its own income clock. EMP, offline power, or chrono removal pauses it; construction, sale, or leaving the map clears progress. Ownership change restarts the clock for the new owner.
 
-持续倍率每帧重算。`Target` 是事件的对方或单位当前目标，与 `Action.Target` 指定的动作接收者无关。目标是地面格或不存在时，实际执行到 `Target` 生命变量的动作或持续倍率跳过；持续倍率在有有效单位目标后重新计算。击杀事件的受害者当前生命按死亡时的值计算，通常为 0。
+Each physical reward building can be claimed once. Ownership change invalidates old authorization; generic ownership transfer is not a substitute for an authorized capture/infiltration. Claiming is free and ignores project country/prerequisite restrictions, but still requires a valid unowned project and applicable effect. Existing claimed state persists. Older unclaimed authorization without a recorded acquisition source is cleared on load. The building must separately support native capture/infiltration mechanics.
 
-已损失生命可用 `Self.MaxHealth - Self.Health` 或 `Target.MaxHealth - Target.Health` 计算；已损失比例再除以对应的最大生命。事件记录发生时双方的血量、层数和事件数据，同组动作先回血或增层不会改变快照；`ConsumePassenger` 成功后，同组后续公式的 `Target` 改为该乘客消耗前的快照。距离按事件发生时记录，伤害事件取命中时距离。待处理事件的快照随存档保存。
+## External grants and map integration
 
-语法错误会停用整项被动。运行时遇到缺少所需变量（包括旧存档中缺少距离、目标生命或造价快照）、除零、非有限数、限幅上下界颠倒或持续倍率超出对应字段的范围时，只跳过对应动作或持续倍率。运算错误信息见 `Starfall.log`。
+### Warhead grants
 
-### 12. 弹头命中授予
+| Warhead field | Default | Meaning |
+| --- | --- | --- |
+| `Starfall.GrantPassives` | none | Registered passive ID list; one invalid ID disables the rule. |
+| `Starfall.GrantPassives.Duration` | `-1` | Permanent, or positive frames. |
+| `Starfall.GrantPassives.StackOnReapply` | `no` | `yes` / `no`; existing ownership adds one manual layer when enabled. |
+| `Starfall.GrantPassives.Houses` | `All` | List: `All,Self,Allies,Enemies,Neutral`, relative to firing owner and constrained by warhead ownership flags. |
 
-#### 简要介绍
+`CellSpread=0` grants only to a directly hit unit, not an empty ground point. Positive spread tests eligible recipients around impact; buildings use occupied cells. Zero-damage support hits can grant. Dead/off-map/iron-curtained recipients and zero-verses armor matches are excluded. A single detonation grants each passive at most once to each unit; independent detonations in the same frame remain independent. It does not make an otherwise untargetable unit targetable by the support weapon.
 
-下例在 `rulesmd.ini` 中配置支援弹头，使直接命中的己方或盟友单位获得 150 帧的 `SF_KillHeal`。先注册并定义该被动，再为弹头选用空闲编号。
+### Grant presets
 
-#### 参数列表和对应说明
-
-| 字段 | 用法 |
-|---|---|
-| `Starfall.GrantPassives` | 填一个已注册的被动 ID 或用英文逗号列出多个。一个 ID 无效时，整条授予配置停用，游戏根目录的 `Starfall.log` 会记录原因 |
-| `Starfall.GrantPassives.Duration` | 正整数为游戏帧数，`-1` 或省略为永久。15 游戏帧约为 1 个游戏秒 |
-| `Starfall.GrantPassives.StackOnReapply` | `no`（默认）或 `yes`。填 `yes` 时，目标已持有该被动就增加 1 层，最多到 `Stack.Max`。首次获得从 0 层开始。 |
-| `Starfall.GrantPassives.Houses` | 多选，英文逗号分隔：`All`、`Self`、`Allies`、`Enemies`、`Neutral`。默认 `All`。从发射方判断所属关系，并同时遵守弹头的阵营限制。 |
-
-#### 示例代码
-
-```ini
-[Warheads]
-900=SF_TrainingWH
-
-[SF_TrainingWH]
-CellSpread=0
-Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
-AffectsAllies=yes
-Starfall.GrantPassives=SF_KillHeal
-Starfall.GrantPassives.Duration=150
-Starfall.GrantPassives.Houses=Self,Allies
-
-; 将以下字段合并到实际使用的支援武器段
-[MySupportGun]
-Damage=0
-Warhead=SF_TrainingWH
-```
-
-#### 额外补充说明
-
-`CellSpread=0` 时，弹体直接命中单位才授予；地面空点没有接收者。正数按爆心范围逐个筛选，建筑按占地格判定。零伤害支援弹也可授予。受铁幕保护、离场、已死亡或对该弹头装甲倍率为零的目标不会获得能力。对方能否被支援武器选中仍由武器本身决定。
-
-同一次弹头引爆对同一单位最多施加一次，直击和范围伤害重合也只算一次。同一游戏帧的两次独立引爆分别计算。列表内的每个被动独立判断；已有的自带、科研、光环或其他有效来源都算持有。加层不重触发 `OnPassiveGained`，光环的周期刷新也不算施加。同一单位的相同被动只执行一份。重复命中取“已有剩余时间”和“本次持续时间”中的较长者，保留击杀计数、周期进度和冷却。永久授予优先。到期只收回弹头授予的来源；同名自带或科研被动仍可使用。失去最后一个来源后，再次获得从头计数。使用 `RemovePassive` 可驱散当次授予，之后再次命中能重新授予。存档保留单位、被动 ID 和剩余有效期。
-
-**进入建筑或载具。** 临时授予的有效期按游戏帧继续计算，不因进入建筑或运输载具而暂停。例如，150 帧的被动在载具中经过 60 帧后，还剩约 90 帧；在里面到期则出载后不会恢复。被动属于乘员本身，不会自动转移给建筑或载具。此规则也适用于地图触发器和小队脚本的限时授予。
-
-### 13. 地图与小队授予
-
-#### 简要介绍
-
-先注册一套授予方案，再用地图触发器或小队脚本的 9601 动作，把方案中的被动发给指定单位。
-
-#### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `[Starfall.PassiveGrants]` | 用数字键注册方案，地图或小队脚本通过该编号引用。 |
-| `Passives` | 填已注册的被动 ID，多个用英文逗号分隔。 |
-| `Duration` | 正整数按游戏帧计时，省略或填 -1 表示永久。 |
-| `TargetTypes` | 可选，限制能接收方案的单位类型。 |
-
-`TargetTypes` 留空时建筑也能接收。若引用了无效的被动或单位 ID，整套方案停用，原因记入 `Starfall.log`。
-
-其中 `1,4475` 是“方案编号,接收范围”。接收范围可填：
-
-| 值 | 接收者 |
-|---|---|
-| `-1` | 游戏传给本次触发动作的对象。适用于有单位对象的事件，对象为空或已经死亡时跳过 |
-| `-2` | 身上挂有标签、且标签关联本触发器的所有在场单位 |
-| `0` | 触发器所属方当前在场的单位 |
-| `4475`～`4482` | 依次为 1～8 号出生位玩家当前在场的单位 |
-
-#### 示例代码
-
-在 `Starfall.ini` 的 `[Starfall.PassiveGrants]` 注册授予方案。左侧编号供地图和脚本引用，使用不带前导零的非负整数。方案包含一个或多个已注册的被动，可设置有效帧数和接收单位的类型。以下配置让接收者获得 450 帧的周期维修能力，约合 30 个游戏秒。
+**Fragment**, assuming `SF_KillHeal` is already registered:
 
 ```ini
 [Starfall.PassiveGrants]
-1=SF_FieldRepairGrant
+1=SF_FieldGrant
 
-[SF_FieldRepairGrant]
-Passives=SF_PeriodicRepair
+[SF_FieldGrant]
+Passives=SF_KillHeal
 Duration=450
-; TargetTypes=MTNK,HTNK
+TargetTypes=MTNK,HTNK
 ```
 
-**地图触发器动作 9601** 在触发时授予一次。以下单动作示例给 1 号出生位玩家当时在场的单位授予方案 1。将 `0F510005` 换成地图里实际使用的触发器 ID。
+`Passives` is required. `Duration` defaults to permanent `-1`; positive values are frames. Optional `TargetTypes` is a list of concrete native type IDs, not the research `@Category` syntax. Omission allows all otherwise eligible types, including buildings. Grants affect currently living, on-map recipients, not future units.
+
+### Map action numbers
+
+Each example below is one action under an existing trigger's `[Actions]` entry. Replace the trigger ID, preserve the engine's action-record layout, and update the leading action count when merging multiple actions.
+
+| Action | Parameter 3 | Parameter 4 | Purpose |
+| --- | --- | --- | --- |
+| `9600` | Positive point amount | House selector | Award research points. |
+| `9601` | Grant preset number | Recipient selector | Apply one grant preset. |
+| `9602` | Map-script preset number | House selector | Execute one map Lua callback. |
+
+House selectors: `0` is trigger owner; `4475..4482` are player starting positions 1..8. Grant recipient selectors additionally accept `-1` for the trigger's associated object and `-2` for on-map units whose tags reference this trigger. For grants, house selectors select that house's current on-map units.
 
 ```ini
 [Actions]
-0F510005=1,9601,0,0,1,4475,0,0,A
+0F510005=1,9600,0,0,90,4475,0,0,A
+0F510006=1,9601,0,0,1,4475,0,0,A
+0F510007=1,9602,0,0,1,4475,0,0,A
 ```
 
-小队脚本动作 `9601` 只填方案编号。执行时授予当前在场且符合类型筛选的成员，再执行下一行。新加入的成员需等脚本再次执行该行。
+These are three separate example trigger records, not a complete map. See [the research test map](../tests/maps/Starfall_ResearchPoints.map) for event/tag setup.
+
+Team script action `9601` takes only the preset number and affects current eligible team members, then advances to the next line:
 
 ```ini
 [MyTeamScript]
 0=9601,1
 ```
 
-#### 额外补充说明
-
-地图和小队都只发给当前存活、在地图上的对象。方案编号未注册或没有符合条件的接收者时，后续动作照常执行。与弹头对同一单位授予同名被动时，共用一份计数和有效期，取较长的剩余时间，永久优先。已授予的被动随单位存读档。
-
-## 二、科研三选一
-
-### 1. 玩法简介
-
-科研三选一让玩家在对局中选择升级方向。每位玩家独立积累科研点，攒满 100 点即可打开科研面板，从本轮最多三张卡片中选购一项。科研点可以来自地图奖励、特殊建筑的持续产出或被动能力。
-
-普通科研会根据玩家的国家、前置研究和已购项目确定候选，再抽出同一稀有度的卡片。允许刷新时，每个卡位每轮可免费更换一次。选中一项后扣除 100 点，该项目对这名玩家生效。例如，玩家可以让自己的某类单位获得被动，也可以解锁科技或立即获得资金。
-
-有些地图还提供免费科研。占领或成功渗透指定建筑后，玩家可以从该建筑预设的项目中领取一项，每栋建筑只能领取一次。
-
-### 2. 科研项目参数
-
-#### 简要介绍
-
-每个项目 ID 对应一张科研卡。注册项目后，在同名段设置卡面内容、候选资格和购买结果。
-
-#### 参数列表和对应说明
-
-##### 注册项目 `[Starfall.ResearchTypes]`
-
-在 `[Starfall.ResearchTypes]` 用空闲数字键登记项目 ID，再创建同名项目段。数字键用于注册，前置研究与存档使用右侧的项目 ID。同一个 ID 重复登记只算一个项目。未注册项目时，科研项目列表为空。
-
-##### 单个项目段 `[项目ID]`
-
-这些字段只作用于当前卡片。`Countries` 筛选能看到卡片的国家，`TargetTypes` 指定获得效果的单位。
-
-| 字段 | 用途 |
-|---|---|
-| `Name` / `Summary` / `Detail` | 项目名称、列表简述、悬浮详情。省略详情时按结果生成默认说明 |
-| `Icon` | 图标文件名，支持游戏根目录下的 PNG（支持透明度）或游戏可加载的 PCX。省略、留空或加载失败时使用内置默认图标 `sfrdefault.png`。同名外部 PNG 可覆盖内置图片。可填写相对游戏根目录的 PNG 路径，如 `HexBrawlIcons\Focus.png`。建议卡片图标使用 96×96 像素。科研卡片和已研究列表中，`Rare` 图标显示为蓝紫色，`Epic` 显示为金色，`Common` 使用原图配色；变色保留透明镂空。 |
-| `Countries` | 可填游戏 `[Countries]` 中的国家 ID，多个用英文逗号分隔。省略、留空或 `*` 表示不限国家。 |
-| `Prerequisites` | 前置**科研项目 ID**，支持逗号分隔，须由购买者本人全部完成。省略或留空表示无前置；引用不存在的项目、循环依赖及依赖该坏链的项目不会进入候选 |
-| `Rarity` | 项目稀有度：`Common`（普通，默认）、`Rare`（稀有）或 `Epic`（史诗）。填写无效值时项目不进入候选 |
-| `Passive` | 使用 `GrantPassive` 时，填写已在 `[Starfall.PassiveTypes]` 注册的被动 ID。 |
-| `TargetTypes` | 授予被动的目标：具体单位类型 ID、`*`（全部）、`@Infantry`（步兵）、`@Vehicle`（载具）、`@Aircraft`（飞行器）、`@Building`（建筑）。多个用英文逗号分隔，可混用。新建 `GrantPassive` 项目应显式填写 |
-| `Effect` | 单选：`GrantPassive`、`GiveCredits`、`UnlockTech`、`ConvertInfantry`、`ConvertVehicle`、`ModifyTypeCost`、`ModifyCategoryCost`。默认 `GrantPassive`；各项配套字段见科研结果表。 |
-| `Effects` | 可选的科研效果段列表，以英文逗号分隔；填写后使用列表中的效果，项目段内单个 `Effect` 及其参数不生效 |
-
-项目段中的 `Effect` 指定购买结果，省略时默认为 `GrantPassive`。例如 `GiveCredits` 搭配 `Credits=2000`，而 `GrantPassive` 搭配 `Passive` 和 `TargetTypes`。用 `Effects=` 组合多项结果时，把每项的 `Effect` 和专用参数写到对应效果段，卡片名称、稀有度、国家和前置仍写在项目段。
-
-#### 示例代码
+### Map Lua preset
 
 ```ini
-[Starfall.ResearchTypes]
-0=SF_Drain
-1=SF_LasherDrain
+[Starfall.MapScripts]
+1=SF_MapWave
+
+[SF_MapWave]
+Script=Defense.lua
+Function=onWave
+Script.Param.Credits=200
 ```
 
-##### 示例：同一被动分别授予两个兵种
+Map-script registry keys must be canonical nonnegative integers (`1`, not `01`). Referenced preset section IDs are limited to 100 bytes. `Script` and `Function` are required; the callback must exist in the discovered module. `Script.Param.*` values follow the Lua parameter rules below.
 
-两个项目共用同一份 `SF_LifeSteal` 被动定义，分别授予灰熊和狂风。
+`Defense.lua` in the game root:
+
+```lua
+return {
+    onWave = function(ctx)
+        local house = ctx:house()
+        if house and house.powerBalance >= 0 then
+            ctx:action("GiveCredits", {
+                Target = "Owner", Amount = ctx.params.credits,
+            })
+        end
+    end,
+}
+```
+
+Map callbacks have `ctx.owner`, optional associated `ctx.self`, optional valid `ctx.point`, no initial `ctx.target`, and no `ctx.superWeapon`. Delayed map callbacks survive removal of the associated unit; `ctx.self` then becomes nil. Missing presets/owners are logged. They use sequence-context action restrictions, not ordinary event-target assumptions.
+
+## Active skills
+
+Active skills share `[Starfall.PassiveTypes]` registration and passive ownership sources. They require `Trigger=Active` and exactly one `Action=RunScript`. The accepted parent keys are `Trigger`, `Cooldown`, `Action`, `Action.Script`, `Action.Function`, `Script.Param.*`, the `Active.*` keys below, `GainAnim`, and `Tint.Color`. Do not add ordinary filters, Chance, Actions, state conditions, or Stack.Max to an active definition.
+
+| Field | Default | Constraint |
+| --- | --- | --- |
+| `Active.Name` | Skill ID | Display label. |
+| `Active.Icon` | built-in fallback | PNG/PCX resource path. |
+| `Active.CastMode` | `Single` | `Single` or `All`. Single picks the closest eligible selected caster, with unit ID as tie-breaker. |
+| `Active.InterruptOrders` | `yes` | `yes` / `no`. Accepted casts may stop current movement/attack orders. |
+| `Active.Target` | `None` | `None,Unit,Point,Area,Direction`. |
+| `Active.Range` | `0` | Integer `0..128`; zero unlimited for Unit/Point/Area. Must be zero for None/Direction. |
+| `Active.Houses` | all | List `Self,Allies,Enemies,Neutral,All`; Unit target only. |
+| `Active.Radius` | `0` | Required positive `1..128` for Area; otherwise must be zero. |
+| `Active.Shape` | circle behavior | If supplied, must be `Circle` with Area. |
+| `Active.Distance` | `0` | Required positive `1..128` for Direction; otherwise must be zero. |
+| `Cooldown` | `0` | Nonnegative frames, independently tracked per holder. |
+
+Casters must belong to the issuing player, hold the skill, be alive/on-map/outside transports, and be free of incompatible EMP, forced movement, sinking, or removal states. Invalid/duplicate/foreign commands are rejected. Unit targets obey relevant cloak/disguise visibility rules. Direction clicks cannot equal the caster's cell; the endpoint is shortened at the map edge.
+
+Same-ID skills share a UI button in mixed selection. All mode issues separate casts for eligible selected holders. Left click confirms a target; right click cancels. A successful native action, persistent-state change, or task scheduling can count as callback success; returning `true` from Lua alone does not. Cooldown starts on reported success. `Active.InterruptOrders=yes` interrupts after caster/aim validation and before running the script, so a script that ultimately makes no change can still have interrupted orders.
+
+**Complete active example**, assuming `MTNK` exists:
 
 ```ini
-[SF_Drain]
-Rarity=Rare
-Name=伤害吸血
-Summary=造成伤害时吸取生命
-Detail=按实际伤害的 {percent}% 恢复生命
-Icon=HexBrawlIcons\Vampirism.png
-Effect=GrantPassive
-TargetTypes=MTNK
-Passive=SF_LifeSteal
+[Starfall.PassiveTypes]
+0=SF_Recall
 
-[SF_LasherDrain]
-Name=伤害吸血
-Summary=造成伤害时吸取生命
-Detail=按实际伤害的 {percent}% 恢复生命
-Icon=HexBrawlIcons\Vampirism.png
-TargetTypes=LTNK
-Passive=SF_LifeSteal
-Prerequisites=SF_Drain
+[MTNK]
+Starfall.Passives=SF_Recall
+
+[SF_Recall]
+Trigger=Active
+Active.Name=Recall
+Active.Target=Point
+Active.Range=12
+Active.CastMode=Single
+Cooldown=300
+Action=RunScript
+Action.Script=Recall.lua
+Action.Function=onCast
 ```
 
-#### 额外补充说明
+`Recall.lua`:
 
-普通科研每项花费 100 点，每位玩家按项目 ID 限购一次。先按国家、前置和已购记录筛选，再按权重抽取一个稀有度，提供最多三张同档卡片。暂时没有即时效果目标的项目可显示为「暂无目标」，满足条件后才能购买。
+```lua
+return {
+    onCast = function(ctx)
+        if ctx.self and ctx.self:alive() and ctx.point then
+            ctx:action("ChronoTeleport", {
+                Target = ctx.self, Destination = ctx.point, SearchRadius = 3,
+            })
+        end
+    end,
+}
+```
 
-开启刷新后，每轮每个卡位可免费更换一次，只从同档合格且未在牌面出现的项目中替换。无可替换项时保留次数。关窗和读档保留当前牌面及刷新次数，购买后开始下一轮。建筑奖励使用固定列表。 抽卡权重、点数和刷新开关见[全局配置](#三全局配置)。
+For Area, `ctx.area={center=point,radius=...}`. For Direction, `ctx.point` is the projected endpoint and `ctx.direction={x=...,y=...}` is the unit direction vector. Copy any of these values into task data if delayed callbacks need the original aim.
 
-例如 `TargetTypes=@Infantry,@Building` 向研究者所属的所有步兵和建筑授予被动，`TargetTypes=@Infantry,MTNK` 则作用于所有己方步兵和灰熊坦克；载具类别也包括船只。类别依据游戏的内部对象类型，而非是否在空中，例如飞行步兵仍属于步兵。已拥有和之后获得的对象都会按当前所属方的研究记录判断，易主后按新主人判断。类别选择符与 ID 均不区分大小写，错误的 `@` 类别会使项目配置无效。此类别语法用于科研 `GrantPassive` 的 `TargetTypes`，包括 `Effects` 列表中的效果段；地图授予方案的同名字段仍按其原有规则填写。
+## Lua API
 
-购买第一项后，自己的灰熊获得吸血；自己的狂风要等购买第二项才获得。盟友完成研究不会替你满足前置。若希望只花一次科研点就强化两种坦克，写一个项目并设置 `TargetTypes=MTNK,LTNK`。
+### Module lifecycle and configuration
 
-### 3. 科研结果
+The embedded runtime is Lua 5.4.8. Each UTF-8 `.lua` file must return a table of callback functions. A UTF-8 BOM is accepted. Files are discovered from the game root at setup/load, with a 1 MiB per-file limit. `Action.Script` can omit `.lua`. INI function lookup is case-insensitive but rejects ambiguous names differing only by case; scheduled callback names must exactly match a returned function name.
 
-#### 简要介绍
+Every callback creates a fresh Lua state and runs the cached module prototype again. Module/global changes are not persistent. Do not use module initialization for game mutations or assume an initialized `ctx` exists at top level. Persistent data belongs in the interfaces below.
 
-科研项目可以授予单位被动、发放资金、解锁科技、转换单位或调整生产价格。一个项目也可以组合多项效果。
+`Script.Param.<Name>` is read from the executing parent skill or sequence step, not automatically from an unrelated reusable action section. It appears as `ctx.params.<lowercase-name>`. Numeric strings become Lua numbers; other values remain case-preserved strings. Thus an INI parameter `yes` is a string, not a Lua boolean. Scheduled callbacks use the definition's current parameters.
 
-#### 参数列表和对应说明
+Legacy Lua metadata (`id`, `trigger`, `callback`, `units`, `cooldown`, `interval`, `signal`, and active targeting metadata) is still recognized. Explicit INI registration of the same ID takes precedence. New authoring should use INI registration and a returned function table.
 
-| `Effect` | 配套字段 | 作用范围和生效时机 |
-|---|---|---|
-| `GrantPassive`（默认） | `Passive`、`TargetTypes` | 购买者已有和今后获得的指定类型单位均可使用被动。单位易主后按新主人的研究记录判断 |
-| `GiveCredits` | `Credits=2000` | 购买时一次性给购买者增加正整数资金 |
-| `UnlockTech` | `Technology` 填一个已注册的步兵、载具、舰船、飞机或建筑类型 ID。 | 仅给购买者永久授予指定类型的生产权限，可跳过通常的科技等级和建筑前置。生产仍需要兼容的生产设施、资金和可用建造名额。 |
-| `ConvertInfantry` | `FromType=E2`、`ToType=SHK` | 将购买时已有的己方动员兵原地转换为磁暴步兵；后来新造的动员兵仍按原类型生成。两个 ID 须为不同的有效步兵类型 |
-| `ConvertVehicle` | `FromType=MTNK`、`ToType=HTNK` | 将购买时已有的符合条件的己方灰熊坦克原地转换为犀牛坦克；新造单位不受影响。两个 ID 须为不同的有效载具类型 |
-| `ModifyTypeCost` | `TargetTypes=MTNK`、`CostModifier=-100` 或 `-20%` | 永久调整购买者生产指定类型的价格，可用逗号列出多个具体 ID |
-| `ModifyCategoryCost` | `Category` 单选：`Building`、`Defense`、`Infantry`、`Vehicle`；`CostModifier` 填百分比。 | 永久按百分比调整购买者一个生产类别的价格 |
+### Context values
 
-`CostModifier` 填写有符号的整数。`-20%` 和 `+20%` 分别表示降价和涨价两成，`-100` 和 `+100` 分别表示减少和增加 100 资金。零值、无效单位 ID 或类别、类别修正缺少 `%` 均使项目无效。`Building` 是普通建筑，`Defense` 是 `BuildCat=Combat` 的防御栏建筑，`Infantry` 是步兵，`Vehicle` 包含地面载具、舰船和飞机。
+| Value | Availability / semantics |
+| --- | --- |
+| `ctx.self` | Holder handle; can be absent in casterless contexts. A death-event handle can exist while `:alive()` is false. |
+| `ctx.target` | Counterpart handle, or nil; not the last unit passed to an action. |
+| `ctx.damage` | Current event damage; successful interception actions update it. Ordinary scheduled callbacks are new contexts, not pending-damage interception. |
+| `ctx.stack` | Executing passive's event/current task stack value. |
+| `ctx.event.selfHealth`, `ctx.event.selfMaxHealth` | Snapshot values. |
+| `ctx.event.targetHealth`, `ctx.event.targetMaxHealth` | Present when a counterpart health snapshot exists. |
+| `ctx.event.targetPoint` | Recorded target cell for supported OnFire events, including ground fire. |
+| `ctx.params` | Read parameters described above. |
+| `ctx.frame` | Current simulation frame. |
+| `ctx.taskId` | Present during a scheduled callback. |
+| `ctx.point`, `ctx.area`, `ctx.direction` | Active targeting data where applicable; not automatically preserved into ordinary scheduled callbacks. |
+| `ctx.owner` | Sequence/map launching house index. For ordinary unit callbacks use `ctx:house()` or `ctx.self:owner()`. |
+| `ctx.superWeapon`, `ctx.castId` | Sequence identity/cast number; map contexts have castId but omit superWeapon. |
+| `ctx.state` | Persistent state proxy; see below. |
 
-一个项目可用 `Effects` 引用多个效果段，每段分别填写 `Effect` 和该类型需要的参数。科研效果段无需注册；其中引用的被动仍需按被动能力规则注册。`GrantPassive` 的 `TargetTypes` 和 `Passive` 填在各自的效果段中。例如：
+There is no general `ctx.sender`, `ctx.trigger`, `ctx.attacker`, `ctx.victim`, or arbitrary engine object API. Formula `Sender` does not imply an identically named Lua property.
 
-#### 示例代码
+### Unit handles and house snapshots
 
-购买后可在兼容的兵营里训练超时空军团兵。注册编号 40 可换成空闲编号。要一次解锁多个类型，用 `Effects` 引用多个效果段，每段填写一个 `Technology`。
+All unit methods use `:`. `unit:id()` returns its stable ID; `unit:alive()` checks current validity. For an invalid unit, other property methods return nil. Handles support equality by unit ID.
+
+| Method | Result |
+| --- | --- |
+| `unit:health()`, `unit:maxHealth()` | Current live health / extended maximum. |
+| `unit:ammo()` | Live ammo; `-1` for unlimited. |
+| `unit:passengers()` | Current direct passenger count. |
+| `unit:rank()` | `0` rookie, `1` veteran, `2` elite. |
+| `unit:type()` | Native type ID string. |
+| `unit:kind()` | Lowercase category such as `infantry`, `vehicle`, `aircraft`, `building`. |
+| `unit:cost()` | Current type's base cost. |
+| `unit:owner()` | House array index, or `-1` if owner absent. |
+| `unit:trainable()` | Native trainability boolean. |
+| `unit:hasPassive(id)` | Whether this live unit currently owns the passive. |
+| `unit:stack(id)` | Current effective layers; zero if not held. |
+| `unit:position()` | Integer `{x=...,y=...}` map cell, or nil off-map/in limbo. |
+
+`ctx:house(index)` returns a new snapshot with `index`, `powerOutput`, `powerDrain`, `powerBalance`, `credits`, and `researchPoints`. Omit index for the holder/launching owner. Invalid index returns nil. Call again to obtain updated values; modifying the returned table does not alter the house.
+
+### Queries and action calls
+
+| Method | Contract |
+| --- | --- |
+| `ctx:nearbyUnits(center, radius, filters)` | Center is a unit handle or integer point. Finite radius `0..128` cells. Returns a dense array sorted by unit ID. |
+| `ctx:action(name, args)` | Execute one native Starfall action; returns success boolean. |
+| `ctx:actions(list)` | Ordered array of tables containing `Action` and action fields; returns true if any succeeds. Shared action context supports consume-then-steal. |
+| `ctx:runAction(section, overrides)` | Execute an existing INI single-action section. Overrides are limited to Target, Destination, and ForceMove-specific fields for a ForceMove section. |
+
+Nearby filters use exact Lua keys `houses`, `types`, `includeSelf`. Houses defaults to `All`; types defaults to `*`; both accept a comma-separated string or array of strings. Types accepts research-style `@Category` selectors. A unit center is excluded unless `includeSelf=true`; for a point center there is no center unit to exclude. Relationships are relative to the executing owner. This query is a simulation query, not a general local visibility filter.
+
+Action argument keys are case-insensitive. Prefer `Amount`, `Target`, `Passive`, etc. without the `Action.` prefix. Lua boolean fields map to yes/no. `Target` can be a unit handle, a valid symbolic name for the context, or a point for positional actions. `Destination` can be an integer point for ChronoTeleport. ForceMove accepts shorthand `Offset,Mode,Center,Distance,Height,Duration,Tilt,Easing,IgnoreCollision,BlowWeight,AffectsIronCurtain`.
+
+Do not supply aliases for the same field twice, including capitalization variants or `Duration` together with `ForceMove.Duration`. Such conflicts are rejected to prevent Lua table iteration order from deciding the result. Unknown action keys are errors. `runAction` cannot override arbitrary amounts or switch the action type.
+
+Lua actions cannot recursively invoke `RunScript` or use `ReplaceWeapon`. Damage-interception callbacks can only use `SetDamage`/`BlockDamage` through the native action entry. Sequence/map callbacks reject actions requiring unsupported caster context, including ReplaceWeapon, SetDamage, BlockDamage, SelfDestruct, StealPassive, and SendSignal. Supported live-unit actions in sequences need an explicit unit handle.
+
+**Callback fragment**:
+
+```lua
+local targets = ctx:nearbyUnits(ctx.self, 5, {
+    houses = {"Self", "Allies"}, types = {"@Infantry"},
+})
+for _, unit in ipairs(targets) do
+    if unit:trainable() then
+        ctx:action("Promote", {Target = unit, Levels = 1})
+    end
+end
+```
+
+### Timers, state, and synchronized randomness
+
+| Method / value | Contract |
+| --- | --- |
+| `ctx:schedule(frames, callbackName, data)` | Positive integer delay, at most INT_MAX and without scenario-frame overflow. Return task ID; callback receives `(ctx,data)`. |
+| `ctx:cancel(id)` | Cancel a pending task belonging to this owner/skill context. Returns false for already executed, canceled, or foreign tasks. |
+| `ctx.state.key` | Read a saved value copy. Keys are strings of 1..127 bytes. |
+| `ctx.state.key = value` | Store a copied value; nil deletes the key. |
+| `ctx:randomInt(min,max)` | Inclusive ordered signed 32-bit integer range. |
+| `ctx:randomPoint(area)` | `area={center=integerPoint,radius=integer}`; radius `0..128`; uniform eligible cell selection in the map-clipped circle. |
+
+Persistable values: nil, boolean, integer, finite number, string, Starfall unit handle, and plain tables with integer or string keys. No functions, cycles, metatables, or other userdata. A value tree allows at most 256 nodes, depth 12, and an 8 KiB aggregate string/key budget. Unit handles preserve IDs, not a guarantee that the object will still exist.
+
+Reading a table from state returns a copy. This does **not** save an update:
+
+```lua
+local progress = ctx.state.progress
+progress.count = progress.count + 1
+-- Write it back explicitly:
+ctx.state.progress = progress
+```
+
+That fragment requires `ctx.state.progress` to have been initialized. Ordinary state is scoped by holder and skill. Sequence/map state is scoped by cast; multiple sequence steps in one cast share the cast state. Animation/task ownership additionally uses the creating step/skill where required.
+
+Timers due on the same frame execute in creation order within their store. Ordinary holder tasks/state are removed when the holder is removed. Losing the skill alone does not cancel queued tasks while its definition remains available. Delayed callbacks resolve current objects and current parameters; store original event numbers/aim in `data` if needed. A removed original counterpart becomes nil for the delayed context.
+
+There are separate ordinary-unit and sequence/map timer stores, each limited to 1,024 pending tasks and 2,048 saved state keys. The Lua random stream is synchronized, saved, and separate from native weapon RNG. Do not branch simulation changes on local UI visibility, audio results, external time, or other client-specific observations.
+
+**Complete module** for a delayed heal, called by a compatible RunScript skill:
+
+```lua
+local skill = {}
+
+function skill.start(ctx)
+    if not ctx.self or not ctx.self:alive() then return end
+    local pending = ctx.state.pending
+    if pending then ctx:cancel(pending) end
+    ctx.state.pending = ctx:schedule(30, "finish", {amount = 25})
+end
+
+function skill.finish(ctx, data)
+    ctx.state.pending = nil
+    if ctx.self and ctx.self:alive() then
+        ctx:action("Heal", {Target = ctx.self, Amount = data.amount})
+    end
+end
+
+return skill
+```
+
+### Movable animation API
+
+| Method | Contract |
+| --- | --- |
+| `ctx:spawnAnim(id, point, options)` | Create registered animation; return integer handle or nil for invalid type/resource/location. Point may have fractional cells. |
+| `ctx:moveAnim(handle, point, frames)` | Replace movement with linear travel over integer `1..54000` frames; keep height offset. Return success. |
+| `ctx:removeAnim(handle)` | Remove an animation owned by this context; nil/expired/foreign handles return false. |
+
+Options use exact Lua keys: `loop=false`, `duration=150` (integer `1..54000` frames), `height=0` (finite `-64..64` cells above ground). At most 2,048 managed Lua animations exist globally. A unit/skill owns its animations; sequence casts/steps own theirs. Save/load retains lifetime and movement. Holder removal cleans ordinary animations; losing the passive alone does not. Casterless sequence animations can continue until duration or explicit removal. A non-looping native animation may naturally finish before duration. Animation handles are plain integers that can be stored in data/state; they do not apply damage or displacement themselves.
+
+### Runtime limits and unavailable libraries
+
+Each module load/callback has an 8 MiB Lua allocator limit and a hook budget of approximately 100,000 Lua VM instructions. Native action/query work has a 4,096-operation budget per callback; query cost can exceed one operation. These are failure limits, not performance targets.
+
+Available libraries are a restricted base environment plus `table`, `string`, `math`, and `utf8`. `ipairs` is available. The following are unavailable: `load`, `loadfile`, `dofile`, `collectgarbage`, `print`, `warn`, `getmetatable`, `setmetatable`, `pcall`, `xpcall`, `pairs`, `next`, `tostring`, `rawset`, `math.random`, `math.randomseed`, `string.dump`, and `string.format`. The runtime does not open `io`, `os`, `package`, `debug`, or `coroutine`; `require` is not provided.
+
+Syntax/runtime errors include script location in `Starfall.log`. An error ends that callback; already executed actions are not rolled back. Lua return values are ignored by the callback dispatcher. Use supported state/action/task operations to produce effects, not a return value as an assumed success flag.
+
+## ActionSequence superweapons
+
+`Type=ActionSequence` is provided by Starfall and can run without Ares/Phobos. Each native registered superweapon entry retains its own sidebar identity and recharge. Native buildings grant it through `SuperWeapon` or `SuperWeapon2`.
+
+| Field | Contract |
+| --- | --- |
+| `Type` | `ActionSequence`. |
+| `Starfall.Actions` | Required nonempty ordered action-section list; duplicate steps remain steps. |
+| `Starfall.Target` | `Point` only; default point behavior. |
+| `RechargeTime` | Native game minutes, not Starfall frames. |
+
+Direct INI steps support positional actions targeting `Point` (or omitted target), money/research-point actions targeting `Owner` (or omitted target), and `RunScript` with no explicit target. SpawnUnit owner may use `Owner`/`Self`, `Neutral`, or player-slot aliases. To heal, damage, or move particular units from Lua, first obtain live handles and pass them explicitly.
+
+**Native rules fragment**, assuming the referenced native names exist:
 
 ```ini
-[Starfall.ResearchTypes]
-40=SF_ChronoLicense
+[SuperWeaponTypes]
+SF01=FieldSupply
 
-[SF_ChronoLicense]
-Name=超时空军团兵生产许可
-Effect=UnlockTech
-Technology=CLEG
+[GAPILE]
+SuperWeapon=FieldSupply
+
+[FieldSupply]
+Type=ActionSequence
+UIName=Name:MTNK
+SidebarImage=GTNKICON
+RechargeTime=1
+IsPowered=no
+Starfall.Actions=SF_DropTank,SF_SupplyCredits
+
+[SF_DropTank]
+Action=SpawnUnit
+Action.Target=Point
+Action.UnitType=MTNK
+Action.Owner=Owner
+
+[SF_SupplyCredits]
+Action=GiveCredits
+Action.Target=Owner
+Action.Amount=500
 ```
 
-旧配置中的 `Allied`、`Soviet`、`Yuri` 现在按类型 ID 解析。原版 `YURI` 指尤里步兵。要保留原科研设计，请改填原本希望玩家能购买的具体类型。
+Sequence Lua receives `ctx.point`, `ctx.owner`, `ctx.superWeapon`, and `ctx.castId`; initial self/target are nil. Timers and state are associated with the cast, not an imaginary caster unit. Cast state is retired when no pending tasks remain; persistent animations follow their own ownership/lifetime rules. See [Rules.ini](../examples/ActionSequence/Rules.ini) and [GravityWell.lua](../examples/ActionSequence/GravityWell.lua).
 
-```ini
-[Starfall.ResearchTypes]
-40=SF_GrizzlyDiscount
-41=SF_VehicleDiscount
+## Animation, icons, and audio
 
-[SF_GrizzlyDiscount]
-Name=灰熊量产
-Effect=ModifyTypeCost
-TargetTypes=MTNK
-CostModifier=-100
+### Passive visual fields
 
-[SF_VehicleDiscount]
-Name=载具标准化
-Effect=ModifyCategoryCost
-Category=Vehicle
-CostModifier=-20%
+| Field | Default | Behavior |
+| --- | --- | --- |
+| `Anim` | none | Attached looping animation; follows holder and its drawing scale. |
+| `Anim.Always` | `no` | `yes` ignores passive state conditions for the attached animation; still subject to visibility/lifetime. Requires Anim. |
+| `GainAnim` | none | Play once when newly acquired on-map; transport acquisition waits until on-map. |
+| `TriggerAnim` | none | Play after trigger checks, before the action group; for WhileState, on state entry after its wait. |
+| `TriggerAnim.Target` | `Self` | `Self` or `Target`; unavailable target/location skips playback. |
+| `Tint.Color` | none | Three integers `R,G,B`, each `0..255`. |
+
+Registered animation IDs must exist. A visuals-only passive can omit Trigger when its section contains only supported Anim/GainAnim/Tint/Stack.Max fields. A conditional visuals-only passive can use WhileState with a condition. An event can omit actions when TriggerAnim supplies the visual result. For an action-bearing event, animation playback alone does not replace the action-success cooldown rule.
+
+Attached animations hide while cloaked/off-map and disappear when ownership is lost. Multiple tints combine by component-wise maxima; cloak hides them, and iron curtain/force shield takes visual precedence. Tint does not alter damage or ownership. Passive visuals, state-entry tracking, and supported animation state persist across saves.
+
+### Icons, text, and audio
+
+Research and active icons accept PNG and engine-loadable PCX. PNG transparency is supported; invalid/missing resources use the appropriate built-in fallback. Research rarity colors: Common preserves original colors, Rare uses blue/purple, Epic gold, Insane red. Keep UI resource names separate from animation IDs.
+
+For generated single-passive research details, supported placeholders include `{amount}`, `{percent}`, `{count}`, `{chance}`, `{cooldown}`. A multi-action passive's custom amount/percent placeholders refer to its first action. GiveCredits supports `{credits}`. Add a literal percent sign yourself, such as `{percent}%`. Custom WhileState details and a combined research project's custom Detail are displayed literally rather than expanded per child effect.
+
+Fields in `[Starfall.ResearchSounds]`: `Button`, `Cards`, `Refresh`, `Select`, `Available`. Each defaults to empty. Accepted built-ins are `builtin:cards`, `builtin:select`, and `builtin:available`, or an external WAV path. Empty Button uses native click audio; other empty fields are silent. Failed Button audio falls back to native click audio.
+
+External WAV: uncompressed PCM, 8/16-bit, mono/stereo, `8000..48000` Hz, at most 16 MiB. Paths can be absolute or relative to the game root. Action PlaySound instead uses a native sound ID or `wav:<path>`. Custom action WAV plays only for a local visible/unshrouded position, at the configured effects volume; missing local audio must not control gameplay. Local shake respects the viewport and applicable `HideShakeEffects` setting. Fire/railgun particle systems require distinct source and destination positions.
+
+Cache behavior is internal, not additional INI configuration:
+
+| Cache | Bound |
+| --- | --- |
+| Decoded icon/card images | 256 entries and 64 MiB of accounted data. |
+| WAV samples | 64 entries and 32 MiB of accounted data. |
+| Current scaled card surface | One surface, at most 1,048,576 16-bit pixels (2 MiB). |
+| Rendered text | 256 entries and 4 MiB. |
+| Simultaneously managed audio voices | 8. |
+
+Image/audio caches use bounded LRU behavior; failed loads also occupy bounded entries. Oversized valid resources can be used transiently. Reloading research configuration clears image/card/audio caches; in-progress sounds retain independent playback buffers. Scenario/load reset stops old voices. These limits do not cap total process memory, temporary decoding, or the game's own PCX cache. There is no documented user-facing hot-reload command; do not invent one.
+
+### Native animation references
+
+Use an animation type already registered by the game or mod, with a valid native image. `Anim`, `Action.Anim`, and `ctx:spawnAnim` reference the animation type ID, not an image filename. Register custom animation types through the game's normal rules and art configuration before using them.
+
+The Tornado example uses the native `PIFF` animation as a placeholder. Replace `Script.Param.Anim` with your mod's registered animation ID to supply its artwork; the movement, damage, and Lua animation APIs work independently of that choice.
+
+## Persistence, multiplayer, and compatibility
+
+### Save/load contract
+
+Starfall stores extension data in the `Starfall.Passives` stream. The current marker is `0x66504653`, which adds active cloaking-capability IDs. The previous `0x65504653` layout remains readable. Saves written with the new marker require this implementation or a compatible newer reader. This document is not a full binary save-format specification; use the Writer/Reader/saveState/loadState implementation before editing save code.
+
+The stream covers relevant passive counts/cooldowns/stacks and snapshots, grants and remaining durations, continuous state progress, extended health/stat changes, research ownership/points/offers/refreshes/building rewards, supported motion/animations, sequence/map context, Lua timers/state/RNG, and associated identifiers. Not every cache is serialized; derived presentation and lookup caches are rebuilt or cleared.
+
+Loading validates and stages extension state before committing. An existing malformed extension stream is rejected rather than partially applied. Missing extension data is handled separately for older native saves. Some older Starfall layouts are supported, but no claim is made that every historical build or arbitrary changed configuration can load safely. Keep project/passive IDs stable and keep compatible scripts available for saved callbacks.
+
+### Multiplayer contract
+
+All peers must use the same Starfall DLL, gameplay rules, maps, scripts, and required animation/resources. Local UI selection sends commands that are revalidated in simulation; direct local input or drawing code must not mutate shared gameplay state.
+
+Use `ctx:randomInt` and `ctx:randomPoint` for Lua randomness. Do not use external randomness, unordered iteration, clocks, files, or client-specific conditions for simulation decisions. Script errors retain earlier effects; identical error behavior is not a substitute for valid scripts.
+
+The repository includes real two-client tests with frame-by-frame state comparisons, plus impaired-network and negative-divergence modes. These test specific scenarios and dependency combinations. They do not establish that every Lua example, arbitrary mod combination, long session, or multiplayer save/load path has been covered. Current recorded evidence is linked in the test section.
+
+### Unit conversion and extension scope
+
+Without Phobos, Starfall uses its native conversion path. With Phobos loaded, it requires the exported `ConvertToType_Phobos` interface; absence disables conversion. It does not require Ares merely to transform units.
+
+Conversion requires different source/destination types of the same supported object class and matching Locomotor. It preserves identity, ownership, rank, passive state, proportional health, and extra maximum-health contribution where supported. A research conversion affects only current eligible units, never future production. At least one successful conversion is required for a conversion-only purchase.
+
+The native fallback rejects unsupported spawner/slave/manager combinations and incompatible mind-control/parasite/chrono states. Cargo must fit the destination's passenger capacity and size constraints; occupied transports require compatible open-topped/gunner behavior. Units must be alive, on-map, and valid for their destination terrain/state. Third-party type-attached data is not automatically compatible with every native conversion.
+
+Mind-control immunity includes the supported native controller paths and the adapted Ares 3.0p1 permanent-control path. Unsupported entrypoints/versions are logged; this is not blanket compatibility with every Ares/Phobos build. Consult the current review records and test the exact loader/extensions used by a mod.
+
+## Diagnostics and removed interfaces
+
+Start with game-root `Starfall.log`. Research diagnostics include section, field, value, reason, and a file line number when available. Merged-rule diagnostics cannot always identify the original include/map file. Lua diagnostics include file/function and traceback location. A logged invalid passive can cause dependent grants/projects to become unavailable as well.
+
+| Symptom | Check first |
+| --- | --- |
+| Passive never executes | Registry, exact ID, definition validity, unit binding/grant, counterpart filters, state condition, count/cooldown, and target viability. |
+| WhileState is rejected | Missing condition; event Action/Filter/Chance fields mixed in; unknown Modifier; missing visual/modifier result. |
+| Formula fails | Supported destination field, `$()` wrapper, variable context, absent target, division by zero, and result range. |
+| No research cards | Enabled, registration, valid effect, rarity weights, country, prerequisites, ownership, and referenced passives. |
+| A card cannot be purchased | Balance at least 100, current offered ID, unmet immediate conversion/technology applicability, duplicate command/ownership. |
+| Refresh unavailable | Balance threshold, global switch, slot already used, or no unseen same-rarity candidate. |
+| Active skill is missing/rejected | Registered/held ID, restricted Active schema, single RunScript action, discovered function, caster state, target/range. |
+| Lua state disappears | Module globals used instead of ctx.state; state table modified without writeback; holder/cast retired. |
+| Delayed callback lacks original aim/damage | Store it explicitly in task data; scheduled callbacks reconstruct their own context. |
+| Icon/audio replacement is not visible | Correct path/format, cache invalidation at configuration/scenario boundary, and native PCX lookup. |
+| A new option spelling seems ignored | Check the actual parser; do not infer fields from other mods or from a similar name. |
+
+Removed or invalid authoring forms:
+
+| Old / unsupported form | Replacement / rule |
+| --- | --- |
+| `Condition.SelfHealthAtLeast`, `Condition.SelfHealthAtMost`, `Condition.SelfHealthBelow` | `Condition.Formula` with health comparisons. |
+| `Condition.AmmoAtLeast`, `Condition.AmmoAtMost` | Formula using `Self.Ammo`. |
+| `Condition.PassengersAtLeast`, `Condition.PassengersAtMost` | Formula using `Self.Passengers`. |
+| `Modifier.PowerOutputMultiplier`, `Modifier.PowerDrainMultiplier` | `Modifier.PowerMultiplier`. |
+| `Trigger=OnCast` | `Trigger=Active`. |
+| `[Starfall.Research] Options=...` | Register projects in `[Starfall.ResearchTypes]`. |
+| Arbitrary `Action.*` names, conflicting Lua aliases | Use only documented fields once. |
+| `Action` together with `Actions` | Choose one schema per parent. |
+| `math.random`, `pairs`, persistent module globals | Synchronized RNG, ordered arrays, ctx.state/task data. |
+
+The old separate shield-style configuration is not an active documented feature. Use the current supported immunity/iron-curtain/damage-interception interfaces according to the desired behavior; they are not interchangeable shields.
+
+## Build, tests, and source map
+
+Commands run from the repository root on Windows:
+
+```bat
+build.cmd
+tests\unit\build.cmd
+tests\build.cmd research-hud
 ```
 
-```ini
-[Starfall.ResearchTypes]
-8=SF_CombinedUpgrade
+The unified test entry point is `tests/run.ps1`; suites and engine expectations live in `tests/cases.json`. The default `quick` suite checks the test infrastructure and runs all six standalone programs without launching the game:
 
-[SF_CombinedUpgrade]
-Name=装甲综合升级
-Summary=灰熊坦克获得两项被动，并获得资金
-Effects=SF_Combined_Heal,SF_Combined_Counter,SF_Combined_Money
-
-[SF_Combined_Heal]
-Effect=GrantPassive
-TargetTypes=MTNK
-Passive=SF_ResearchRepair
-
-[SF_Combined_Counter]
-Effect=GrantPassive
-TargetTypes=MTNK
-Passive=SF_Counter
-
-[SF_Combined_Money]
-Effect=GiveCredits
-Credits=2000
+```powershell
+.\tests\run.ps1
+.\tests\run.ps1 -List
+.\tests\run.ps1 -Suite smoke -Plan
+.\tests\run.ps1 -Case cloakable,health-formula
+.\tests\run.ps1 -Suite network
 ```
 
-```ini
-[Starfall.ResearchTypes]
-0=TankUpgrade
+For game tests, copy `tests/environment.example.json` to the ignored `tests/local/environment.json` and set local paths, or pass them explicitly. Existing direct runners remain supported:
 
-[TankUpgrade]
-Name=装甲升级
-Summary=灰熊坦克转为犀牛坦克
-Effect=ConvertVehicle
-FromType=MTNK
-ToType=HTNK
+```powershell
+.\tests\run-game.ps1 -Case research-hud -GameDirectory 'D:\Games\Yuri'
+.\tests\run-multiplayer.ps1 `
+    -GameDirectory 'D:\Games\Yuri' `
+    -PhobosPackageDirectory 'D:\Packages\Phobos' `
+    -StandaloneSpawner 'D:\Packages\CnCNet-Spawner.dll'
 ```
 
-#### 额外补充说明
+The automated runners build dedicated probe DLLs and use isolated run directories. Compilation is cached by source content, toolchain signature, and output hashes; tests always execute. Common libraries are shared, and immutable `.mix` archives use hard links when possible. Settings, DLLs, scripts, maps, and saves remain separate. Each suite writes logs and a JSON summary under `tests/local/records/suite-<time>-<id>/`; failures produce a failing exit status. `tests/clean.ps1` previews disposable artifacts, and `-Apply` removes them while retaining diagnostics and the reusable game base.
 
-先按国家和工业工厂等原有修正得出基准价，再合计科研百分比，最后加上固定金额。结果四舍五入，最低为 0。例如原价 700，同时获得 −20% 和 −100 后售价为 460。订单在开工时锁价，取消时退还已付金额。读档按玩家的已购项目恢复修正。
+Do not install a test DLL as a normal gameplay release. Read [tests/README.md](../tests/README.md) for requirements, case names, output records, and network profiles. Six standalone test programs cover Lua runtime, audio, text, generic resources, research model, and action arguments. Actual game tests cover engine-dependent behavior; a standalone pass is not a substitute for an in-game or multiplayer test.
 
-单位转换不再要求 Ares。没有加载 Phobos 时，流火使用内置转换，保留单位身份、所属方、星级和被动状态，按原生命比例调整生命，并保留额外生命上限。加载 Phobos 时，流火使用其公开的 `ConvertToType_Phobos` 接口，以便由 Phobos 更新自己的单位数据。该接口的不同 Phobos 版本需要自行验证；未提供接口的版本（包括《远征》随附的 Dev Build #36）不支持转换，流火会在 `Starfall.log` 记录原因。
+Implementation index:
 
-内置转换暂不支持带子机或奴隶的类型、目标类型具有心控、寄生或超时空武器的情况；受到心控、寄生或超时空攻击，正在部署，或带有子机、奴隶、心控、空袭管理器的单位也会跳过。乘客仍须符合目标类型的容量与体型限制；有乘客时，开放舱和炮手设置须一致。使用其他扩展时，其额外附着效果和类型相关状态需另行验证。
+| Source | Responsibility |
+| --- | --- |
+| [Starfall.cpp](../src/Starfall.cpp) | Passive parsing, runtime state, events, actions, building research adapters, engine hooks, serialization, and runtime coordination. |
+| [ConfigText.cpp](../src/ConfigText.cpp) | Shared text/number/list normalization and diagnostics. |
+| [Research.h](../src/Research.h), [Research.cpp](../src/Research.cpp) | Research data types/state, points, offers, refresh, purchase, reset. |
+| [ResearchConfig.cpp](../src/ResearchConfig.cpp) | Research file/merged-rule parsing and prerequisite validation. |
+| [ResearchEffects.cpp](../src/ResearchEffects.cpp) | Research validation/execution, production permissions and prices. |
+| [ResearchInternal.h](../src/ResearchInternal.h) | Narrow internal research/runtime interfaces. |
+| [ResearchUI.cpp](../src/ResearchUI.cpp), [ActiveSkillUI.inc](../src/ActiveSkillUI.inc) | UI, input, image rendering. |
+| [ActiveCast.inc](../src/ActiveCast.inc) | Simulation-side active-command validation/execution. |
+| [HealthFormula.h](../src/HealthFormula.h), [UnitHealth.h](../src/UnitHealth.h) | Formula grammar/evaluation and extended health. |
+| [LuaRuntime.h](../src/LuaRuntime.h), [LuaSkillActions.inc](../src/LuaSkillActions.inc) | Restricted Lua environment, contexts, actions, queries, scheduling. |
+| [LuaTimers.h](../src/LuaTimers.h), [LuaTaskData.h](../src/LuaTaskData.h) | Saved task/state values and deterministic RNG. |
+| [LuaNearby.inc](../src/LuaNearby.inc), [LuaAnim.inc](../src/LuaAnim.inc) | Query support and managed Lua animations. |
+| [ActionSequence.inc](../src/ActionSequence.inc) | Superweapon/map scripts, casts, map overlay, sequence persistence. |
+| [ForceMove.inc](../src/ForceMove.inc) | Forced displacement, eligibility, collision, and landing. |
+| [VisualScale.cpp](../src/VisualScale.cpp) | Native SHP, voxel, projectile, and attached-animation scaling. |
+| [ResourceCache.h](../src/ResourceCache.h), [ResearchAudio.h](../src/ResearchAudio.h), [ResearchText.h](../src/ResearchText.h) | Bounded presentation caches and audio/text helpers. |
+| [module-sources.cmd](../tools/module-sources.cmd) | Shared separately compiled module list. |
 
-科研转换只处理地图上存活且满足类型、地形、乘客容量等条件的己方单位，其他单位跳过。接口不可用、类型无效或移动器 `Locomotor` 不同时，这类项目不进入候选。没有合适目标或全部转换失败时无法购买，不扣科研点；至少一个转换成功即购买成功。转换不影响之后生产的单位。被动结果 `Transform` 采用同样的转换路径和限制。
+Architecture and verification records: [module boundaries](architecture.md), [initial review](reviews/2026-11-14.md), [fixes](reviews/2026-11-14-fixes.md), [multiplayer](reviews/2026-11-14-multiplayer.md), [cache work](reviews/2026-11-14-cache.md), [module extraction](reviews/2026-11-14-modules.md). These dated records describe measured coverage and remaining limits; they are not promises about untested environments.
 
-效果按首次出现的顺序执行，同一效果段 ID 重复填写时只执行一次。任何效果配置无效、缺失或依赖不可用时，整个项目不进入候选。购买时跳过暂时无法执行的效果（如没有可转换单位或科技已解锁），其余效果继续执行；至少一项成功才扣点并记录研究，已跳过的即时效果不会在以后补发。被动效果作用于购买者当前和未来符合类型的单位。效果之间不保证事务回滚。`Effects` 为空时项目无效；未填写 `Effects` 的旧式单效果配置保持兼容。
+Examples: [Lua configuration](../examples/Lua/Starfall.ini), [AreaBarrage.lua](../examples/Lua/AreaBarrage.lua), [Tornado configuration](../examples/Tornado/Starfall.ini), [Tornado.lua](../examples/Tornado/Tornado.lua), [research example](../examples/Starfall.HexBrawl.ini).
 
-列表项目省略 `Detail` 时，悬浮提示会按顺序显示效果；自定义 `Detail` 按原文显示，不替换各效果的数值占位符。
+## Credits
 
-悬浮 `Detail` 可随数值变化。事件被动支持 `{amount}`、`{percent}`、`{count}`、`{chance}` 和 `{cooldown}`。多结果被动省略详情时按顺序逐项显示，手写详情中的 `{amount}` 和 `{percent}` 取第一项结果的数值。资金项目使用 `{credits}`。百分比占位符只替换数字，要显示百分号请写 `{percent}%`。`WhileState` 可省略 `Detail` 以显示实际倍率，自定义持续效果详情按原文显示。
-
-### 4. 科研点的来源
-
-#### 简要介绍
-
-科研点可以来自全局发放、地图触发器或运转中的建筑，同一玩家可同时使用这些来源。
-
-#### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `InitialPoints / PeriodicPoints` | 在 [Starfall.Research] 设置开局点数和每周期点数。 |
-| `PeriodicIntervalSeconds` | 全局发点间隔，单位为游戏秒。 |
-| `地图动作 9600` | 填写发放点数和接收玩家。 |
-| `Starfall.ResearchPoints / Starfall.ResearchInterval` | 在建筑类型段填写每次产出点数和间隔帧数。 |
-
-#### 示例代码
-
-**全局发放。** 在 `[Starfall.Research]` 中配置开局和周期性发放。三个字段均默认为 `0`，不填写时不发放：
-
-```ini
-[Starfall.Research]
-InitialPoints=100
-PeriodicPoints=10
-PeriodicIntervalSeconds=30
-```
-
-在地图 `[Actions]` 中使用 `9600` 发放科研点。下例给 1 号出生位玩家增加 90 点。
-
-```ini
-[Actions]
-0F510005=1,9600,0,0,90,4475,0,0,A
-```
-
-**建筑持续产出。** 将下列字段写在建筑类型段中，例如科技医院：
-
-```ini
-[CAHOSP]
-Starfall.ResearchPoints=10
-Starfall.ResearchInterval=150
-```
-
-#### 额外补充说明
-
-此例在开局给每个玩家 100 点，此后每 30 游戏秒给每个玩家 10 点；1 游戏秒为 15 游戏帧，暂停时不计时。周期点数和间隔都须大于 0 才会定期发放；`InitialPoints=0` 关闭开局发放。所有字段为非负整数；间隔以游戏秒为单位。玩家出生位中的人类和 AI 均参与，中立、观察者和已战败玩家不参与。此来源可与建筑、地图触发器叠加。
-
-全局计时进度随新存档保存，读档不会重复发放开局点数。读取没有此功能记录的旧存档时不补发开局点数，定时发放从读档后重新计时。
-
-`0F510005` 要与该地图的触发器 ID 对应，等号后的 `1` 是动作数量。`90` 替换为要发放的正整数点数；其后的接收方填 `0` 表示触发器所属玩家，`4475`～`4482` 依次表示 1～8 号出生位。中立、观察者或已战败的所属方不获得点数。完整的事件、动作和标签组合见[科研点测试地图](../tests/maps/Starfall_ResearchPoints.map)。
-
-每座处于工作状态的医院独立累计，满 150 个游戏帧给**当前拥有者** 10 点。`Starfall.ResearchPoints` 默认 0，`Starfall.ResearchInterval` 默认 150 帧，两者均须为正整数才会产出。EMP、建筑离线或正在被超时空抹除时暂停计时；建造、出售或离开地图时清除进度。被占领后为新主人重新计时。余额、建筑计时及已购项目均随存档保存。
-
-### 5. 特殊建筑的免费科研
-
-#### 简要介绍
-
-建筑可以提供一次免费的科研选择。玩家占领建筑或用间谍渗透后，通过建筑上的按钮领取奖励。
-
-#### 参数列表和对应说明
-
-| 参数 | 说明 |
-|---|---|
-| `Starfall.ResearchOptions` | 写在建筑类型段中，填 1 至 3 个已注册的科研项目 ID，以英文逗号分隔。 |
-
-#### 示例代码
-
-```ini
-[CAHOSP]
-Starfall.ResearchOptions=SF_Repair,SF_Drain,SF_Riposte
-```
-
-#### 额外补充说明
-
-占领者或成功渗透的间谍所属方可领取奖励。建筑易主时，未使用的领取权转给新主人。每栋建筑只能领取一次，领取记录随存档保存。
-
-建筑奖励忽略项目的国家和前置科研限制，但不会提供玩家已经获得的项目；项目本身无效时也不会提供。即时效果仍需满足实际执行条件，例如转换项目需要场上有可转换的本方单位。领取不消耗科研点。填写超过三项时该建筑的奖励无效。需要另行将建筑设为游戏支持的可占领或可渗透类型；本字段不会改变建筑的原有占领、间谍规则。
-
-## 三、全局配置
-
-### 简要介绍
-
-全局配置控制整局共用的规则，包括被动属性的累计上下限、科研点发放、普通科研抽卡和科研界面音效。这些段可以写在游戏根目录的 `Starfall.ini`，也可以写进游戏实际加载的 `rulesmd.ini`。
-
-### 参数列表和对应说明
-
-#### `[Starfall.PassiveLimits]`
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `Speed` / `Speed.Min` | 300% / 1% | 移速的累计上限与下限。 |
-| `Firepower` / `Firepower.Min` | 300% / 1% | 火力的累计上限与下限。 |
-| `Armor` / `Armor.Min` | 300% / 1% | 装甲的累计上限与下限。 |
-| `Scale` / `Scale.Min` | 300% / 25% | 单位体型的累计上限与下限。 |
-| `ProjectileScale` / `ProjectileScale.Min` | 300% / 1% | 弹体尺寸与溅射范围的累计上限与下限。 |
-| `WeaponRange` / `WeaponRange.Min` | 300% / 1% | 武器射程的累计上限与下限。 |
-| `FireRate` / `FireRate.Min` | 300% / 1% | 射速的累计上限与下限。 |
-
-#### `[Starfall.Research]`
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `Title` | 请选择升级 | 科研面板标题。 |
-| `Enabled` | yes | 科研三选一总开关。`yes`、`true`、`1` 开启；`no`、`false`、`0` 关闭。关闭时隐藏科研界面，停止科研点发放、选卡和建筑免费科研。存档中已有的科研点和已购升级保留。 |
-| `AllowCardRefresh` | yes | 允许每个卡位每轮免费刷新一次。开启值为 `yes`、`true`、`1`，关闭可填 `no`、`false`、`0`。 |
-| `InitialPoints` | 0 | 每位参与玩家的开局科研点。 |
-| `PeriodicPoints` | 0 | 每位参与玩家每周期获得的科研点。 |
-| `PeriodicIntervalSeconds` | 0 | 发放间隔，单位为游戏秒。点数和间隔均为正整数时开启周期发放。 |
-| `RarityWeight.Common` / `RarityWeight.Rare` / `RarityWeight.Epic` | 5 / 4 / 1 | 普通、稀有、史诗档的抽取权重，填非负整数。设为 0 可关闭对应档。 |
-
-#### `[Starfall.ResearchSounds]`
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `Button` | 留空 | 点击有效按钮时播放。 |
-| `Cards` | 留空 | 展开有候选卡片的面板时播放。 |
-| `Refresh` | 留空 | 刷新成功时播放。 |
-| `Select` | 留空 | 选择成功时播放。 |
-| `Available` | 留空 | 普通科研变为可购买时播放。 |
-
-五个音效字段均可填写 `builtin:cards`、`builtin:select`、`builtin:available` 或自定义 PCM WAV 路径。留空时，`Button` 使用游戏原生点击音，其他四项静音。
-
-### 示例代码
-
-```ini
-[Starfall.PassiveLimits]
-Firepower=200%
-Firepower.Min=50%
-
-[Starfall.Research]
-InitialPoints=100
-PeriodicPoints=10
-PeriodicIntervalSeconds=30
-Enabled=yes
-AllowCardRefresh=yes
-
-[Starfall.ResearchSounds]
-Available=builtin:available
-```
-
-### 额外补充说明
-
-外部 WAV 支持未压缩 PCM、8 或 16 位、单声道或立体声、8000～48000 Hz，最大 16 MiB。可用绝对路径或相对游戏根目录的路径；加载失败记入 `Starfall.log`。`Button` 加载失败时回退原生点击音。`Available` 只在本地玩家从无可购买项目变为有可购买项目时播放。
-
-属性上下限按正整数百分比填写。比如 `Firepower=200%` 表示事件累计后的火力最高为基础值的两倍。`WhileState` 的火力倍率会在累计值上继续相乘。
-
-被动与科研项目分别通过 `[Starfall.PassiveTypes]` 和 `[Starfall.ResearchTypes]` 注册，地图和小队使用的授予方案通过 `[Starfall.PassiveGrants]` 注册。
-
-## 制作与鸣谢
-
-- **制作者**　斩断云天
-- **合作者**　贪吃的布丁
-
-特别鸣谢 Westwood、Ares 制作者、Phobos 制作组和 ra2jj.com。
+Creator: 斩断云天. Collaborator: ChatGPT, 贪吃的布丁. Acknowledgments: Westwood, the Ares authors, the Phobos team, and ra2jj.com.

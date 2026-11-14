@@ -6,9 +6,15 @@ void check(bool ok,const char* label) {
     std::ofstream("formula.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
 }
+#include "SaveIntegrity.h"
 bool approximately(double value,double expected) {return std::abs(value-expected)<0.00001;}
 void grammar() {
     HealthFormula f;
+    bool missingSelf=false;
+    check(f.compile("$(100+50)") && f.evaluate(0,0)==150 &&
+        f.compile("$(if(1,7,self.health))") && f.evaluate(0,0)==7 &&
+        f.compile("$(self.health)") && !f.evaluate(0,0,0,std::nullopt,0,std::nullopt,&missingSelf) && missingSelf,
+        "formulas only require referenced health");
     check(f.compile("$( -(-2) + min(3,4)*clamp(8,1,5)/2 - 25% )") &&
         approximately(f.evaluate(1,2).value_or(0),9.25),"precedence");
     for(auto text:{"$(1+)", "$(foo)", "$(min(1))", "$(max(1,2,3))", "$(1)junk", "$()", "$(self.health%)", "$(self.losthealth)", "$(self.losthealthratio)", "$(target.losthealth)", "$(target.losthealthratio)"})
@@ -220,6 +226,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestHealthFormula,5) {
         check(approximately(holder->FirepowerMultiplier,1) && !rangeState.contains(holder->UniqueID),"healed state");
         checkLegacy();
         checkLegacyShieldRecords();
+        checkSaveIntegrity();
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

@@ -312,3 +312,4 @@ DEFINE_HOOK(0x705E00, SF_SpriteDrawScale, 7) {
     }
     return 0;
 }
+

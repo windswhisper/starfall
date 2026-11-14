@@ -1,7 +1,13 @@
 #include "HealthFormula.h"
 #include "UnitHealth.h"
 #include "Research.h"
+#include "ResearchInternal.h"
+#include "ConfigText.h"
+#include "ResearchAudio.h"
 #include "VisualScale.h"
+#include "LuaTimers.h"
+#include "ActiveSkills.h"
+#include <filesystem>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -19,9 +25,15 @@
 #include <vector>
 #include <TechnoClass.h>
 #include <AnimClass.h>
+#include <ParticleSystemClass.h>
+#include <VocClass.h>
+#include <GScreenClass.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <HouseClass.h>
 #include <FactoryClass.h>
+#include <SuperClass.h>
+#include <EventClass.h>
 #include <ScenarioClass.h>
 #include <SessionClass.h>
 #include <RulesClass.h>
@@ -34,10 +46,13 @@
 #include <WeaponTypeClass.h>
 #include <WarheadTypeClass.h>
 #include <MapClass.h>
+#include <TacticalClass.h>
+#include <LocomotionClass.h>
 #include <Powerups.h>
 #include <InfantryClass.h>
 #include <UnitClass.h>
 #include <TActionClass.h>
+#include <TargetClass.h>
 #include <TagClass.h>
 #include <TriggerClass.h>
 #include <TeamClass.h>
@@ -47,45 +62,52 @@ using std::string;
 using std::vector;
 
 namespace {
+using ConfigText::trim;
+using ConfigText::lower;
+using ConfigText::split;
+using ConfigText::number;
+using ConfigText::includes;
+using ConfigText::displayText;
+using ConfigText::configLog;
 const char* registry = "Starfall.PassiveTypes";
 char configPath[MAX_PATH]{};
-string trim(string s) {
-    auto start = s.find_first_not_of(" \r\n\t");
-    return start == string::npos ? "" : s.substr(start, s.find_last_not_of(" \r\n\t") - start + 1);
+using ScriptFields=std::map<string,string>;
+LuaTimers::Store scriptTimers;
+std::map<string,ScriptRuntime::Module> scriptModules;
+std::map<string,ScriptFields> scriptDefinitions;
+const std::pair<const string,ScriptFields>* parsingScript=nullptr;
+std::map<string,vector<string>> scriptBindings;
+std::map<string,string> rulesSkillNames;
+const char* rulesName(const string& section) {
+    auto it=rulesSkillNames.find(section);
+    return it==rulesSkillNames.end()?section.c_str():it->second.c_str();
 }
-string lower(string s) {
-    for (char& c : s) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-    return s;
-}
-vector<string> split(const string& s) {
-    vector<string> out;
-    size_t p = 0;
-    while (p < s.size()) {
-        auto end = s.find(',', p);
-        auto item = lower(trim(s.substr(p, end - p)));
-        if (!item.empty() && std::find(out.begin(), out.end(), item) == out.end()) out.push_back(item);
-        if (end == string::npos) break;
-        p = end + 1;
+string readRaw(const string& section, const char* key, const char* fallback = "") {
+    if(parsingScript && parsingScript->first==section) {
+        auto it=parsingScript->second.find(lower(key));
+        return it==parsingScript->second.end()?lower(fallback):it->second;
     }
-    return out;
-}
-string read(const string& section, const char* key, const char* fallback = "") {
     char buf[2048]{};
     GetPrivateProfileStringA(section.c_str(), key, "", buf, sizeof(buf), configPath);
-    if (!buf[0] && !CCINIClass::INI_Rules) return lower(fallback);
-    if (!buf[0])
-        CCINIClass::INI_Rules->ReadString(section.c_str(), key, fallback, buf, sizeof(buf));
-    return lower(trim(string(buf).substr(0,string(buf).find(';'))));
+    if (!buf[0] && !CCINIClass::INI_Rules) return fallback;
+    if (!buf[0]) {
+        auto ini=CCINIClass::INI_Rules;
+        const char* name=rulesName(section);
+        // Enumeration normalizes custom parameter keys. YR may index the original spelling.
+        if(std::string_view(key).starts_with("script.param.")) {
+            for(int i=0;i<ini->GetKeyCount(name);++i) {
+                auto original=ini->GetKeyName(name,i);
+                if(original && !_stricmp(original,key)) {key=original;break;}
+            }
+        }
+        ini->ReadString(name,key,fallback,buf,sizeof(buf));
+    }
+    return trim(string(buf).substr(0,string(buf).find(';')));
 }
-int number(string s, bool percent = false) {
-    if (percent && !s.empty() && s.back() == '%') s.pop_back();
-    int n = 0;
-    auto r = std::from_chars(s.data(), s.data()+s.size(), n);
-    return r.ec == std::errc{} && r.ptr == s.data()+s.size() && n >= 0 ? n : -1;
+string read(const string& section,const char* key,const char* fallback="") {
+    return lower(readRaw(section,key,fallback));
 }
-bool includes(const vector<string>& list, const string& s) {
-    return std::find(list.begin(),list.end(),s) != list.end();
-}
+#include "ForceMove.inc"
 using Factors=std::array<double,3>; // speed, firepower, armor
 constexpr Factors identity={1.0,1.0,1.0};
 constexpr Factors defaultStatPercent={100,100,100};
@@ -190,8 +212,18 @@ struct PassiveAction {
     Powerup crateType=randomCrate;
     TechnoTypeClass* unitType=nullptr;
     string owner;
-    string action, target, passive, weapon, warhead;
+    string action, target, passive, weapon;
+    WarheadTypeClass* warhead=nullptr;
+    AnimTypeClass* playAnim=nullptr;
+    ParticleSystemTypeClass* particleSystem=nullptr;
+    string sound;
+    int shakeX=0,shakeY=4;
+    bool shakeLocal=true;
+    string script,function,skillId;
     vector<string> passiveList;
+    ForceMove::Spec forceMove;
+    CellStruct teleportCell{};
+    int searchRadius=3;
     bool targetIsEventTarget=false,stackOnReapply=false;
     int amount=0, damagePercent=0, maxHealthPercent=0, duration=-1;
 };
@@ -213,18 +245,24 @@ struct Skill {
     std::array<double,stateMultiplierKeys.size()> multipliers={1,1,1,1,1,1};
     ConfigFormula conditionFormula;
     bool passengerCombat=false;
+    int extraShotCount=0;
+    ConfigFormula multiShotFormula;
+    bool hasMultiShot() const { return extraShotCount>0 || !multiShotFormula.expression.empty(); }
     vector<std::pair<size_t,ConfigFormula>> stateFormulas;
     NearbyRule nearby;
     AuraRule aura;
     AnimTypeClass* anim=nullptr;
     AnimTypeClass* triggerAnim=nullptr;
+    AnimTypeClass* gainAnim=nullptr;
     bool animAlways=false;
+    std::optional<ColorStruct> tint;
     string animTarget;
     vector<string> spawnPassives;
     vector<string> transportPassives;
     bool transportStack=false;
-    bool berserk=false, mirage=false, immune=false, mindImmune=false;
+    bool berserk=false, mirage=false, immune=false, mindImmune=false, emp=false, cloakable=false;
     string id, trigger;
+    ScriptFields scriptParams;
     string signal;
     vector<string> senderHouses,senderKinds;
     vector<PassiveAction> actions;
@@ -237,297 +275,8 @@ struct Skill {
 };
 std::map<string, Skill> skills;
 std::map<string, vector<string>> bindings;
+std::map<string,string> mapPassiveBindings;
 bool ready = false;
-std::wstring displayText(const string& value) {
-    if(value.empty()) return {};
-    UINT cp=CP_UTF8;
-    int n=MultiByteToWideChar(cp,MB_ERR_INVALID_CHARS,value.c_str(),-1,nullptr,0);
-    if(n==0) { cp=CP_ACP; n=MultiByteToWideChar(cp,0,value.c_str(),-1,nullptr,0); }
-    if(n<1) return {};
-    std::wstring result(n,0);
-    MultiByteToWideChar(cp,0,value.c_str(),-1,result.data(),n);
-    result.pop_back();
-    return result;
-}
-void configLog(const string& message) {
-    const string line="Starfall: "+message+"\n";
-    OutputDebugStringA(line.c_str());
-    std::ofstream("Starfall.log",std::ios::app)<<line;
-}
-using ResearchWarning=std::function<void(const string&,const char*,const string&)>;
-using EffectWarning=std::function<void(const char*,const string&)>;
-bool validResearchEffect(const Research::EffectSpec&,const EffectWarning& warn={});
-Research::EffectSpec singleEffect(const Research::Option&);
-
-// A reference to an unknown ID leaves its project blocked. A topological walk
-// also detects loops and projects that depend on a broken chain without recursion.
-void validateResearchChains(const ResearchWarning& warn) {
-    auto& options=Research::options;
-    std::map<string,size_t> index;
-    for(size_t i=0;i<options.size();++i) index.emplace(options[i].id,i);
-    vector<vector<size_t>> dependents(options.size());
-    vector<size_t> remaining(options.size()), roots;
-    for(size_t i=0;i<options.size();++i) {
-        auto& option=options[i];
-        option.validChain=false;
-        remaining[i]=option.prerequisites.size();
-        if(remaining[i]==0) roots.push_back(i);
-        for(const auto& id:option.prerequisites) {
-            auto parent=index.find(id);
-            if(parent!=index.end()) dependents[parent->second].push_back(i);
-            else warn(option.id,"Prerequisites","未注册前置项目 ["+id+"]，本项目无法抽取");
-        }
-    }
-    for(size_t head=0;head<roots.size();++head) {
-        auto i=roots[head]; options[i].validChain=true;
-        for(auto next:dependents[i]) if(--remaining[next]==0) roots.push_back(next);
-    }
-    for(const auto& o:options) if(!o.validChain) {
-        // Missing references were reported above. Identify the blocked direct parents, too.
-        for(const auto& id:o.prerequisites) {
-            auto parent=index.find(id);
-            if(parent!=index.end() && !options[parent->second].validChain)
-                warn(o.id,"Prerequisites","前置链在 ["+id+"] 处未通过（循环或依赖无效前置），本项目无法抽取");
-        }
-    }
-}
-Research::CostChange readCostChange(string value,const string& category) {
-    using C=Research::CostCategory;
-    Research::CostChange result;
-    result.category=category=="building"?C::Building:category=="defense"?C::Defense:
-        category=="infantry"?C::Infantry:category=="vehicle"?C::Vehicle:C::Invalid;
-    result.percent=value.ends_with('%');
-    if(result.percent) value.pop_back();
-    const bool negative=value.starts_with('-');
-    if(negative || value.starts_with('+')) value.erase(0,1);
-    const int magnitude=number(value);
-    if(magnitude>0) result.delta=negative?-magnitude:magnitude;
-    return result;
-}
-void installProductionCheck();
-void readResearch() {
-    using Research::Option;
-    const Option defaults[]={
-        {"sf_repair","sf_researchrepair",{},{"mtnk"},L"战场维修",L"击杀时修复自身",L"击杀敌人时，额外恢复 {amount} 点生命"},
-        {"sf_drain","sf_lifesteal",{},{"mtnk"},L"伤害吸血",L"造成伤害时吸取生命",L"按实际伤害的 {percent}% 恢复生命"},
-        {"sf_riposte","sf_counter",{},{"mtnk"},L"受击反击",L"受击时反击攻击者",L"对攻击者造成 {amount} 点基础伤害"}
-    };
-    // Preserve the original bytes/case of UI text; Windows profile API can mix code pages.
-    std::ifstream file(configPath,std::ios::binary);
-    std::map<string,std::map<string,string>> fields;
-    std::map<std::pair<string,string>,unsigned> lineNumbers;
-    const string path=configPath;
-    const string filename=path.substr(path.find_last_of("/\\")+1);
-    unsigned lineNumber=0;
-    string line,section;
-    while(std::getline(file,line)) {
-        ++lineNumber;
-        if(line.starts_with("\xEF\xBB\xBF")) line.erase(0,3);
-        line=trim(line.substr(0,line.find(';')));
-        if(line.empty() || line.front()=='#' || line.starts_with("//")) continue;
-        auto syntax=[&](const char* reason) {
-            configLog(filename+":"+std::to_string(lineNumber)+" ["+section+"] "+line+" - "+reason);
-        };
-        if(line.front()=='[') {
-            if(line.back()!=']' || trim(line.substr(1,line.size()-2)).empty()) {
-                syntax("段标题应写成 [段名]");continue;
-            }
-            section=lower(trim(line.substr(1,line.size()-2)));fields.try_emplace(section);continue;
-        }
-        auto eq=line.find('=');
-        if(eq==string::npos) {syntax("缺少等号，应写成 字段=值");continue;}
-        auto key=lower(trim(line.substr(0,eq)));
-        if(key.empty() || section.empty()) {syntax("字段名或所属段名为空");continue;}
-        fields[section][key]=trim(line.substr(eq+1));
-        lineNumbers[{section,key}]=lineNumber;
-    }
-    // The engine's INI index uses the original spelling of section names.
-    // Project and effect references are normalized by Starfall.
-    std::map<string,const char*> ruleSections;
-    if(auto ini=CCINIClass::INI_Rules)
-        for(auto node=ini->Sections.First();node && node->IsValid();node=node->Next())
-            if(node->Name) ruleSections.try_emplace(lower(node->Name),node->Name);
-    auto rulesSection=[&](const string& sec) {
-        auto it=ruleSections.find(sec);
-        return it==ruleSections.end()?sec.c_str():it->second;
-    };
-    auto field=[&](const string& sec,const char* key,const string& fallback=string{}) {
-        auto it=fields.find(sec);
-        if(it!=fields.end()) {
-            auto item=it->second.find(lower(key));
-            if(item!=it->second.end()) return item->second;
-        }
-        char buf[2048]{};
-        if(CCINIClass::INI_Rules) CCINIClass::INI_Rules->ReadString(rulesSection(sec),key,"",buf,sizeof(buf));
-        return buf[0]?trim(buf):fallback;
-    };
-    auto hasSection=[&](const string& sec) {
-        return fields.contains(sec) || (CCINIClass::INI_Rules && CCINIClass::INI_Rules->GetSection(rulesSection(sec)));
-    };
-    ResearchWarning warn=[&](const string& sec,const char* key,const string& reason) {
-        auto where=lineNumbers.find({sec,lower(key)});
-        auto value=field(sec,key);
-        string location;
-        if(where!=lineNumbers.end()) location=filename+":"+std::to_string(where->second)+" ";
-        else if(!value.empty()) location="合并规则 ";
-        configLog(location+"["+sec+"] "+key+"="+value+" - "+reason);
-    };
-    std::set<string> checkedKeys;
-    auto warnUnknown=[&](const string& sec,const std::set<string>& allowed) {
-        if(!checkedKeys.insert(sec).second) return;
-        std::map<string,string> unknown;
-        auto check=[&](const string& key) {
-            auto normalized=lower(key);
-            if(!allowed.contains(normalized)) unknown.try_emplace(normalized,key);
-        };
-        if(auto ini=CCINIClass::INI_Rules;ini && ini->GetSection(rulesSection(sec)))
-            for(int i=0;i<ini->GetKeyCount(rulesSection(sec));++i) check(ini->GetKeyName(rulesSection(sec),i));
-        if(auto it=fields.find(sec);it!=fields.end()) for(const auto& entry:it->second) check(entry.first);
-        for(const auto& entry:unknown) warn(sec,entry.second.c_str(),"科研配置不读取此字段，请核对拼写");
-    };
-    warnUnknown("starfall.research",{"enabled","allowcardrefresh","title","initialpoints","periodicpoints","periodicintervalseconds",
-        "rarityweight.common","rarityweight.rare","rarityweight.epic"});
-    warnUnknown("starfall.researchsounds",{"button","cards","refresh","select","available"});
-    auto enabled=lower(field("starfall.research","Enabled","yes"));
-    Research::enabled=enabled!="no" && enabled!="false" && enabled!="0";
-    if(!Research::enabled) {
-        Research::expanded=false;
-        Research::rewardPanel=0;
-        Research::pressed=Research::pressedOption=-1;
-    }
-    Research::options.clear();
-    constexpr std::array<const char*,5> soundKeys={"Button","Cards","Refresh","Select","Available"};
-    for(size_t i=0;i<soundKeys.size();++i) Research::soundFiles[i]=field("starfall.researchsounds",soundKeys[i]);
-    auto refresh=lower(trim(field("starfall.research","AllowCardRefresh","yes")));
-    Research::allowCardRefresh=refresh=="yes" || refresh=="true" || refresh=="1";
-    for(const auto key:{"Enabled","AllowCardRefresh"}) {
-        auto value=lower(field("starfall.research",key,"yes"));
-        if(!includes({"yes","true","1","no","false","0"},value))
-            warn("starfall.research",key,string("无效开关值，当前按 ")+(string(key)=="Enabled"?"yes":"no")+" 处理");
-    }
-    string heading=field("starfall.research","Title");
-    Research::title=heading.empty()?L"请选择升级":displayText(heading);
-    auto& income=Research::globalIncome;
-    income.initialPoints=number(field("starfall.research","InitialPoints","0"));
-    income.periodicPoints=number(field("starfall.research","PeriodicPoints","0"));
-    int seconds=number(field("starfall.research","PeriodicIntervalSeconds","0"));
-    if(income.initialPoints<0) warn("starfall.research","InitialPoints","应为非负整数，按 0 处理");
-    if(income.periodicPoints<0) warn("starfall.research","PeriodicPoints","应为非负整数，按 0 处理");
-    if(seconds<0 || seconds>INT_MAX/15) warn("starfall.research","PeriodicIntervalSeconds","无效的周期秒数，停止周期发放");
-    if(income.initialPoints<0) income.initialPoints=0;
-    if(income.periodicPoints<0) income.periodicPoints=0;
-    income.intervalFrames=seconds>=0 && seconds<=INT_MAX/15?static_cast<unsigned>(seconds)*15u:0;
-    constexpr std::array<const char*,3> weightKeys={"RarityWeight.Common","RarityWeight.Rare","RarityWeight.Epic"};
-    constexpr std::array<int,3> defaultWeights={5,4,1};
-    for(size_t i=0;i<weightKeys.size();++i) {
-        int weight=number(field("starfall.research",weightKeys[i],std::to_string(defaultWeights[i])));
-        if(weight<0) {
-            warn("starfall.research",weightKeys[i],"无效权重，使用默认值 "+std::to_string(defaultWeights[i]));
-            weight=defaultWeights[i];
-        }
-        Research::rarityWeights[i]=weight;
-    }
-    const string list="starfall.researchtypes";
-    std::map<int,string> entries;
-    auto addEntry=[&](const string& key,const string& value) {
-        int index=number(trim(key));
-        if(index<0) {warn(list,key.c_str(),"注册编号应为非负整数，此条目已忽略");return;}
-        entries[index]=lower(trim(value));
-    };
-    if(auto* ini=CCINIClass::INI_Rules; ini && ini->GetSection(rulesSection(list))) {
-        for(int i=0;i<ini->GetKeyCount(rulesSection(list));++i) {
-            auto key=ini->GetKeyName(rulesSection(list),i);
-            char value[256]{};
-            ini->ReadString(rulesSection(list),key,"",value,sizeof(value));
-            addEntry(key,value);
-        }
-    }
-    vector<string> ids;
-    if(auto it=fields.find(list);it!=fields.end())
-        for(const auto& [key,value]:it->second) addEntry(key,value);
-    std::set<string> seen;
-    for(const auto& [key,id]:entries) {
-        if(id.empty() || id.size()>127) warn(list,std::to_string(key).c_str(),"项目 ID 为空或超过 127 字节，条目已忽略");
-        else if(seen.insert(id).second) ids.push_back(id);
-    }
-    for(const auto& id:ids) {
-        if(Research::options.size()>SHRT_MAX) break;
-        if(!hasSection(id)) configLog("["+list+"] "+id+" - 找不到同名科研项目段");
-        Option o{}; o.id=id; o.name=displayText(id);
-        for(const auto& d:defaults) if(id==d.id) o=d;
-        using E=Research::Effect;
-        auto parseEffect=[](const string& effect) {
-            return effect=="grantpassive"?E::Passive:effect=="givecredits"?E::Credits:
-                (effect=="unlocktech" || effect=="unlockteck")?E::Technology:effect=="convertinfantry"?E::ConvertInfantry:
-                effect=="convertvehicle"?E::ConvertVehicle:effect=="modifytypecost"?E::TypeCost:
-                effect=="modifycategorycost"?E::CategoryCost:E::Invalid;
-        };
-        auto costFields=[&](auto& effect,const string& section) {
-            if(effect.effect==E::TypeCost || effect.effect==E::CategoryCost)
-                effect.cost=readCostChange(field(section,"CostModifier"),lower(field(section,"Category")));
-        };
-        o.effect=parseEffect(lower(field(id,"Effect","GrantPassive")));
-        costFields(o,id);
-        o.credits=number(field(id,"Credits","0"));
-        o.technology=lower(field(id,"Technology"));
-        o.from=lower(field(id,"FromType")); o.to=lower(field(id,"ToType"));
-        o.passive=lower(field(id,"Passive",o.passive));
-        o.icon=field(id,"Icon");
-        o.countries=split(field(id,"Countries"));
-        o.prerequisites=split(field(id,"Prerequisites"));
-        auto rarity=lower(field(id,"Rarity","Common"));
-        o.rarity=rarity=="common"?Research::Rarity::Common:rarity=="rare"?Research::Rarity::Rare:
-            rarity=="epic"?Research::Rarity::Epic:Research::Rarity::Invalid;
-        if(o.rarity==Research::Rarity::Invalid) warn(id,"Rarity","应为 Common、Rare 或 Epic，项目无法抽取");
-        o.types=split(field(id,"TargetTypes",o.types.empty()?"":"MTNK"));
-        auto listValue=field(id,"Effects");
-        bool hasList=fields.contains(id) && fields[id].contains("effects");
-        if(auto* ini=CCINIClass::INI_Rules;ini && ini->GetSection(rulesSection(id))) {
-            for(int i=0;i<ini->GetKeyCount(rulesSection(id));++i)
-                if(!_stricmp(ini->GetKeyName(rulesSection(id),i),"Effects")) {hasList=true;break;}
-        }
-        static const std::set<string> projectKeys={"name","summary","detail","icon","countries","prerequisites","rarity","effects","effect",
-            "costmodifier","category","credits","technology","fromtype","totype","passive","targettypes"};
-        if(hasList && !skills.contains(id) && !TechnoTypeClass::Find(id.c_str())) warnUnknown(id,projectKeys);
-        auto auditEffect=[&](const string& sec,const Research::EffectSpec& spec) {
-            if(!skills.contains(sec) && !TechnoTypeClass::Find(sec.c_str())) warnUnknown(sec,projectKeys);
-            if(spec.effect==E::Passive) for(const auto& type:spec.types)
-                if(type!="*" && !type.starts_with('@') && !TechnoTypeClass::Find(type.c_str()))
-                    warn(sec,"TargetTypes","未注册的单位类型 ["+type+"] 无法获得此被动");
-            validResearchEffect(spec,[&](const char* key,const string& reason) {
-                warn(sec,key,reason+"；科研项目 ["+id+"] 无法抽取");
-            });
-        };
-        if(hasList) {
-            o.effectList=true;
-            if(split(listValue).empty()) warn(id,"Effects","效果列表为空，项目无法抽取");
-            for(const auto& sectionId:split(listValue)) {
-                Research::EffectSpec spec;
-                spec.effect=parseEffect(lower(field(sectionId,"Effect")));
-                costFields(spec,sectionId);
-                spec.passive=lower(field(sectionId,"Passive"));spec.types=split(field(sectionId,"TargetTypes"));
-                spec.credits=number(field(sectionId,"Credits","0"));
-                spec.technology=lower(field(sectionId,"Technology"));
-                spec.from=lower(field(sectionId,"FromType"));spec.to=lower(field(sectionId,"ToType"));
-                if(!hasSection(sectionId)) warn(id,"Effects","找不到效果段 ["+sectionId+"]，项目无法抽取");
-                else auditEffect(sectionId,spec);
-                o.effects.push_back(std::move(spec));
-            }
-        } else auditEffect(id,singleEffect(o));
-        auto label=field(id,"Name"),brief=field(id,"Summary"),detail=field(id,"Detail");
-        if(!label.empty()) o.name=displayText(label);
-        if(!brief.empty()) o.summary=displayText(brief);
-        if(!detail.empty()) o.detail=displayText(detail);
-        Research::options.emplace_back(std::move(o));
-    }
-    validateResearchChains(warn);
-    Research::clearOfferCache();
-    for(const auto& project:Research::options) {
-        const bool grantsTech=project.effectList ? std::any_of(project.effects.begin(),project.effects.end(),
-            [](const auto& effect){return effect.effect==Research::Effect::Technology;}) : project.effect==Research::Effect::Technology;
-        if(grantsTech) {installProductionCheck();break;}
-    }
-}
 bool anyAuras=false;
 constexpr unsigned auraInterval=15;
 using AuraKey=std::pair<DWORD,string>;
@@ -569,6 +318,7 @@ struct GainInputs {
 };
 std::unordered_map<DWORD,GainInputs> gainInputs;
 bool anyIntervals=false;
+bool anyMultiShot=false;
 bool anyBeforeDealDamage=false;
 bool anyBeforeTakeDamage=false;
 bool beforeHealthLoss(const string& trigger) {
@@ -607,8 +357,12 @@ bool parseStateDelay(const string& value,unsigned& frames) {
 }
 std::set<string> sectionKeys(const string& section) {
     std::set<string> keys;
+    if(parsingScript && parsingScript->first==section) {
+        for(const auto& [key,value]:parsingScript->second) keys.insert(key);
+        return keys;
+    }
     if(CCINIClass* ini=CCINIClass::INI_Rules)
-        for(int i=0;i<ini->GetKeyCount(section.c_str());++i) keys.insert(lower(ini->GetKeyName(section.c_str(),i)));
+        for(int i=0;i<ini->GetKeyCount(rulesName(section));++i) keys.insert(lower(ini->GetKeyName(rulesName(section),i)));
     char names[32768]{};
     GetPrivateProfileStringA(section.c_str(),nullptr,"",names,sizeof(names),configPath);
     for(auto key=names;*key;key+=strlen(key)+1) keys.insert(lower(key));
@@ -622,9 +376,16 @@ int scalePercent(const string& text,double minimum) {
 }
 bool actionField(const string& key) {
     static const std::set<string> fields={"action","action.amount","action.maxhealthpercent","action.percentofdamage","action.target","action.weapon",
+        "action.anim","action.sound","action.shakex","action.shakey","action.shakelocal","action.particlesystem",
         "action.warhead","action.passive","action.duration","action.stackonreapply","action.cratetype","action.owner","action.unittype","action.percent",
-        "action.signal","action.signal.target","action.signal.range","action.signal.houses","action.signal.includeself","action.signal.value"};
+        "action.forcemove.mode","action.forcemove.center","action.forcemove.offset","action.forcemove.distance","action.forcemove.height","action.forcemove.duration","action.forcemove.tilt","action.forcemove.easing","action.forcemove.ignorecollision","action.forcemove.blowweight","action.forcemove.affectsironcurtain",
+        "action.destination","action.searchradius","action.script","action.function","action.levels","action.signal","action.signal.target","action.signal.range","action.signal.houses","action.signal.includeself","action.signal.value"};
     return fields.contains(key);
+}
+bool activeField(const string& key) {
+    static const std::set<string> keys={"active.name","active.icon","active.castmode","active.interruptorders","active.target",
+        "active.range","active.radius","active.distance","active.shape","active.houses"};
+    return keys.contains(key);
 }
 bool parseState(Skill& s,const std::set<string>& keys) {
     const bool continuous=s.trigger=="whilestate";
@@ -643,7 +404,9 @@ bool parseState(Skill& s,const std::set<string>& keys) {
        !condition("Condition.SelfCloak",12,2,{"uncloaked","cloaking","cloaked","uncloaking"})) return false;
     bool modifier=false;
     for(const auto& key:keys) {
-        if(key=="anim" || key=="anim.always" || key=="triggeranim" || key=="triggeranim.target" || key=="stack.max") continue;
+        if(key=="tint.color" || key=="anim" || key=="anim.always" || key=="gainanim" || key=="triggeranim" || key=="triggeranim.target" || key=="stack.max") continue;
+        if(key.starts_with("script.param.") && key.size()>13 && !continuous) continue;
+        if(s.trigger=="oncast" && activeField(key)) continue;
         if(key=="condition.formula") {
             auto value=read(s.id,key.c_str());
             if(!s.conditionFormula.compile(s.id,key,value)) return invalidField(s.id,key+"="+value);
@@ -684,15 +447,36 @@ bool parseState(Skill& s,const std::set<string>& keys) {
             auto value=read(s.id,key.c_str());
             if(!continuous || (value!="yes" && value!="no")) return invalidField(s.id,key);
             s.transportStack=value=="yes";
+        } else if(key=="modifier.multishot" || key=="multishot") {
+            auto value=read(s.id,key.c_str());
+            if(!continuous) return invalidField(s.id,key);
+            if(keys.contains("modifier.multishot") && keys.contains("multishot"))
+                return invalidField(s.id,"specify only one of MultiShot and Modifier.MultiShot");
+            if(value=="yes") value="$(this.stack)";
+            if(value.starts_with("$(")) {
+                auto& formula=s.multiShotFormula;
+                if(!formula.compile(s.id,key,value) || formula.expression.usesDamage() || formula.expression.usesSignal())
+                    return invalidField(s.id,key+"="+value);
+            } else {
+                s.extraShotCount=value=="no"?0:number(value);
+                if(s.extraShotCount<0) return invalidField(s.id,key+"="+value);
+            }
+            s.passengerCombat|=s.hasMultiShot();
+            modifier=true;
+        } else if(key=="modifier.emp") {
+            auto value=read(s.id,key.c_str());
+            if(!continuous || (value!="yes" && value!="no")) return invalidField(s.id,key);
+            s.emp=value=="yes";
+            modifier|=s.emp;
         } else if(key=="modifier.berserk") {
             auto value=read(s.id,key.c_str());
             if(!continuous || (value!="yes" && value!="no")) return invalidField(s.id,key);
             s.berserk=value=="yes";
             modifier|=s.berserk;
-        } else if(key=="modifier.mirage" || key=="modifier.immune" || key=="modifier.immunetomindcontrol") {
+        } else if(key=="modifier.mirage" || key=="modifier.immune" || key=="modifier.immunetomindcontrol" || key=="modifier.cloakable") {
             auto value=read(s.id,key.c_str());
             if(!continuous || (value!="yes" && value!="no")) return invalidField(s.id,key);
-            auto& enabled=key=="modifier.immune"?s.immune:key=="modifier.immunetomindcontrol"?s.mindImmune:s.mirage;
+            auto& enabled=key=="modifier.immune"?s.immune:key=="modifier.immunetomindcontrol"?s.mindImmune:key=="modifier.cloakable"?s.cloakable:s.mirage;
             enabled=value=="yes";
             modifier|=enabled;
         } else if(key=="modifier.disableprimary" || key=="modifier.disablesecondary" ||
@@ -780,53 +564,89 @@ bool parseState(Skill& s,const std::set<string>& keys) {
         for(auto& h:query.houses) if(!includes({"all","self","allies","enemies","neutral"},h)) return invalidField(s.id,"Condition.Nearby.Houses");
         for(auto& k:query.kinds) if(!includes({"all","infantry","vehicle","aircraft","building"},k)) return invalidField(s.id,"Condition.Nearby.Kinds");
     }
-    if(continuous && !modifier && !s.triggerAnim && !s.anim) return invalidField(s.id,"Modifier.*, Anim or TriggerAnim required");
+    if(continuous && !modifier && !s.triggerAnim && !s.anim && !s.tint) return invalidField(s.id,"Modifier.*, Anim, Tint.Color or TriggerAnim required");
     if(keys.contains("modifier.transportpassives.stack") && s.transportPassives.empty()) return invalidField(s.id,"Modifier.TransportPassives.Stack requires Modifier.TransportPassives");
     if(!s.transportPassives.empty() && (query.range || s.conditionFormula.expression.usesDistance() || s.conditionFormula.expression.usesTargetValues()))
         return invalidField(s.id,"transport support cannot use spatial or target conditions");
     if(continuous && !query.range && !s.requiredMask && s.deployPosture==DeployPosture::None && s.conditionFormula.expression.empty() && s.transportPassives.empty()) return invalidField(s.id,"state condition required");
     return true;
 }
-bool readAction(Skill& skill,const string& section) {
+bool positionalAction(std::string_view name) {
+    return name=="spawnunit" || name=="spawncrate" || name=="fireweapon" || name=="detonatewarhead" ||
+           name=="playanim" || name=="playsound" || name=="shakescreen" || name=="spawnparticlesystem";
+}
+bool readAction(Skill& skill,const string& section,const ScriptFields* fields=nullptr) {
+    auto field=[&](const char* key,const char* fallback="") {
+        if(!fields) return read(section,key,fallback);
+        auto it=fields->find(lower(key));
+        return it==fields->end()?lower(fallback):lower(trim(it->second));
+    };
     PassiveAction a;
     auto invalid=[&](const string& field) {
         return invalidField(skill.id,section==skill.id ? field : "Actions -> ["+section+"] "+field);
     };
-    a.action=read(section,"Action");
-    if(a.action!="sendsignal") for(const auto& key:sectionKeys(section))
-        if(key=="action.signal" || key.starts_with("action.signal.")) return invalid(key+" requires SendSignal");
+    a.action=field("Action");
+    if(a.action!="chronoteleport" && (!field("Action.Destination").empty() || !field("Action.SearchRadius").empty()))
+        return invalid("Action.Destination and Action.SearchRadius require ChronoTeleport");
+    if(a.action!="promote" && !field("Action.Levels").empty()) return invalid("Action.Levels requires Promote");
+    if(a.action!="runscript" && (!field("Action.Script").empty() || !field("Action.Function").empty()))
+        return invalid("Action.Script and Action.Function require RunScript");
+    auto validKey=[&](const string& key) {
+        if(key.starts_with("action.") && !actionField(key)) return invalid("unknown field "+key);
+        static const std::map<string,string> presentationFields={
+            {"action.anim","playanim"},{"action.sound","playsound"},{"action.particlesystem","spawnparticlesystem"},
+            {"action.shakex","shakescreen"},{"action.shakey","shakescreen"},{"action.shakelocal","shakescreen"}};
+        if(auto it=presentationFields.find(key);it!=presentationFields.end() && a.action!=it->second)
+            return invalid(key+" requires "+it->second);
+        if(key.starts_with("action.forcemove."))
+            return (a.action=="forcemove" && actionField(key)) || invalid(key+" requires a valid ForceMove field");
+        if(a.action!="sendsignal" && (key=="action.signal" || key.starts_with("action.signal.")))
+            return invalid(key+" requires SendSignal");
+        return true;
+    };
+    if(fields) {
+        for(const auto& entry:*fields) if(!validKey(entry.first)) return false;
+    } else for(const auto& key:sectionKeys(section)) if(!validKey(key)) return false;
     if(a.action=="grantpassive") {
-        auto duration=read(section,"Action.Duration","-1");
+        auto duration=field("Action.Duration","-1");
         if(duration!="-1" && (a.duration=number(duration))<=0) return invalid("Action.Duration="+duration);
-    } else if(!read(section,"Action.Duration").empty()) return invalid("Action.Duration");
-    auto reapply=read(section,"Action.StackOnReapply");
+    } else if(a.action=="applyironcurtain") {
+        a.duration=number(field("Action.Duration"));
+        if(a.duration<=0) return invalid("Action.Duration must be a positive frame count");
+    } else if(!field("Action.Duration").empty()) return invalid("Action.Duration");
+    auto reapply=field("Action.StackOnReapply");
     if(!reapply.empty()) {
         if(a.action!="grantpassive" || (reapply!="yes" && reapply!="no")) return invalid("Action.StackOnReapply="+reapply);
         a.stackOnReapply=reapply=="yes";
     }
     const bool outgoing=skill.trigger=="onbeforedealdamage";
-    a.target=read(section,"Action.Target",outgoing || a.action=="stealpassive"?"Target":"Self");
+    a.target=field("Action.Target",outgoing || a.action=="stealpassive"?"Target":"Self");
     a.targetIsEventTarget=a.target=="target";
     if(a.target=="target") {
         if(skill.trigger=="ontakedamage" || skill.trigger=="onbeforetakedamage" || skill.trigger=="ondeath") a.target="attacker";
-        else if(skill.trigger=="ondeploy" || skill.trigger=="onpromote" || skill.trigger=="onpromoteveteran" || skill.trigger=="onpromoteelite" || skill.trigger=="onpassivegained") a.target="self";
+        else if(skill.trigger=="ondeploy" || skill.trigger=="onpromote" || skill.trigger=="onpromoteveteran" || skill.trigger=="onpromoteelite" || skill.trigger=="onpassivegained" || skill.trigger=="onbuildingupgrade") a.target="self";
         else a.target="victim";
     }
-    bool positional=a.action=="fireweapon" || a.action=="detonatewarhead" || a.action=="spawncrate" || a.action=="spawnunit";
+    bool positional=positionalAction(a.action);
     if(a.target!="self" && a.target!="attacker" && a.target!="victim" && !(a.target=="sender" && skill.trigger=="onsignal") && !(positional && a.target=="victimlocation"))
         return invalid("Action.Target="+a.target);
     if(a.action=="setdamage" || a.action=="blockdamage") {
         if(!beforeHealthLoss(skill.trigger)) return invalid(a.action+" requires OnBeforeDealDamage or OnBeforeTakeDamage");
         if(a.target!=(outgoing?"victim":"self")) return invalid(a.action+" requires "+(outgoing?"Target or Victim":"Self"));
     }
+    if(a.action=="damage" || a.action=="detonatewarhead") {
+        auto id=field("Action.Warhead");
+        if(!id.empty()) a.warhead=WarheadTypeClass::Find(id.c_str());
+        if(!a.warhead && (!id.empty() || a.action=="detonatewarhead")) return invalid("Action.Warhead="+id);
+    }
     bool setDamage=a.action=="setdamage";
     bool numeric=a.action=="heal" || a.action=="damage" || a.action=="givecredits" || a.action=="giveresearchpoints" || setDamage;
-    auto amount=read(section,"Action.Amount",a.action=="stealpassive"?"1":"0");
+    auto amount=field("Action.Amount",a.action=="stealpassive"?"1":"0");
     bool formulaAmount=amount.starts_with("$(");
     if(formulaAmount && (!numeric || !a.amountFormula.compile(section,"Action.Amount",amount)))
         return invalid("Action.Amount="+amount);
     if(formulaAmount) amount="0";
-    auto healthPercent=read(section,"Action.MaxHealthPercent");
+    auto healthPercent=field("Action.MaxHealthPercent");
     if(!healthPercent.empty()) {
         a.maxHealthPercent=number(healthPercent,true);
         if(a.action!="changemaxhealth" || a.maxHealthPercent<=0 || a.maxHealthPercent>10000 || amount!="0")
@@ -846,11 +666,11 @@ bool readAction(Skill& skill,const string& section) {
         a.amount=number(amount);
         if(a.amount<0) return invalid("Action.Amount="+amount);
     }
-    a.damagePercent=number(read(section,"Action.PercentOfDamage","0"),true);
+    a.damagePercent=number(field("Action.PercentOfDamage","0"),true);
     if(a.damagePercent<0 || (!numeric && a.damagePercent)) return invalid("Action.PercentOfDamage");
     if(numeric) {
         if(setDamage) {
-            auto raw=read(section,"Action.Amount");
+            auto raw=field("Action.Amount");
             if(raw.empty() || a.damagePercent)
                 return invalid("SetDamage requires Action.Amount and does not use Action.PercentOfDamage");
             if(!formulaAmount) {
@@ -864,19 +684,19 @@ bool readAction(Skill& skill,const string& section) {
             return invalid("Action.Amount / Action.PercentOfDamage");
     } else if(a.action=="spawnunit" || a.action=="changeowner" || a.action=="transform") {
         if(a.action!="transform") {
-            a.owner=read(section,"Action.Owner","Self");
+            a.owner=field("Action.Owner","Self");
             bool playerSlot=a.owner.size()==7 && a.owner.starts_with("player") && a.owner[6]>='1' && a.owner[6]<='8';
             if(!playerSlot && !includes({"self","attacker","victim","neutral"},a.owner))
                 return invalid("Action.Owner="+a.owner);
         }
         if(a.action!="changeowner") {
-            auto id=read(section,"Action.UnitType");
+            auto id=field("Action.UnitType");
             a.unitType=id.empty()?nullptr:TechnoTypeClass::Find(id.c_str());
             if(!a.unitType || a.unitType->WhatAmI()==AbstractType::BuildingType) return invalid("Action.UnitType="+id);
         }
     } else if(auto stat=std::find(percentActions.begin(),percentActions.end(),a.action);stat!=percentActions.end()) {
         a.percentIndex=static_cast<size_t>(stat-percentActions.begin());
-        auto text=read(section,"Action.Percent");
+        auto text=field("Action.Percent");
         if(text.starts_with("$(")) {
             if(a.percentIndex==scaleIndex || a.percentIndex==projectileScaleIndex ||
                !a.formula.compile(section,"Action.Percent",text)) return invalid("Action.Percent="+text);
@@ -889,8 +709,19 @@ bool readAction(Skill& skill,const string& section) {
             if(parsed.ec!=std::errc{} || parsed.ptr!=last || a.percentDelta==0 || (plus && a.percentDelta<0))
                 return invalid("Action.Percent");
         }
+    } else if(a.action=="forcemove") {
+        if(!ForceMove::parse(a.forceMove,field)) return invalid("Action.ForceMove mode/offset, center, distance, height, duration, BlowWeight (finite number), Tilt/IgnoreCollision/AffectsIronCurtain (yes/no) or Easing (Linear/EaseIn/EaseOut/EaseInOut)");
+    } else if(a.action=="chronoteleport") {
+        auto dest=field("Action.Destination");
+        auto comma=dest.find(',');
+        if(comma==string::npos) return invalid("Action.Destination="+dest+" (expected X,Y)");
+        int x=number(trim(dest.substr(0,comma))),y=number(trim(dest.substr(comma+1)));
+        if(x<0 || x>=512 || y<0 || y>=512) return invalid("Action.Destination="+dest+" (expected X,Y in 0..511)");
+        a.teleportCell={static_cast<short>(x),static_cast<short>(y)};
+        a.searchRadius=number(field("Action.SearchRadius","3"));
+        if(a.searchRadius<0 || a.searchRadius>32) return invalid("Action.SearchRadius (0..32)");
     } else if(a.action=="spawncrate") {
-        auto name=read(section,"Action.CrateType","Random");
+        auto name=field("Action.CrateType","Random");
         if(name!="random") {
             const auto& names=Powerups::Effects;
             auto found=std::find_if(std::begin(names),std::end(names),[&](const char* type){return !_stricmp(type,name.c_str());});
@@ -898,13 +729,13 @@ bool readAction(Skill& skill,const string& section) {
             a.crateType=static_cast<Powerup>(found-std::begin(names));
         }
     } else if(a.action=="sendsignal") {
-        a.signal=read(section,"Action.Signal");
-        a.signalTarget=read(section,"Action.Signal.Target");
-        a.signalHouses=split(read(section,"Action.Signal.Houses","Self"));
-        auto range=read(section,"Action.Signal.Range","0");
+        a.signal=field("Action.Signal");
+        a.signalTarget=field("Action.Signal.Target");
+        a.signalHouses=split(field("Action.Signal.Houses","Self"));
+        auto range=field("Action.Signal.Range","0");
         auto parsed=std::from_chars(range.data(),range.data()+range.size(),a.signalRange);
-        auto include=read(section,"Action.Signal.IncludeSelf","no");
-        auto value=read(section,"Action.Signal.Value","0");
+        auto include=field("Action.Signal.IncludeSelf","no");
+        auto value=field("Action.Signal.Value","0");
         if(a.signal.empty() || a.signal.size()>127 || parsed.ec!=std::errc{} || parsed.ptr!=range.data()+range.size() || a.signalRange< -1 || a.signalRange>128 ||
            (include!="yes" && include!="no") || a.signalHouses.empty() ||
            (!a.signalTarget.empty() && !includes({"self","target","attacker","victim","sender"},a.signalTarget)) ||
@@ -918,29 +749,57 @@ bool readAction(Skill& skill,const string& section) {
             if(parsedValue.ec!=std::errc{} || parsedValue.ptr!=value.data()+value.size() || !std::isfinite(a.signalValue)) return invalid("Action.Signal.Value="+value);
         }
         if(a.signalFormula.expression.usesDamage() && !damageEvent(skill.trigger)) return invalid("Event.Damage requires a damage trigger");
+    } else if(a.action=="runscript") {
+        a.script=field("Action.Script");
+        if(!a.script.ends_with(".lua")) a.script+=".lua";
+        auto mod=scriptModules.find(a.script);
+        if(mod==scriptModules.end()) return invalid("Action.Script="+a.script);
+        auto name=field("Action.Function");
+        for(const auto& fn:mod->second.functions) if(lower(fn)==name) {
+            if(!a.function.empty()) return invalid("ambiguous Action.Function="+name);
+            a.function=fn;
+        }
+        if(a.function.empty()) return invalid("Action.Function="+name);
+        a.skillId=skill.id;
+    } else if(a.action=="promote") {
+        a.amount=number(field("Action.Levels","1"));
+        if(a.amount<1 || a.amount>2) return invalid("Action.Levels (1 or 2)");
     } else if(a.action=="selfdestruct") {
         if(a.target!="self") return invalid("Action.Target="+a.target);
     } else if(a.action=="consumepassenger") {
-        if(!read(section,"Action.Amount").empty()) return invalid("ConsumePassenger removes one passenger and does not use Action.Amount");
+        if(!field("Action.Amount").empty()) return invalid("ConsumePassenger removes one passenger and does not use Action.Amount");
     } else if(a.action=="blockdamage") {
-        if(!read(section,"Action.Amount").empty())
+        if(!field("Action.Amount").empty())
             return invalid("BlockDamage does not use Action.Amount");
     } else if(a.action=="removepassive" || a.action=="stealpassive") {
-        auto list=read(section,"Action.Passive");
+        auto list=field("Action.Passive");
         a.passiveList=split(list);
         if(a.passiveList.empty() || list.size()>=2047) return invalid("Action.Passive="+list);
         if(a.action=="stealpassive" && a.amount<=0) return invalid("Action.Amount must be a positive stack count");
-    } else if(a.action=="grantpassive" || a.action=="changepassivestack") {
-        a.passive=read(section,"Action.Passive");
+    } else if(a.action=="grantpassive" || a.action=="changepassivestack" || a.action=="resetstatetimer") {
+        a.passive=field("Action.Passive");
         if(a.passive.empty()) return invalid("Action.Passive");
+    } else if(a.action=="playanim") {
+        auto id=field("Action.Anim");
+        if(id.empty() || !(a.playAnim=AnimTypeClass::Find(id.c_str()))) return invalid("Action.Anim="+id);
+    } else if(a.action=="playsound") {
+        a.sound=field("Action.Sound");
+        if(a.sound.empty()) return invalid("Action.Sound");
+    } else if(a.action=="spawnparticlesystem") {
+        auto id=field("Action.ParticleSystem");
+        if(id.empty() || !(a.particleSystem=ParticleSystemTypeClass::Find(id.c_str()))) return invalid("Action.ParticleSystem="+id);
+    } else if(a.action=="shakescreen") {
+        a.shakeX=number(field("Action.ShakeX","0"));a.shakeY=number(field("Action.ShakeY","4"));
+        if(a.shakeX<0 || a.shakeX>32 || a.shakeY<0 || a.shakeY>32 || (!a.shakeX && !a.shakeY))
+            return invalid("Action.ShakeX / Action.ShakeY require 0..32 with a nonzero axis");
+        auto local=field("Action.ShakeLocal","yes");
+        if(local!="yes" && local!="no") return invalid("Action.ShakeLocal="+local);
+        a.shakeLocal=local=="yes";
     } else if(a.action=="fireweapon" || a.action=="replaceweapon") {
-        a.weapon=read(section,"Action.Weapon");
+        a.weapon=field("Action.Weapon");
         if(a.weapon.empty() || !WeaponTypeClass::Find(a.weapon.c_str())) return invalid("Action.Weapon="+a.weapon);
         if(a.action=="replaceweapon" && (skill.trigger!="onbeforefire" || a.target!="self")) return invalid("ReplaceWeapon requires OnBeforeFire and Self");
-    } else if(a.action=="detonatewarhead") {
-        a.warhead=read(section,"Action.Warhead");
-        if(a.warhead.empty() || !WarheadTypeClass::Find(a.warhead.c_str())) return invalid("Action.Warhead="+a.warhead);
-    } else if(a.action!="changeammo" && a.action!="changemaxhealth") return invalid("Action="+a.action);
+    } else if(a.action!="detonatewarhead" && a.action!="changeammo" && a.action!="changemaxhealth" && a.action!="applyironcurtain") return invalid("Action="+a.action);
     if((a.formula.expression.usesDamage() || a.amountFormula.expression.usesDamage()) &&
        !damageEvent(skill.trigger)) return invalid("Event.Damage requires a damage trigger");
     if((a.formula.expression.usesSignal() || a.amountFormula.expression.usesSignal() || a.signalFormula.expression.usesSignal()) &&
@@ -948,6 +807,7 @@ bool readAction(Skill& skill,const string& section) {
     skill.actions.push_back(std::move(a));
     return true;
 }
+#include "ActionSequence.inc"
 bool readActions(Skill& skill,const std::set<string>& keys) {
     if(!keys.contains("actions")) return readAction(skill,skill.id);
     for(const auto& key:keys)
@@ -970,14 +830,28 @@ bool readActions(Skill& skill,const std::set<string>& keys) {
         start=end+1;
     }
 }
-bool anyAttachedAnims=false;
+bool anyPassiveVisuals=false;
 bool readAnimations(Skill& s,const std::set<string>& keys) {
-    for(auto key:{"Anim","TriggerAnim"}) {
+    if(keys.contains("tint.color")) {
+        auto value=read(s.id,"Tint.Color");
+        int rgb[3]{};
+        size_t start=0;
+        for(int i=0;i<3;++i) {
+            auto comma=value.find(',',start);
+            rgb[i]=number(trim(value.substr(start,comma-start)));
+            if(rgb[i]<0 || rgb[i]>255 || (i<2)!=(comma!=string::npos))
+                return invalidField(s.id,"Tint.Color="+value+" (expected R,G,B; each 0..255)");
+            if(i<2) start=comma+1;
+        }
+        s.tint=ColorStruct{static_cast<BYTE>(rgb[0]),static_cast<BYTE>(rgb[1]),static_cast<BYTE>(rgb[2])};
+    }
+    for(auto key:{"Anim","TriggerAnim","GainAnim"}) {
         if(!keys.contains(lower(key))) continue;
         auto id=read(s.id,key);
         auto type=id.empty()?nullptr:AnimTypeClass::Find(id.c_str());
         if(!type) return invalidField(s.id,string(key)+"="+id);
         if(key==std::string_view("Anim")) s.anim=type;
+        else if(key==std::string_view("GainAnim")) s.gainAnim=type;
         else s.triggerAnim=type;
     }
     if(keys.contains("anim.always")) {
@@ -998,8 +872,16 @@ struct PassiveGrant {
 };
 struct WarheadGrantRule : PassiveGrant {
     vector<string> houses;
-    bool affectsOwner=true,affectsEnemies=true,affectsNeutral=true;
 };
+struct WarheadHouses {bool owner,enemies,neutral;};
+std::map<WarheadTypeClass*,WarheadHouses> warheadHouses;
+bool warheadAllows(WarheadTypeClass* wh,HouseClass* source,HouseClass* target) {
+    const auto& flags=warheadHouses.at(wh);
+    if(!target || (target->IsNeutral() && !flags.neutral)) return false;
+    if(!source) return true;
+    if(source==target) return flags.owner;
+    return source->IsAlliedWith(target)?wh->AffectsAllies:flags.enemies;
+}
 struct GrantPreset : PassiveGrant {
     vector<TechnoTypeClass*> targetTypes;
 };
@@ -1033,6 +915,20 @@ void readGrantPresets() {
 }
 void readGrantRules() {
     for(auto wh:WarheadTypeClass::Array) {
+        auto section=ActionSequence::mapFields.find(lower(wh->ID));
+        auto flag=[&](const char* key,bool fallback) {
+            if(section!=ActionSequence::mapFields.end()) {
+                auto it=section->second.find(lower(key));
+                if(it!=section->second.end()) {
+                    auto value=lower(it->second);
+                    if(includes({"yes","true","1"},value)) return true;
+                    if(includes({"no","false","0"},value)) return false;
+                }
+            }
+            auto ini=CCINIClass::INI_Rules;
+            return ini?ini->ReadBool(wh->ID,key,fallback):fallback;
+        };
+        warheadHouses[wh]={flag("AffectsOwner",wh->AffectsAllies),flag("AffectsEnemies",true),flag("AffectsNeutral",true)};
         auto list=read(wh->ID,"Starfall.GrantPassives");
         if(list.empty()) continue;
         WarheadGrantRule rule;
@@ -1044,11 +940,78 @@ void readGrantRules() {
         if(rule.houses.empty() || std::any_of(rule.houses.begin(),rule.houses.end(),[](const string& h){
             return !includes({"all","self","allies","enemies","neutral"},h);
         })) {invalidField(wh->ID,"Starfall.GrantPassives.Houses");continue;}
-        auto ini=CCINIClass::INI_Rules;
-        rule.affectsOwner=ini?ini->ReadBool(wh->ID,"AffectsOwner",wh->AffectsAllies):wh->AffectsAllies;
-        rule.affectsEnemies=!ini || ini->ReadBool(wh->ID,"AffectsEnemies",true);
-        rule.affectsNeutral=!ini || ini->ReadBool(wh->ID,"AffectsNeutral",true);
         grantRules.emplace(wh,std::move(rule));
+    }
+}
+bool readActive(const string& id,ActiveSkills::Spec& spec) {
+    using K=ActiveSkills::Kind;
+    auto kind=read(id,"Active.Target","None"),mode=read(id,"Active.CastMode","Single");
+    if(!includes({"none","unit","point","area","direction"},kind)) return invalidField(id,"Active.Target");
+    if(!includes({"single","all"},mode)) return invalidField(id,"Active.CastMode");
+    auto interrupt=read(id,"Active.InterruptOrders","yes");
+    if(!includes({"yes","no"},interrupt)) return invalidField(id,"Active.InterruptOrders");
+    spec.interruptOrders=interrupt=="yes";
+    spec.id=id;spec.all=mode=="all";
+    spec.name=displayText(readRaw(id,"Active.Name",id.c_str()));spec.icon=readRaw(id,"Active.Icon");
+    spec.kind=kind=="unit"?K::Unit:kind=="area"?K::Area:kind=="direction"?K::Direction:kind=="point"?K::Point:K::None;
+    spec.range=number(read(id,"Active.Range","0"));spec.radius=number(read(id,"Active.Radius","0"));
+    spec.distance=number(read(id,"Active.Distance","0"));
+    if(spec.range<0 || spec.range>128 || ((spec.kind==K::None || spec.kind==K::Direction) && spec.range)) return invalidField(id,"Active.Range");
+    if(spec.radius<0 || spec.radius>128 || (spec.kind==K::Area)!=(spec.radius>0)) return invalidField(id,"Active.Radius");
+    if(spec.distance<0 || spec.distance>128 || (spec.kind==K::Direction)!=(spec.distance>0)) return invalidField(id,"Active.Distance");
+    auto shape=read(id,"Active.Shape");
+    if(!shape.empty() && (spec.kind!=K::Area || shape!="circle")) return invalidField(id,"Active.Shape");
+    spec.houses=split(read(id,"Active.Houses"));
+    if((!spec.houses.empty() && spec.kind!=K::Unit) || std::any_of(spec.houses.begin(),spec.houses.end(),
+        [](const auto& h){return !includes({"all","self","allies","enemies","neutral"},h);})) return invalidField(id,"Active.Houses");
+    return true;
+}
+void discoverScripts(std::set<string>& ids) {
+    namespace fs=std::filesystem;
+    std::error_code ec;
+    vector<fs::path> paths;
+    for(fs::directory_iterator it(".",ec),end;!ec && it!=end;it.increment(ec)) {
+        if(it->is_regular_file(ec) && !_wcsicmp(it->path().extension().c_str(),L".lua")) paths.push_back(it->path());
+    }
+    std::sort(paths.begin(),paths.end());
+    const auto iniIds=ids;
+    for(const auto& path:paths) {
+        ScriptRuntime::Module m;
+        auto filename=path.filename().u8string();
+        m.file.assign(filename.begin(),filename.end());
+        std::ifstream stream(path,std::ios::binary|std::ios::ate);
+        auto size=stream.tellg();
+        if(size<0 || size>1024*1024) {configLog("Lua: cannot read "+m.file+" (1 MiB limit)");continue;}
+        string source(static_cast<size_t>(size),'\0'),error;
+        stream.seekg(0);
+        if(!stream.read(source.data(),size)) {configLog("Lua: read failed "+m.file);continue;}
+        if(source.starts_with("\xEF\xBB\xBF")) source.erase(0,3);
+        ScriptRuntime::Call call{&m,&source,nullptr,nullptr,nullptr};
+        if(!ScriptRuntime::run(call,error)) {configLog("Lua "+m.file+": "+error);continue;}
+        auto file=lower(m.file),id=lower(trim(m.id)),trigger=lower(m.trigger);
+        // An explicitly registered INI definition takes precedence over legacy Lua metadata.
+        if(!id.empty() && !iniIds.contains(id)) {
+            if(ids.contains(id)) {configLog("Lua "+m.file+": duplicate skill ID: "+id);continue;}
+            if(id.size()>127 || trigger.empty()) {configLog("Lua "+m.file+": invalid skill ID or missing trigger: "+id);continue;}
+            bool active=trigger=="active";
+            ids.insert(id);
+            auto& f=scriptDefinitions[id];
+            f={{"trigger",trigger},{"action","runscript"},{"action.script",file},
+               {"action.function",lower(m.callback.empty()?(active?"onCast":m.trigger):m.callback)},{"cooldown",std::to_string(m.cooldown)}};
+            if(active) {
+                if(!m.name.empty()) f["active.name"]=m.name;
+                f["active.icon"]=m.icon;
+                if(!m.castMode.empty()) f["active.castmode"]=m.castMode;
+                if(!m.targetKind.empty()) f["active.target"]=m.targetKind;
+                f["active.shape"]=m.shape;f["active.houses"]=m.houses;
+                f["active.range"]=std::to_string(m.castRange);f["active.radius"]=std::to_string(m.radius);
+                f["active.distance"]=std::to_string(m.distance);
+            }
+            if(m.interval) f["interval"]=std::to_string(m.interval);
+            if(!m.signal.empty()) f["signal"]=lower(m.signal);
+            for(const auto& unit:split(m.units)) scriptBindings[unit].push_back(id);
+        }
+        scriptModules.emplace(file,std::move(m));
     }
 }
 void readSkills() {
@@ -1067,8 +1030,17 @@ void readSkills() {
     char keys[32768]{};
     GetPrivateProfileStringA(registry,nullptr,"",keys,sizeof(keys),configPath);
     for (char* k=keys; *k; k+=strlen(k)+1) ids.insert(read(registry,k));
+    rulesSkillNames.clear();
+    if(auto ini=CCINIClass::INI_Rules)
+        for(auto node=ini->Sections.First();node && node->IsValid();node=node->Next())
+            if(node->Name && ids.contains(lower(node->Name))) rulesSkillNames.emplace(lower(node->Name),node->Name);
+    discoverScripts(ids);
+    ActiveSkills::specs.clear();
     for (auto& id : ids) {
         if (id.empty() || id.size()>127) continue;
+        auto def=scriptDefinitions.find(id);
+        parsingScript=def==scriptDefinitions.end()?nullptr:&*def;
+        struct EndDefinition { ~EndDefinition(){parsingScript=nullptr;} } endDefinition;
         Skill s{};
         s.id=id; s.trigger=read(id,"Trigger");
         s.signal=read(id,"Signal");
@@ -1091,24 +1063,29 @@ void readSkills() {
             if(s.trigger!="oninterval" || s.interval<=0) {invalidField(id,"Interval="+interval);continue;}
         }
         auto fields=sectionKeys(id);
+        bool active=s.trigger=="active";
+        if(s.trigger=="oncast") {invalidField(id,"Trigger="+s.trigger+" (use Active)");continue;}
+        if(active) s.trigger="oncast";
+        for(const auto& key:fields) if(key.starts_with("script.param.") && key.size()>13)
+            s.scriptParams.emplace(key.substr(13),readRaw(id,key.c_str()));
         auto stackMax=read(id,"Stack.Max");
         if(!stackMax.empty() && (s.stackMax=number(stackMax))<=0) {invalidField(id,"Stack.Max="+stackMax);continue;}
         if(!readAnimations(s,fields)) continue;
-        if(s.trigger.empty() && s.anim && std::all_of(fields.begin(),fields.end(),[](const string& key){return key=="anim" || key=="anim.always" || key=="stack.max";})) {
-            skills.emplace(id,s); anyAttachedAnims=true; continue;
+        if(s.trigger.empty() && (s.anim || s.tint || s.gainAnim) && std::all_of(fields.begin(),fields.end(),[](const string& key){return key=="anim" || key=="anim.always" || key=="gainanim" || key=="tint.color" || key=="stack.max";})) {
+            skills.emplace(id,s); anyPassiveVisuals=true; continue;
         }
         if(!parseState(s,fields)) continue;
         if(s.conditionFormula.expression.usesSignal() && s.trigger!="onsignal") {invalidField(id,"Sender and Event.SignalValue require OnSignal");continue;}
         needMotion|=(s.requiredMask&16)!=0;
         needUnitPower|=(s.requiredMask&2)!=0;
-        if(s.trigger=="whilestate") { skills.emplace(id,s); anyStateSkills=true; anyAttachedAnims|=s.anim!=nullptr; continue; }
+        if(s.trigger=="whilestate") { skills.emplace(id,s); anyStateSkills=true; anyPassiveVisuals|=s.anim || s.tint.has_value(); continue; }
         if(s.count<=0 || s.cooldown<0 || s.chance<0 || s.chance>100 || s.minDamage<0 || s.maxTriggers<0) {
             for(auto [key,invalid]:{std::pair{"Condition.Count",s.count<=0},{"Chance",s.chance<0 || s.chance>100},
                  {"Cooldown",s.cooldown<0},{"MaxTriggers",s.maxTriggers<0},{"Condition.MinDamage",s.minDamage<0}})
                 if(invalid) invalidField(id,string(key)+"="+read(id,key));
             continue;
         }
-        if(!includes({"onkill","ondealdamage","ontakedamage","onbeforedealdamage","onbeforetakedamage","ondeath","onfire","onbeforefire","ondeploy","onpromote","onpromoteveteran","onpromoteelite","oninterval","onpassivegained","onpassengerconsumed","onsignal"},s.trigger)) {
+        if(!includes({"onkill","ondealdamage","ontakedamage","onbeforedealdamage","onbeforetakedamage","ondeath","onfire","onbeforefire","ondeploy","onpromote","onpromoteveteran","onpromoteelite","oninterval","onpassivegained","onbuildingupgrade","onpassengerconsumed","onsignal","oncast"},s.trigger)) {
             invalidField(id,"Trigger="+s.trigger);continue;
         }
         if(s.trigger=="onsignal" && (s.signal.empty() || s.signal.size()>127)) {invalidField(id,"Signal");continue;}
@@ -1126,12 +1103,23 @@ void readSkills() {
             invalidField(id,"OnBeforeFire requires ReplaceWeapon");continue;
         }
         if(beforeHealthLoss(s.trigger) && (s.actions.empty() || std::any_of(s.actions.begin(),s.actions.end(),[](const auto& action) {
-            return action.action!="setdamage" && action.action!="blockdamage";
+            return action.action!="setdamage" && action.action!="blockdamage" && action.action!="runscript";
         }))) {
-            invalidField(id,s.trigger+" requires SetDamage or BlockDamage");continue;
+            invalidField(id,s.trigger+" requires SetDamage, BlockDamage or RunScript");continue;
+        }
+        if(active) {
+            auto unsupported=std::find_if(fields.begin(),fields.end(),[](const auto& k){
+                return k!="tint.color" && k!="gainanim" && !activeField(k) && !k.starts_with("script.param.") && !includes({"trigger","cooldown","action","action.script","action.function"},k);
+            });
+            if(unsupported!=fields.end()) {invalidField(id,*unsupported+" is unavailable for Trigger=Active");continue;}
+            if(s.actions.size()!=1 || s.actions.front().action!="runscript") {invalidField(id,"Trigger=Active requires Action=RunScript");continue;}
+            ActiveSkills::Spec spec;
+            if(!readActive(id,spec)) continue;
+            if(ActiveSkills::specs.size()>=65536) {invalidField(id,"active skill limit reached");continue;}
+            ActiveSkills::specs.push_back(std::move(spec));
         }
         skills.emplace(id,s);
-        anyAttachedAnims|=s.anim!=nullptr;
+        anyPassiveVisuals|=s.anim || s.tint.has_value();
         anyIntervals|=s.trigger=="oninterval";
         observePromotions|=s.trigger=="onpromote" || s.trigger=="onpromoteveteran" || s.trigger=="onpromoteelite";
         observeDeployments|=s.trigger=="ondeploy";
@@ -1153,7 +1141,7 @@ void readSkills() {
                 invalidField(entry.first,"Modifier.TransportPassives="+id+" (requires a registered non-transport-support passive)");return true;
             }
         }
-        for(const auto& a:entry.second.actions) if((a.action=="grantpassive" || a.action=="changepassivestack") && !skills.contains(a.passive)) {
+        for(const auto& a:entry.second.actions) if((a.action=="grantpassive" || a.action=="changepassivestack" || a.action=="resetstatetimer") && !skills.contains(a.passive)) {
             invalidField(entry.first,"Action.Passive="+a.passive);
             return true;
         }
@@ -1168,12 +1156,14 @@ void readSkills() {
     anyAuras=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.aura.range!=0;});
     anySpawnPassives=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return !entry.second.spawnPassives.empty();});
     anyTransportPassives=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return !entry.second.transportPassives.empty();});
-    anyGainSkills=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.trigger=="onpassivegained";});
+    anyMultiShot=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.hasMultiShot();});
+    anyGainSkills=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.trigger=="onpassivegained" || entry.second.gainAnim;});
     anyBeforeDealDamage=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.trigger=="onbeforedealdamage";});
     anyBeforeTakeDamage=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.trigger=="onbeforetakedamage";});
     readGrantRules();
     readGrantPresets();
-    readResearch();
+    Research::readConfiguration(configPath);
+    ActionSequence::load();
     ready=true;
 }
 
@@ -1184,10 +1174,13 @@ Counts counts;
 std::map<DWORD,std::map<string,unsigned>> triggerTotals;
 // Only nonzero values are stored; layers belong to one unit and one passive ID.
 std::map<DWORD,std::map<string,int>> passiveStacks;
-int stackCount(DWORD unit,const string& skill) {
+int manualStackCount(DWORD unit,const string& skill) {
     auto owner=passiveStacks.find(unit);
-    int base=0;
-    if(owner!=passiveStacks.end()) if(auto value=owner->second.find(skill);value!=owner->second.end()) base=value->second;
+    if(owner!=passiveStacks.end()) if(auto value=owner->second.find(skill);value!=owner->second.end()) return value->second;
+    return 0;
+}
+int stackCount(DWORD unit,const string& skill) {
+    int base=manualStackCount(unit,skill);
     unsigned layers=0;
     if(auto carrier=transportGrants.find(unit);carrier!=transportGrants.end())
         if(auto grant=carrier->second.find(skill);grant!=carrier->second.end()) layers=grant->second.layers;
@@ -1202,8 +1195,7 @@ void eraseStacks(DWORD unit,const string& skill) {
     if(found->second.empty()) passiveStacks.erase(found);
 }
 bool changeStacks(DWORD unit,const string& id,int amount,int maximum) {
-    int base=0;
-    if(auto owner=passiveStacks.find(unit);owner!=passiveStacks.end()) if(auto value=owner->second.find(id);value!=owner->second.end()) base=value->second;
+    int base=manualStackCount(unit,id);
     int before=stackCount(unit,id);
     int upper=amount>0?std::max(base,std::max(0,maximum-(before-base))):maximum;
     int after=static_cast<int>(std::clamp<int64_t>(int64_t(base)+amount,0,upper));
@@ -1221,9 +1213,11 @@ struct Event {
     int damage, hp, maxHp, state=unknownState;
     CoordStruct impact{};
     bool hasImpact=false;
+    std::optional<CoordStruct> blastCenter;
     int ammo=-1, passengers=-1, owner=-1;
     int attackerOwner=-1, victimOwner=-1;
     CoordStruct origin{};
+    CellStruct castAim{}; // Transient: active commands run synchronously from the game event queue.
     vector<string> snapshot; // skill IDs for a dying or replaced deployer
     double distance=-1; // Horizontal distance in cells, -1 when no target was available.
     std::map<string,int> stackSnapshot;
@@ -1236,6 +1230,7 @@ struct Event {
     int consumedOwner=-1;
     CoordStruct consumedPosition{};
     std::shared_ptr<PassengerPassives> passengerPassives;
+    DWORD sequenceCast=0; // Only live script callbacks use this, never queued passive events.
     string signal,senderKind,senderRelation;
     int senderHp=0,senderMaxHp=0;
     std::optional<int> senderCost;
@@ -1245,7 +1240,12 @@ struct Event {
     std::shared_ptr<SignalChain> signalChain;
 };
 vector<Event> pending;
+vector<std::pair<DWORD,CoordStruct>> impactCenters;
+void leaveImpactCenter(DWORD frame) {
+    if(!impactCenters.empty() && impactCenters.back().first==frame) impactCenters.pop_back();
+}
 bool applyingDamage=false;
+const int* ownerDamageOverride=nullptr;
 std::map<DWORD,std::set<string>> removedPassives;
 struct GrantTime {
     unsigned start;
@@ -1326,6 +1326,8 @@ void endReapplyImpact(DWORD frame) {
 }
 struct GrantImpact { WarheadTypeClass* wh; CoordStruct at; HouseClass* source; };
 std::map<DWORD,GrantImpact> bulletGrantImpacts;
+// Ownerless scripted projectiles still need a house for passive-grant filters.
+std::map<DWORD,int> passiveBulletOwners;
 std::set<DWORD> passiveBullets;
 std::set<DWORD> passiveDetonations;
 bool suppressed(DWORD id,const string& skill) {
@@ -1351,6 +1353,11 @@ const vector<string>& boundSkills(const char* typeID) {
     auto [it, fresh] = bindings.try_emplace(typeID);
     if(fresh) {
         it->second=split(read(typeID,"Starfall.Passives"));
+        const auto type=lower(typeID);
+        if(auto map=mapPassiveBindings.find(type);map!=mapPassiveBindings.end())
+            for(const auto& id:split(map->second)) if(!includes(it->second,id)) it->second.push_back(id);
+        if(auto found=scriptBindings.find(type);found!=scriptBindings.end())
+            for(const auto& id:found->second) if(skills.contains(id) && !includes(it->second,id)) it->second.push_back(id);
         for(const auto& id:it->second) if(!skills.contains(id))
             configLog("["+string(typeID)+"] Starfall.Passives="+id+" - 引用的被动未注册或已停用");
     }
@@ -1501,6 +1508,8 @@ void updateStat(Applied& record,size_t k,double& value) {
 struct StateTimer { unsigned start; bool observed; };
 using TimerKey=std::pair<DWORD,string>;
 std::map<TimerKey,StateTimer> stateTimers;
+std::map<DWORD,DWORD> hitSequences;
+std::map<TimerKey,DWORD> observedHits;
 struct AttachedAnim { DWORD id; int slot=-1; bool seen=false; };
 std::map<TimerKey,AttachedAnim> attachedAnims;
 std::set<TimerKey> activeAnimStates;
@@ -1668,28 +1677,30 @@ bool nearbyState(TechnoClass* unit,const Skill& s,unsigned frame) {
     return sample.matches;
 }
 double distanceCells(const CoordStruct& a,const CoordStruct& b);
+std::optional<double> stateFormulaValue(const ConfigFormula& formula,TechnoClass* unit,AbstractClass* aim,
+                                        UnitHealth::Values hp,const string& skillId) {
+    auto type=unit->GetTechnoType();
+    auto target=aim && (aim->AbstractFlags&AbstractFlags::Techno)!=AbstractFlags::None?static_cast<TechnoClass*>(aim):nullptr;
+    std::optional<double> distance;
+    std::optional<HealthFormula::Values> values;
+    if(aim && formula.expression.usesDistance())
+        distance=distanceCells(unit->GetCenterCoords(),target?target->GetCenterCoords():aim->GetCoords());
+    if(target && formula.expression.usesTargetValues()) {
+        auto targetType=target->GetTechnoType();
+        auto health=UnitHealth::read(target,targetType->Strength);
+        values=HealthFormula::Values{health.current,health.maximum,targetType->Cost};
+    }
+    bool missing=false;
+    auto result=formula.expression.evaluate(hp.current,hp.maximum,0,distance,stackCount(unit->UniqueID,skillId),
+        values,&missing,type->Cost,type->Ammo<0?-1:unit->Ammo,unit->Passengers.NumPassengers);
+    if(!result && !missing) formula.report();
+    return result;
+}
 bool stateActive(TechnoClass* unit,const Skill& s,int bits,UnitHealth::Values hp,unsigned frame) {
     auto type=unit->GetTechnoType();
     if(!meetsState(s,bits,hp.current,hp.maximum,type->Ammo<0?-1:unit->Ammo,unit->Passengers.NumPassengers)) return false;
     if(!s.conditionFormula.expression.empty()) {
-        auto aim=unit->Target;
-        std::optional<double> distance;
-        std::optional<HealthFormula::Values> target;
-        if(aim && s.conditionFormula.expression.usesDistance()) {
-            auto point=(aim->AbstractFlags&AbstractFlags::Techno)!=AbstractFlags::None ?
-                static_cast<TechnoClass*>(aim)->GetCenterCoords():aim->GetCoords();
-            distance=distanceCells(unit->GetCenterCoords(),point);
-        }
-        if(aim && (aim->AbstractFlags&AbstractFlags::Techno)!=AbstractFlags::None && s.conditionFormula.expression.usesTargetValues()) {
-            auto other=static_cast<TechnoClass*>(aim);auto otherType=other->GetTechnoType();
-            auto value=UnitHealth::read(other,otherType->Strength);
-            target=HealthFormula::Values{value.current,value.maximum,otherType->Cost};
-        }
-        bool missing=false;
-        auto value=s.conditionFormula.expression.evaluate(hp.current,hp.maximum,0,distance,stackCount(unit->UniqueID,s.id),
-            target,&missing,type->Cost,type->Ammo<0?-1:unit->Ammo,unit->Passengers.NumPassengers);
-        if(!value) {if(!missing) s.conditionFormula.report();return false;}
-        if(*value==0) return false;
+        if(stateFormulaValue(s.conditionFormula,unit,unit->Target,hp,s.id).value_or(0)==0) return false;
     }
     if(s.deployPosture!=DeployPosture::None && deploymentOf(unit)!=s.deployPosture) return false;
     if(!nearbyState(unit,s,frame)) return false;
@@ -1698,7 +1709,18 @@ bool stateActive(TechnoClass* unit,const Skill& s,int bits,UnitHealth::Values hp
     timer.observed=true;
     return frame-timer.start>=s.stateDelayFrames;
 }
-std::set<DWORD> mirageUnits,immuneUnits,mindImmuneUnits;
+std::set<DWORD> mirageUnits,immuneUnits,mindImmuneUnits,empUnits,cloakableUnits;
+bool empLocked(const AbstractClass* unit) {return unit && empUnits.contains(unit->UniqueID);}
+// Derived from current skills each frame. Rendering never changes game state.
+std::map<DWORD,ColorStruct> passiveTints;
+int drawTint(TechnoClass* unit,int original) {
+    if(original || passiveTints.empty()) return original;
+    auto it=passiveTints.find(unit->UniqueID);
+    if(it==passiveTints.end() || !unit->IsOnMap || unit->InLimbo || unit->CloakState!=CloakState::Uncloaked ||
+       unit->IsIronCurtained() || (unit->Disguised && (!HouseClass::CurrentPlayer || !unit->IsClearlyVisibleTo(HouseClass::CurrentPlayer))))
+        return original;
+    return Drawing::RGB_To_Int(it->second);
+}
 double distanceCells(const CoordStruct& a,const CoordStruct& b);
 struct BuildingPowerState {
     HouseClass* owner;
@@ -1730,11 +1752,12 @@ int powerContribution(BuildingClass* building,int base,int accumulated) {
     return static_cast<int>(std::min<double>(room,std::round(base*factor)));
 }
 void tickStates() {
-    if(buildingPower.empty() && !anyStateSkills && !anyAttachedAnims && attachedAnims.empty() && activeAnimStates.empty() && applied.empty() && stateTimers.empty() && mirageUnits.empty() && immuneUnits.empty() && mindImmuneUnits.empty()) return;
+    if(buildingPower.empty() && !anyStateSkills && !anyPassiveVisuals && attachedAnims.empty() && activeAnimStates.empty() && applied.empty() && stateTimers.empty() && mirageUnits.empty() && immuneUnits.empty() && mindImmuneUnits.empty() && empUnits.empty() && cloakableUnits.empty()) return;
     AnimFrame animFrame;
     for(auto& [key,anim]:attachedAnims) anim.seen=false;
     std::set<TimerKey> nextAnimStates;
-    std::set<DWORD> nextMirage,nextImmune,nextMindImmune;
+    std::set<DWORD> nextMirage,nextImmune,nextMindImmune,nextEmp,nextCloakable;
+    vector<TargetClass> empCrashes;
     const unsigned frame=static_cast<unsigned>(Unsorted::CurrentFrame);
     for(auto& [key,sample]:nearbySamples) sample.seen=false;
     for(auto& [key,timer]:stateTimers) if(!transportStateKeys.contains(key)) timer.observed=false;
@@ -1745,14 +1768,15 @@ void tickStates() {
         Factors desired=identity;
         double scaleFactor=1.0,projectileFactor=1.0,rangeFactor=1.0,fireRateFactor=1.0;
         double powerFactor=1;
-        bool berserk=false,mirage=false,immune=false,mindImmune=false;
+        bool berserk=false,mirage=false,immune=false,mindImmune=false,emp=false,cloakable=false;
+        ColorStruct tint{};
         WeaponRules nextSlots{};
         const bool onMap=unit->IsOnMap && !unit->InLimbo;
         const bool passengerOnly=!onMap && alive(unit->Transporter) && unit->Transporter->WhatAmI()==AbstractType::Unit;
         if(alive(unit) && (onMap || passengerOnly)) {
             auto type=unit->GetTechnoType();
             const auto& native=boundSkills(type->ID);
-            if(native.empty() && old==applied.end() && !weaponRules.contains(unit->UniqueID) && !VisualScale::state.contains(unit->UniqueID) && !projectileState.contains(unit->UniqueID) && !rangeState.contains(unit->UniqueID) && !fireRateState.contains(unit->UniqueID) && !buildingPower.contains(unit->UniqueID) && !mirageUnits.contains(unit->UniqueID) && !extraSkills(unit)) continue;
+            if(native.empty() && old==applied.end() && !weaponRules.contains(unit->UniqueID) && !VisualScale::state.contains(unit->UniqueID) && !projectileState.contains(unit->UniqueID) && !rangeState.contains(unit->UniqueID) && !fireRateState.contains(unit->UniqueID) && !buildingPower.contains(unit->UniqueID) && !mirageUnits.contains(unit->UniqueID) && !empUnits.contains(unit->UniqueID) && !passiveTints.contains(unit->UniqueID) && !extraSkills(unit)) continue;
             auto ids=native;
             extraSkills(unit,&ids);
             int bits=stateOf(unit);
@@ -1763,7 +1787,12 @@ void tickStates() {
                 auto& s=it->second;
                 if(suppressed(unit->UniqueID,id)) continue;
                 if(passengerOnly && (!s.passengerCombat || s.nearby.range || s.conditionFormula.expression.usesDistance())) continue;
-                bool active=(s.trigger=="whilestate" || (s.anim && !s.animAlways)) && stateActive(unit,s,bits,hp,frame);
+                bool active=(s.trigger=="whilestate" || s.tint || (s.anim && !s.animAlways)) && stateActive(unit,s,bits,hp,frame);
+                if(onMap && active && s.tint) {
+                    tint.R=std::max(tint.R,s.tint->R);
+                    tint.G=std::max(tint.G,s.tint->G);
+                    tint.B=std::max(tint.B,s.tint->B);
+                }
                 if(onMap && s.anim && (s.animAlways || active) && unit->CloakState==CloakState::Uncloaked) animFrame.attach(unit,s);
                 if(s.trigger!="whilestate" || !active) continue;
                 if(onMap && s.triggerAnim) {
@@ -1780,24 +1809,9 @@ void tickStates() {
                 auto multipliers=s.multipliers;
                 for(const auto& [index,formula]:s.stateFormulas) {
                     if(passengerOnly && (!passengerCombatMultiplier(index) || formula.expression.usesDistance())) continue;
-                    std::optional<double> distance;
-                    std::optional<HealthFormula::Values> targetValues;
-                    auto aim=unit->Target;
-                    if(aim && formula.expression.usesDistance()) {
-                        auto point=(aim->AbstractFlags & AbstractFlags::Techno)!=AbstractFlags::None?
-                            static_cast<TechnoClass*>(aim)->GetCenterCoords():aim->GetCoords();
-                        distance=distanceCells(unit->GetCenterCoords(),point);
-                    }
-                    if(aim && (aim->AbstractFlags & AbstractFlags::Techno)!=AbstractFlags::None && formula.expression.usesTargetValues()) {
-                        auto target=static_cast<TechnoClass*>(aim);
-                        auto type=target->GetTechnoType();
-                        auto values=UnitHealth::read(target,type->Strength);
-                        targetValues=HealthFormula::Values{values.current,values.maximum,type->Cost};
-                    }
-                    bool missing=false;
-                    auto value=formula.expression.evaluate(hp.current,hp.maximum,0,distance,stackCount(unit->UniqueID,id),targetValues,&missing,type->Cost,type->Ammo<0?-1:unit->Ammo,unit->Passengers.NumPassengers);
+                    auto value=stateFormulaValue(formula,unit,unit->Target,hp,id);
                     if(value && validStateMultiplier(index,*value)) multipliers[index]=*value;
-                    else if(!missing) formula.report();
+                    else if(value) formula.report();
                 }
                 rangeFactor=std::clamp(rangeFactor*multipliers[3],0.0001,10000.0);
                 fireRateFactor=std::clamp(fireRateFactor*multipliers[4],0.0001,10000.0);
@@ -1806,10 +1820,12 @@ void tickStates() {
                 scaleFactor*=s.visualScale/100.0;
                 projectileFactor*=s.projectileScale/100.0;
                 powerFactor=std::min(10000.0,powerFactor*multipliers[powerMultiplierIndex]);
+                emp|=s.emp;
                 berserk|=s.berserk;
                 mirage|=s.mirage;
                 immune|=s.immune;
                 mindImmune|=s.mindImmune;
+                cloakable|=s.cloakable;
                 for(int slot=0;slot<2;++slot) {
                     nextSlots[slot].disabled|=s.slots[slot].disabled;
                     if(s.slots[slot].replacement) nextSlots[slot].replacement=s.slots[slot].replacement;
@@ -1818,8 +1834,30 @@ void tickStates() {
                 desired[2]=std::clamp(desired[2]*multipliers[2],0.0001,10000.0);
             }
         }
+        if(tint!=ColorStruct{}) {
+            auto [it,added]=passiveTints.try_emplace(unit->UniqueID,tint);
+            if(added || it->second!=tint) {it->second=tint;unit->MarkForRedraw();}
+        } else if(passiveTints.erase(unit->UniqueID)) unit->MarkForRedraw();
+        if(emp && (unit->WhatAmI()==AbstractType::Unit || unit->WhatAmI()==AbstractType::Aircraft)) {
+            nextEmp.insert(unit->UniqueID);
+            if(!empUnits.contains(unit->UniqueID)) {
+                if(unit->IsInAir()) empCrashes.emplace_back(unit);
+                else {
+                    auto foot=static_cast<FootClass*>(unit);
+                    if(!ForceMove::interruptTravel(foot)) ForceMove::stopOrders(foot);
+                }
+            }
+        }
+        if(alive(unit) && !emp && empUnits.contains(unit->UniqueID) &&
+           (unit->WhatAmI()==AbstractType::Unit || unit->WhatAmI()==AbstractType::Aircraft)) {
+            empUnits.erase(unit->UniqueID); // Release the mission hook before restoring Guard.
+            auto foot=static_cast<FootClass*>(unit);
+            if(foot->CurrentMission==Mission::Sleep && !ForceMove::motions.contains(unit->UniqueID))
+                foot->ForceMission(Mission::Guard);
+        }
         if(immune) nextImmune.insert(unit->UniqueID);
         if(mindImmune) nextMindImmune.insert(unit->UniqueID);
+        if(cloakable) nextCloakable.insert(unit->UniqueID);
         if(mirage && unit->WhatAmI()==AbstractType::Unit) nextMirage.insert(unit->UniqueID);
         else if(mirageUnits.contains(unit->UniqueID) && unit->WhatAmI()==AbstractType::Unit) {
             auto type=unit->GetTechnoType();
@@ -1857,8 +1895,12 @@ void tickStates() {
     }
     animFrame.finish();
     mirageUnits.swap(nextMirage);
+    empUnits.swap(nextEmp);
+    for(auto& handle:empCrashes)
+        if(auto unit=handle.As_Foot();unit && alive(unit) && unit->IsInAir()) unit->Crash(nullptr);
     immuneUnits.swap(nextImmune);
     mindImmuneUnits.swap(nextMindImmune);
+    cloakableUnits.swap(nextCloakable);
     activeAnimStates.swap(nextAnimStates);
     std::erase_if(nearbySamples,[](const auto& p){return !p.second.seen;});
     std::erase_if(stateTimers,[](const auto& item){return !item.second.observed;});
@@ -1892,6 +1934,7 @@ Event eventSnapshot(const char* name,TechnoClass* holder,TechnoClass* other,Tech
         auto target=UnitHealth::read(other,targetType->Strength);
         if(target.maximum>0) {e.targetMaxHp=target.maximum;e.targetHp=std::clamp(target.current,0,target.maximum);}
     }
+    if(!impactCenters.empty()) e.blastCenter=impactCenters.back().second;
     if(victim) {e.hasImpact=true;e.impact=victim->GetCoords();}
     e.ammo=type->Ammo<0?-1:holder->Ammo;
     e.passengers=holder->Passengers.NumPassengers;
@@ -1938,7 +1981,13 @@ void forgetGain(DWORD unit,const string& id) {
 void observeGains(TechnoClass* unit) {
     if(!anyGainSkills || !alive(unit)) return;
     vector<string> current;
-    interested(unit,"onpassivegained",&current);
+    auto held=boundSkills(unit->GetTechnoType()->ID);
+    extraSkills(unit,&held);
+    for(const auto& id:held) {
+        auto it=skills.find(id);
+        if(it!=skills.end() && !suppressed(unit->UniqueID,id) &&
+           (it->second.trigger=="onpassivegained" || it->second.gainAnim)) current.push_back(id);
+    }
     auto old=gainSeen.find(unit->UniqueID);
     if(current.empty()) {if(old!=gainSeen.end()) gainSeen.erase(old);return;}
     if(!unit->IsOnMap || unit->InLimbo) {
@@ -1952,8 +2001,16 @@ void observeGains(TechnoClass* unit) {
     vector<string> added;
     for(const auto& id:current) if(old==gainSeen.end() || !includes(old->second,id)) added.push_back(id);
     if(!added.empty()) {
-        auto e=eventSnapshot("onpassivegained",unit,nullptr,unit,unit,0);
-        e.snapshot=std::move(added);pending.push_back(std::move(e));
+        vector<string> events;
+        for(const auto& id:added) {
+            const auto& skill=skills.at(id);
+            if(skill.gainAnim) playSkillAnim(skill.gainAnim,unit,unit->Location,unit->Owner);
+            if(skill.trigger=="onpassivegained") events.push_back(id);
+        }
+        if(!events.empty()) {
+            auto e=eventSnapshot("onpassivegained",unit,nullptr,unit,unit,0);
+            e.snapshot=std::move(events);pending.push_back(std::move(e));
+        }
     }
     if(old==gainSeen.end() || old->second!=current) gainSeen[unit->UniqueID]=std::move(current);
 }
@@ -2278,8 +2335,7 @@ void tryGrantUnit(TechnoClass* unit,WarheadTypeClass* wh,const WarheadGrantRule&
        unit->IsIronCurtained() || unit->IsBeingWarpedOut()) return;
     auto owner=unit->Owner;
     bool self=owner==source,ally=source && source->IsAlliedWith(owner);
-    if(source && !(self?rule.affectsOwner:ally?wh->AffectsAllies:rule.affectsEnemies)) return;
-    if(owner->IsNeutral() && !rule.affectsNeutral) return;
+    if(!warheadAllows(wh,source,owner)) return;
     const char* house=self?"self":ally?"allies":owner->IsNeutral()?"neutral":source?"enemies":"none";
     if(!includes(rule.houses,"all") && !includes(rule.houses,house)) return;
     if(!MapClass::GetTotalDamage(10000,wh,unit->GetTechnoType()->Armor,0)) return;
@@ -2376,6 +2432,7 @@ void observeTransitions() {
     }
 }
 using Objects = std::map<DWORD, TechnoClass*>;
+#include "LuaNearby.inc"
 TechnoClass* findLive(const Objects& objects,DWORD id) {
     auto it=objects.find(id);
     // Destructors invalidate entries during secondary damage.
@@ -2387,31 +2444,13 @@ struct EffectScope {
     EffectScope(){ applyingDamage=true; }
     ~EffectScope(){ applyingDamage=previous; }
 };
-bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* target,const CoordStruct& destination,const CoordStruct& origin) {
-    auto weapon=s.action=="fireweapon"?WeaponTypeClass::Find(s.weapon.c_str()):nullptr;
-    if(s.action=="fireweapon" && !weapon) return false;
-    auto warhead=weapon?weapon->Warhead:WarheadTypeClass::Find(s.warhead.c_str());
-    auto projectile=weapon?weapon->Projectile:BulletTypeClass::Find("Invisible");
-    if(!warhead || !projectile || !target) return false;
-    EffectScope scope;
-    auto bullet=projectile->CreateBullet(target,firer,weapon?weapon->Damage:s.amount,warhead,
-        weapon?weapon->Speed:100,weapon?weapon->Bright:warhead->Bright);
-    if(!bullet) return false;
-    bullet->SetWeaponType(weapon);
-    // A self-directed shot has no flight segment. Resolve the configured weapon at its impact point.
-    if(!weapon || target==firer || (!firer && origin==destination)) {
-        bullet->SetLocation(destination);
-        bullet->Detonate(destination);
-        bullet->UnInit();
-        return true;
-    }
-
+BulletVelocity launchVelocity(WeaponTypeClass* weapon,int speedValue,const CoordStruct& origin,const CoordStruct& destination) {
     double dx=destination.X-origin.X,dy=destination.Y-origin.Y,dz=destination.Z-origin.Z;
     double length=std::sqrt(dx*dx+dy*dy+dz*dz);
-    double speed=std::max(1,bullet->Speed);
+    double speed=std::max(1,speedValue);
     BulletVelocity velocity{};
     if(length>0) velocity={dx*speed/length,dy*speed/length,dz*speed/length};
-    if(projectile->Arcing) {
+    if(weapon->Projectile->Arcing) {
         double horizontal=std::hypot(dx,dy);
         if(horizontal>0) {
             double gravity=std::max(1,RulesClass::Instance->Gravity);
@@ -2419,11 +2458,107 @@ bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* targe
             velocity={dx/flight,dy/flight,dz/flight+0.5*gravity*flight};
         }
     }
+    return velocity;
+}
+bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* target,const CoordStruct& destination,const CoordStruct& origin,HouseClass* owner) {
+    auto weapon=s.action=="fireweapon"?WeaponTypeClass::Find(s.weapon.c_str()):nullptr;
+    if(s.action=="fireweapon" && !weapon) return false;
+    auto warhead=weapon?weapon->Warhead:s.warhead;
+    auto projectile=weapon?weapon->Projectile:BulletTypeClass::Find("Invisible");
+    if(!warhead || !projectile || !target) return false;
+    EffectScope scope;
+    auto bullet=projectile->CreateBullet(target,firer,weapon?weapon->Damage:s.amount,warhead,
+        weapon?weapon->Speed:100,weapon?weapon->Bright:warhead->Bright);
+    if(!bullet) return false;
+    if(!firer && owner) passiveBulletOwners[bullet->UniqueID]=owner->ArrayIndex;
+    bullet->SetWeaponType(weapon);
+    // A self-directed shot has no flight segment. Resolve the configured weapon at its impact point.
+    if(!weapon || target==firer || (!firer && origin==destination)) {
+        const auto id=bullet->UniqueID;
+        bullet->SetLocation(destination);
+        bullet->Detonate(destination);
+        bullet->UnInit();
+        passiveBulletOwners.erase(id);
+        return true;
+    }
+
     passiveBullets.insert(bullet->UniqueID);
-    if(!bullet->MoveTo(origin,velocity)) {bullet->UnInit();return false;}
+    if(!bullet->MoveTo(origin,launchVelocity(weapon,bullet->Speed,origin,destination))) {
+        const auto id=bullet->UniqueID;bullet->UnInit();passiveBulletOwners.erase(id);return false;
+    }
     return true;
 }
+int multiShotTargetCount(TechnoClass* unit,AbstractClass* primary) {
+    auto ids=boundSkills(unit->GetTechnoType()->ID);extraSkills(unit,&ids);
+    int count=0;
+    for(const auto& id:ids) {
+        auto it=skills.find(id);
+        if(it==skills.end() || !it->second.hasMultiShot() || suppressed(unit->UniqueID,id)) continue;
+        const auto& s=it->second;
+        if(unit->Transporter && (s.nearby.range || s.conditionFormula.expression.usesDistance() || s.multiShotFormula.expression.usesDistance())) continue;
+        auto hp=UnitHealth::read(unit);
+        if(!stateActive(unit,s,stateOf(unit),hp,Unsorted::CurrentFrame)) continue;
+        double extra=s.extraShotCount;
+        if(!s.multiShotFormula.expression.empty())
+            extra=stateFormulaValue(s.multiShotFormula,unit,primary,hp,id).value_or(0);
+        count+=static_cast<int>(std::clamp(extra,0.0,static_cast<double>(INT_MAX-count)));
+    }
+    return count;
+}
+void multiShot(TechnoClass* unit,BulletClass* original,AbstractClass* primary,int slot,const CoordStruct& origin) {
+    if(!alive(unit) || !unit->Owner || !original || !primary || slot<0 || slot>=TechnoTypeClass::MaxWeapons) return;
+    auto weapon=original->WeaponType;
+    if(!weapon || !weapon->Projectile || !original->WH || !original->Type || weapon->Spawner || weapon->LimboLaunch) return;
+    int targetCount=multiShotTargetCount(unit,primary);
+    if(!targetCount) return;
+    auto owner=unit->Owner;
+    auto originUnit=unit->Transporter?unit->Transporter:unit;
+    auto mount=unit->GetWeapon(slot);
+    if(!mount || mount->WeaponType!=weapon) return;
+    std::set<DWORD> seen;
+    vector<std::pair<int,TechnoClass*>> targets;
+    auto visit=[&](TechnoClass* other) {
+        if(!alive(other) || other==primary || other==original->Target || other==unit || !other->Owner ||
+           !other->IsOnMap || other->InLimbo || other->Transporter || other->IsSinking ||
+           other->Owner==owner || owner->IsAlliedWith(other->Owner) || other->Owner->IsNeutral() ||
+           !seen.insert(other->UniqueID).second) return false;
+        if(other->Disguised && !other->IsClearlyVisibleTo(owner)) return false;
+        if(other->CloakState!=CloakState::Uncloaked) {
+            auto cell=other->GetCell();
+            if(!cell || owner->ArrayIndex<0 || owner->ArrayIndex>=24 || !cell->Sensors_InclHouse(owner->ArrayIndex)) return false;
+        }
+        if(!(other->IsInAir()?original->Type->AA:original->Type->AG) || !other->GetTechnoType()->LegalTarget ||
+           !unit->IsCloseEnough(other,slot) || !MapClass::GetTotalDamage(10000,original->WH,other->GetTechnoType()->Armor,0)) return false;
+        auto error=unit->GetFireError(other,slot,false);
+        if(error!=FireError::OK && error!=FireError::FACING && error!=FireError::ROTATING) return false;
+        targets.emplace_back(originUnit->DistanceFrom(other),other);return false;
+    };
+    int range=unit->GetWeaponRange(slot);
+    if(range>0 && range<=32*256 && !original->Type->AA && originUnit==unit && !unit->IsInAir())
+        visitNearbyCells(unit->GetMapCoords(),(range+255)/256+2,false,visit);
+    else for(auto other:TechnoClass::Array) visit(other);
+    auto count=std::min<size_t>(targets.size(),targetCount);
+    std::partial_sort(targets.begin(),targets.begin()+count,targets.end(),[](const auto& a,const auto& b){
+        return a.first!=b.first?a.first<b.first:a.second->UniqueID<b.second->UniqueID;
+    });
+    for(size_t i=0;i<count;++i) {
+        auto target=targets[i].second;
+        auto extra=original->Type->CreateBullet(target,unit,original->Health,original->WH,original->Speed,original->Bright);
+        if(!extra) continue;
+        extra->SetWeaponType(weapon);
+        extra->DamageMultiplier=original->DamageMultiplier;
+        extra->Range=original->Range;
+        extra->InheritedColor=original->InheritedColor;
+        if(!extra->MoveTo(origin,launchVelocity(weapon,extra->Speed,origin,target->GetCenterCoords()))) {
+            extra->UnInit();
+            continue;
+        }
+        if(weapon->IsLaser) unit->CreateLaser(target,slot,weapon,origin);
+    }
+}
 HouseClass* actionOwner(const string& source,const Event& e,TechnoClass* holder,const Objects& objects) {
+    if(e.trigger=="onmaptrigger" && source=="self" && e.owner>=0 && e.owner<HouseClass::Array.Count)
+        return HouseClass::Array.Items[e.owner];
     if(source=="neutral") return HouseClass::FindNeutral();
     if(source.starts_with("player")) return HouseClass::FindByPlayerAt(HouseClass::PlayerAtA+source.back()-'1');
     DWORD id=source=="attacker"?e.attacker:source=="victim"?e.victim:e.holder;
@@ -2579,6 +2714,46 @@ bool transformUnit(TechnoClass* target,TechnoTypeClass* to) {
     target->MarkForRedraw();
     return true;
 }
+bool chronoTeleport(TechnoClass* target,CellStruct center,int radius) {
+    auto& map=MapClass::Instance;
+    if((target->AbstractFlags&AbstractFlags::Foot)==AbstractFlags::None || !target->IsOnMap || target->InLimbo ||
+       target->Transporter || target->Absorbed || target->IsInAir() || target->IsSinking || target->IsCrashing ||
+       target->IsImmobilized || target->IsBeingWarpedOut() || !map.IsWithinUsableArea(center,false)) return false;
+    auto foot=static_cast<FootClass*>(target);
+    if(!foot->Locomotor || foot->TubeIndex>=0 || foot->IsAttackedByLocomotor || foot->IsDeploying) return false;
+    auto type=foot->GetTechnoType();
+    auto speed=type->SpeedType==SpeedType::Winged?SpeedType::Wheel:type->SpeedType;
+    if(speed<SpeedType::Foot || speed>SpeedType::FloatBeach || center==foot->GetMapCoords()) return false;
+    bool usesBridge=GroundType::Array[static_cast<int>(LandType::Clear)].Cost[static_cast<int>(speed)]>0;
+    // ChronoWarpTo records its landing cell immediately, before it becomes occupied.
+    // Reading the native field also covers simultaneous orders and restored games.
+    std::set<std::pair<short,short>> reserved;
+    for(auto unit:FootClass::Array) if(unit && unit->IsImmobilized && alive(unit)) {
+        auto p=CellClass::Coord2Cell(unit->ChronoDestCoords);
+        reserved.emplace(p.X,p.Y);
+    }
+    auto available=[&](short x,short y)->CellClass* {
+        CellStruct p{x,y};
+        if(x<0 || y<0 || x>=512 || y>=512 || !map.IsWithinUsableArea(p,false) || reserved.contains({x,y})) return nullptr;
+        auto cell=map.TryGetCellAt(p);
+        if(!cell || cell->GetBuilding() || cell->GetContent() || cell->Jumpjet) return nullptr;
+        bool bridge=cell->ContainsBridge();
+        return (!bridge || usesBridge) && cell->IsClearToMove(speed,false,false,-1,type->MovementZone,-1,bridge)?cell:nullptr;
+    };
+    auto best=available(center.X,center.Y);
+    int bestDistance=best?0:radius*radius+1;
+    for(int r=1;r<=radius && r*r<bestDistance;++r) {
+        for(int dy=-r;dy<=r;++dy) for(int dx=-r;dx<=r;++dx) {
+            int distance=dx*dx+dy*dy;
+            if(std::max(std::abs(dx),std::abs(dy))!=r || distance>=bestDistance) continue;
+            if(auto cell=available(static_cast<short>(center.X+dx),static_cast<short>(center.Y+dy))) {
+                best=cell;bestDistance=distance;
+            }
+        }
+    }
+    // The engine adjusts floor coordinates to bridge height inside ChronoWarpTo.
+    return best && foot->ChronoWarpTo(best->GetCoords());
+}
 bool spawnUnit(TechnoTypeClass* type,HouseClass* owner,const CoordStruct& location) {
     auto& map=MapClass::Instance;
     const auto center=CellClass::Coord2Cell(location);
@@ -2716,30 +2891,73 @@ bool stealPassives(TechnoClass* holder,TechnoClass* donor,const PassiveAction& a
             available=saved->second;
         } else {
             if(!ownsPassive(donor,id)) continue;
-            available=stackCount(donor->UniqueID,id);
+            // Passenger support is a live contribution, not transferable inventory.
+            // Removing it here would be undone by the next transport refresh.
+            available=manualStackCount(donor->UniqueID,id);
+            if(!available && stackCount(donor->UniqueID,id)>0) continue;
         }
         int maximum=skills.at(id).stackMax;
         int room=maximum-stackCount(holder->UniqueID,id);
         int moved=std::min({available,action.amount,room});
         // A zero-stack passive still conveys its base ability once.
         if(!moved && (available>0 || ownsPassive(holder,id))) continue;
+        if(!passenger && moved && !changeStacks(donor->UniqueID,id,-moved,maximum)) continue;
         grantToUnit(holder,PassiveGrant{{id},-1},false);
         if(moved) changeStacks(holder->UniqueID,id,moved,maximum);
         if(passenger) {
             if(moved==available) passenger->erase(id);
             else passenger->at(id)-=moved;
-        } else if(moved==available) removeHeldPassive(donor,id);
-        else changeStacks(donor->UniqueID,id,-moved,maximum);
+        } else if(moved==available && stackCount(donor->UniqueID,id)==0) removeHeldPassive(donor,id);
         changed=true;
     }
     // Acquisition formulas see all transferred stacks, including on the first grant.
     if(changed && anyGainSkills) observeGains(holder);
     return changed;
 }
-bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects& objects,int stacks) {
+bool runScript(const PassiveAction&,Event&,const Objects&,int,int* pendingDamage=nullptr);
+// Audio availability is local. A muted client or a missing sample must not
+// alter whether the synchronized action list counts as successfully fired.
+std::map<string,int> soundIndices;
+string lastMissingSound;
+void playActionSound(const string& name,const CoordStruct& at) {
+    if(name.size()>4 && !_strnicmp(name.c_str(),"wav:",4)) {
+        // WAV playback is local presentation; gameplay success is unchanged.
+        auto cell=MapClass::Instance.TryGetCellAt(at);
+        if(cell && !cell->IsShrouded() && !cell->IsFogged() && TacticalClass::Instance) {
+            auto [point,visible]=TacticalClass::Instance->CoordsToClient(at);
+            const auto& view=DSurface::ViewBounds;
+            if(visible && point.X>=view.X && point.Y>=view.Y && point.X<view.X+view.Width && point.Y<view.Y+view.Height)
+                ResearchAudio::playPath(name.substr(4));
+        }
+        return;
+    }
+    if(!VocClass::Array.Count) return;
+    auto it=soundIndices.find(name);
+    if(it==soundIndices.end()) {
+        int index=VocClass::FindIndex(name.c_str());
+        if(index<0) {
+            if(name!=lastMissingSound) configLog("PlaySound: unknown sound "+name);
+            lastMissingSound=name;
+            return;
+        }
+        it=soundIndices.emplace(name,index).first;
+    }
+    VocClass::PlayAt(it->second,at);
+}
+bool shakeVisibleAt(const CoordStruct& pos) {
+    auto cell=MapClass::Instance.TryGetCellAt(pos);
+    if(!cell || cell->IsShrouded() || cell->IsFogged() || !TacticalClass::Instance) return false;
+    auto [pt,visible]=TacticalClass::Instance->CoordsToClient(pos);
+    const auto& view=DSurface::ViewBounds;
+    return visible && pt.X>=view.X && pt.Y>=view.Y && pt.X<view.X+view.Width && pt.Y<view.Y+view.Height;
+}
+bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects& objects,int stacks,std::optional<DWORD> selected=std::nullopt,std::optional<CellStruct> point=std::nullopt) {
+    if(s.action=="runscript") return runScript(s,e,objects,stacks);
     DWORD targetId=s.targetIsEventTarget && e.consumedTarget ? e.consumedTarget :
         s.target=="sender"?e.attacker:s.target=="attacker"?e.attacker:s.target=="victim"?e.victim:e.holder;
+    if(selected) targetId=*selected;
     auto target=targetId==e.holder ? holder : findLive(objects,targetId);
+    if(selected && !target) return false;
     auto eventDistance=e.distance>=0?std::optional<double>{e.distance}:std::nullopt;
     HealthFormula::Values targetValues{e.targetHp,e.targetMaxHp,e.targetCost};
     std::optional<HealthFormula::Values> senderValues;
@@ -2824,12 +3042,16 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
             return stealPassives(holder,nullptr,s,e.passengerPassives.get());
         return stealPassives(holder,target,s);
     }
-    if(s.action=="fireweapon" || s.action=="detonatewarhead" || s.action=="spawncrate" || s.action=="spawnunit") {
+    if(positionalAction(s.action)) {
         if(e.trigger=="onsignal" && s.target=="victim" && !target) return false;
         auto origin=holder?holder->GetCenterCoords():e.origin;
         CoordStruct destination;
         AbstractClass* aim=target;
-        if(s.target=="victimlocation" || (!target && s.target=="victim")) {
+        if(point) {
+            auto cell=MapClass::Instance.TryGetCellAt(*point);
+            if(!cell || !MapClass::Instance.IsWithinUsableArea(*point,false)) return false;
+            destination=cell->GetCoordsWithBridge();aim=cell;
+        } else if(s.target=="victimlocation" || (!target && s.target=="victim")) {
             if(!e.hasImpact) return false;
             destination=e.impact;
             aim=nullptr;
@@ -2839,6 +3061,33 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
             destination=target->GetCenterCoords();
         } else return false;
         auto& map=MapClass::Instance;
+        if(s.action=="playanim") {
+            auto unit=(!point && s.target!="victimlocation")?target:nullptr;
+            return playSkillAnim(s.playAnim,unit,destination,actionOwner("self",e,holder,objects))!=nullptr;
+        }
+        if(s.action=="playsound") {
+            playActionSound(s.sound,destination);
+            return true;
+        }
+        if(s.action=="shakescreen") {
+            // Local presentation must never alter synchronized success, timers or cooldowns.
+            if(!CCINIClass::INI_RA2MD.ReadBool("Phobos","HideShakeEffects",false) &&
+               (!s.shakeLocal || shakeVisibleAt(destination))) {
+                auto& screen=GScreenClass::Instance;
+                if(s.shakeX) screen.ScreenShakeX=s.shakeX;
+                if(s.shakeY) screen.ScreenShakeY=s.shakeY;
+            }
+            return true;
+        }
+        if(s.action=="spawnparticlesystem") {
+            auto behavior=s.particleSystem->BehavesLike;
+            bool directed=behavior==BehavesLike::Fire || behavior==BehavesLike::Railgun;
+            if(directed && origin==destination) return false;
+            auto owner=actionOwner("self",e,holder,objects);
+            if(directed && !aim) aim=map.TryGetCellAt(destination);
+            return GameCreate<ParticleSystemClass>(s.particleSystem,directed?origin:destination,
+                directed?aim:nullptr,directed?holder:nullptr,directed?destination:CoordStruct::Empty,owner)!=nullptr;
+        }
         if(s.action=="spawnunit") {
             auto owner=actionOwner(s.owner,e,holder,objects);
             return owner && !owner->Defeated && !owner->IsObserver() && spawnUnit(s.unitType,owner,destination);
@@ -2848,7 +3097,7 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
             return map.IsWithinUsableArea(cell,false) && map.PlacePowerupCrate(cell,s.crateType);
         }
         if(!aim) aim=map.TryGetCellAt(destination);
-        return weaponEffect(s,holder,aim,destination,origin);
+        return weaponEffect(s,holder,aim,destination,origin,actionOwner("self",e,holder,objects));
     }
     auto amountValue=[&]() -> int {
         if(!s.amountFormula.expression.empty()) {
@@ -2861,6 +3110,8 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
     };
     if(s.action=="givecredits" || s.action=="giveresearchpoints") {
         auto house=target?target->Owner:nullptr;
+        if(e.trigger=="onmaptrigger" && s.target=="self" && e.owner>=0 && e.owner<HouseClass::Array.Count)
+            house=HouseClass::Array.Items[e.owner];
         if(!house && !holder && s.target=="self" && e.owner>=0 && e.owner<HouseClass::Array.Count)
             house=HouseClass::Array.Items[e.owner];
         int amount=amountValue();
@@ -2873,6 +3124,33 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         house->GiveMoney(amount);return true;
     }
     if (!target) return false;
+    if(s.action=="forcemove") {
+        if(s.forceMove.impact && !e.blastCenter && !e.hasImpact) return false;
+        auto center=s.forceMove.impact?e.blastCenter.value_or(e.impact):holder?holder->Location:e.origin;
+        return ForceMove::start(target,s.forceMove,center);
+    }
+    if(s.action=="chronoteleport" && ForceMove::locked(target)) return false;
+    if(s.action=="chronoteleport") return chronoTeleport(target,s.teleportCell,s.searchRadius);
+    if(s.action=="applyironcurtain") {
+        if(!target->IsOnMap || target->InLimbo) return false;
+        int remaining=target->IsIronCurtained()?target->IronCurtainTimer.GetTimeLeft():0;
+        if(remaining>=s.duration || (remaining>0 && target->ForceShielded)) return false;
+        auto source=actionOwner("self",e,holder,objects);
+        int hp=target->Health;
+        EffectScope scope;
+        target->IronCurtain(s.duration,source,false);
+        // Native organic handling may remove the target during this call.
+        auto survivor=findLive(objects,targetId);
+        return !survivor || survivor->Health<hp || survivor->IronCurtainTimer.GetTimeLeft()>remaining;
+    }
+    if(s.action=="promote") {
+        if(!target->GetTechnoType()->Trainable || target->Veterancy.IsElite()) return false;
+        if(observePromotions && !previousState.contains(targetId))
+            previousState[targetId]={target->Veterancy.IsVeteran()?1:0,deploymentOf(target)==DeployPosture::Deployed};
+        if(s.amount==2 || target->Veterancy.IsVeteran()) target->Veterancy.SetElite();
+        else target->Veterancy.SetVeteran();
+        target->MarkForRedraw();return true;
+    }
     if(s.action=="consumepassenger") return consumePassenger(target,e);
     if(s.percentIndex<percentActions.size()) {
         const auto k=s.percentIndex;
@@ -2944,6 +3222,15 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         return !findLive(objects,id);
     }
     if(s.action=="grantpassive") return grantToUnit(target,PassiveGrant{{s.passive},s.duration,s.stackOnReapply});
+    if(s.action=="resetstatetimer") {
+        auto skill=skills.find(s.passive);
+        if(skill==skills.end() || skill->second.trigger!="whilestate" || !skill->second.stateDelayFrames || !ownsPassive(target,s.passive)) return false;
+        auto timer=stateTimers.find({target->UniqueID,s.passive});
+        if(timer==stateTimers.end()) return false;
+        timer->second.start=Unsorted::CurrentFrame;
+        timer->second.observed=true;
+        return true;
+    }
     if(s.action=="changepassivestack") {
         reconcileUnitStacks(target);
         if(!ownsPassive(target,s.passive)) return false;
@@ -2968,14 +3255,38 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
     } else {
         int before=UnitHealth::read(target).current;
         DWORD id=target->UniqueID;
-        applyingDamage=true;
-        target->ReceiveDamage(&amount,0,RulesClass::Instance->C4Warhead,holder,false,false,holder?holder->Owner:nullptr);
-        applyingDamage=false;
+        auto source=(s.warhead || e.sequenceCast)?actionOwner("self",e,holder,objects):(holder?holder->Owner:nullptr);
+        if(s.warhead && !warheadAllows(s.warhead,source,target->Owner)) return false;
+        EffectScope scope;
+        // Vanilla includes the owner in AffectsAllies. Keep the override local to this
+        // damage operand so secondary damage and other units still use their own rules.
+        auto previous=ownerDamageOverride;
+        ownerDamageOverride=s.warhead && !s.warhead->AffectsAllies && source==target->Owner?&amount:nullptr;
+        target->ReceiveDamage(&amount,0,s.warhead?s.warhead:RulesClass::Instance->C4Warhead,holder,false,false,source);
+        ownerDamageOverride=previous;
         auto after=findLive(objects,id);
         return !after || UnitHealth::read(after).current<before;
     }
     return true;
 }
+// Both INI and Lua intercept the same pending hit after armor but before HP changes.
+std::optional<int> pendingDamageAmount(const PassiveAction& action,const Event& e,int damage,int stacks) {
+    if(action.action=="blockdamage") return 0;
+    if(action.amountFormula.expression.empty()) return action.amount;
+    auto distance=e.distance>=0?std::optional<double>{e.distance}:std::nullopt;
+    HealthFormula::Values target{e.targetHp,e.targetMaxHp,e.targetCost};
+    bool missing=false;
+    auto value=action.amountFormula.expression.evaluate(e.hp,e.maxHp,damage,distance,stacks,target,&missing,
+        e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt);
+    if(!value || *value<0 || *value>INT_MAX) {
+        if(!missing) action.amountFormula.report();
+        return std::nullopt;
+    }
+    return static_cast<int>(*value);
+}
+#include "LuaAnim.inc"
+#include "LuaSkillActions.inc"
+
 bool playEventAnim(const Skill& s,const Event& e,TechnoClass* holder,const Objects& objects) {
     auto owner=holder?holder->Owner:e.owner>=0 && e.owner<HouseClass::Array.Count?HouseClass::Array.Items[e.owner]:nullptr;
     if(s.animTarget=="self" || e.trigger=="ondeploy" || e.trigger=="onpromote" || e.trigger=="onpromoteveteran" || e.trigger=="onpromoteelite" || e.trigger=="onpassivegained")
@@ -3053,8 +3364,6 @@ int adjustPendingDamage(const char* trigger,TechnoClass* holder,TechnoClass* oth
     vector<string> ids;
     if(!interested(holder,trigger,&ids)) return damage;
     auto e=eventSnapshot(trigger,holder,other,attacker,victim,damage);
-    auto distance=e.distance>=0?std::optional<double>{e.distance}:std::nullopt;
-    HealthFormula::Values target{e.targetHp,e.targetMaxHp,e.targetCost};
     for(const auto& id:ids) {
         auto it=skills.find(id);
         if(it==skills.end() || suppressed(e.holder,id)) continue;
@@ -3079,15 +3388,17 @@ int adjustPendingDamage(const char* trigger,TechnoClass* holder,TechnoClass* oth
         auto stack=e.stackSnapshot.find(id);
         int stacks=stack==e.stackSnapshot.end()?0:stack->second;
         for(const auto& action:skill.actions) {
-            if(action.action=="blockdamage") {damage=0;success=true;break;}
-            int adjusted=action.amount;
-            if(!action.amountFormula.expression.empty()) {
-                bool missing=false;
-                auto value=action.amountFormula.expression.evaluate(e.hp,e.maxHp,damage,distance,stacks,target,&missing,e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt);
-                if(!value || *value<0 || *value>INT_MAX) {if(!missing) action.amountFormula.report();continue;}
-                adjusted=static_cast<int>(*value);
+            if(action.action=="runscript") {
+                Objects live;
+                for(auto unit:TechnoClass::Array) if(alive(unit)) live.emplace(unit->UniqueID,unit);
+                e.damage=damage;
+                success|=runScript(action,e,live,stacks,&damage);
+                if(!damage) break;
+                continue;
             }
-            damage=adjusted;success=true;
+            auto adjusted=pendingDamageAmount(action,e,damage,stacks);
+            if(!adjusted) continue;
+            damage=*adjusted;success=true;
             if(!damage) break;
         }
         if(!success) continue;
@@ -3101,11 +3412,25 @@ int adjustPendingDamage(const char* trigger,TechnoClass* holder,TechnoClass* oth
 }
 struct Income { int amount,interval; };
 std::map<BuildingTypeClass*,Income> incomeTypes;
-std::map<BuildingTypeClass*,vector<string>> rewardTypes;
-const vector<string>& rewardOptions(BuildingTypeClass* type) {
+struct RewardRule { vector<string> options; bool engineer=false,spy=false; };
+std::map<BuildingTypeClass*,RewardRule> rewardTypes;
+const RewardRule& rewardRule(BuildingTypeClass* type) {
     auto [it,fresh]=rewardTypes.try_emplace(type);
-    if(fresh) it->second=split(read(type->ID,"Starfall.ResearchOptions"));
+    if(fresh) {
+        it->second.options=split(read(type->ID,"Starfall.ResearchOptions"));
+        auto flag=[&](const char* key) {
+            auto value=read(type->ID,key,"no");
+            if(includes({"yes","true","1"},value)) return true;
+            if(!includes({"no","false","0"},value)) invalidField(type->ID,key);
+            return false;
+        };
+        it->second.engineer=flag("Starfall.ResearchOptions.AllowEngineerCapture");
+        it->second.spy=flag("Starfall.ResearchOptions.AllowSpyInfiltration");
+    }
     return it->second;
+}
+const vector<string>& rewardOptions(BuildingTypeClass* type) {
+    return rewardRule(type).options;
 }
 bool eligibleHouse(HouseClass* h) {
     return h && h->ArrayIndex>=0 && !h->Defeated && !h->IsObserver() && !h->IsNeutral();
@@ -3136,7 +3461,8 @@ void tickBuildings() {
             auto [reward,added]=Research::buildingRewards.try_emplace(b->UniqueID,Research::BuildingReward{b->Owner->ArrayIndex,-1,false});
             if(!added && reward->second.owner!=b->Owner->ArrayIndex) {
                 reward->second.owner=b->Owner->ArrayIndex;
-                reward->second.authorized=reward->second.claimed?-1:b->Owner->ArrayIndex;
+                reward->second.authorized=-1;
+                reward->second.source=Research::BuildingRewardSource::None;
             }
         }
         auto [it,fresh]=incomeTypes.try_emplace(b->Type);
@@ -3159,11 +3485,21 @@ void tickBuildings() {
         }
     }
 }
-void reset() { transportGrants.clear();transportStateKeys.clear();anyTransportPassives=false;auraSources.clear();auraGrants.clear();auraLosses.clear();anyAuras=false;discoverAuras=true;buildingPower.clear();anyBeforeDealDamage=false;anyBeforeTakeDamage=false;incomingDamage.clear();passiveStacks.clear();triggerTotals.clear();spawnGrants.clear();anySpawnPassives=false;anyGainSkills=false;gainInputs.clear();gainSeen.clear();UnitHealth::pools.clear();fireRateBase.clear();fireRateState.clear();rangeBase.clear();rangeState.clear();projectileBase.clear();projectileState.clear();VisualScale::projectiles.clear();VisualScale::explosions.clear();VisualScale::attachedAnims.clear();explosionBatches.clear();spreadScopes.clear();grantPresets.clear();grantRules.clear();warheadGrants.clear();bulletGrantImpacts.clear();reapplyImpacts.clear();rebindGrants=false;expiryScheduled=false;mirageUnits.clear();immuneUnits.clear();mindImmuneUnits.clear();VisualScale::base.clear();VisualScale::state.clear();VisualScale::clearSprites();attachedAnims.clear();activeAnimStates.clear();anyAttachedAnims=false;needMotion=false;nearbySamples.clear();weaponRules.clear(); volleyWeapons.clear(); mountCopies.clear(); buildingLookups.clear(); anyIntervals=false; periodic.clear(); shots.clear();previousState.clear();reportedDeaths.clear();removedPassives.clear();passiveBullets.clear();passiveDetonations.clear();stateTimers.clear(); applied.clear(); anyStateSkills=false; observePromotions=false; observeDeployments=false; needUnitPower=false; incomeTypes.clear(); rewardTypes.clear(); Research::reset(); counts.clear(); pending.clear(); bindings.clear(); skills.clear(); ready=false; }
+void reset() {
+    passiveBulletOwners.clear();
+    LuaAnim::entries.clear();hitSequences.clear();observedHits.clear();soundIndices.clear();lastMissingSound.clear();LuaNearby::reset();ActionSequence::reset();ForceMove::settling.clear();ForceMove::motions.clear();impactCenters.clear();anyMultiShot=false;passiveTints.clear();rulesSkillNames.clear();++ActiveSkills::generation;ActiveSkills::specs.clear();mapPassiveBindings.clear();scriptTimers={};scriptModules.clear();scriptDefinitions.clear();scriptBindings.clear();transportGrants.clear();transportStateKeys.clear();anyTransportPassives=false;auraSources.clear();auraGrants.clear();auraLosses.clear();anyAuras=false;discoverAuras=true;buildingPower.clear();anyBeforeDealDamage=false;anyBeforeTakeDamage=false;incomingDamage.clear();passiveStacks.clear();triggerTotals.clear();spawnGrants.clear();anySpawnPassives=false;anyGainSkills=false;gainInputs.clear();gainSeen.clear();UnitHealth::pools.clear();fireRateBase.clear();fireRateState.clear();rangeBase.clear();rangeState.clear();projectileBase.clear();projectileState.clear();VisualScale::projectiles.clear();VisualScale::explosions.clear();VisualScale::attachedAnims.clear();explosionBatches.clear();spreadScopes.clear();grantPresets.clear();grantRules.clear();warheadHouses.clear();warheadGrants.clear();bulletGrantImpacts.clear();reapplyImpacts.clear();rebindGrants=false;expiryScheduled=false;cloakableUnits.clear();mirageUnits.clear();immuneUnits.clear();mindImmuneUnits.clear();empUnits.clear();VisualScale::base.clear();VisualScale::state.clear();VisualScale::clearSprites();attachedAnims.clear();activeAnimStates.clear();anyPassiveVisuals=false;needMotion=false;nearbySamples.clear();weaponRules.clear(); volleyWeapons.clear(); mountCopies.clear(); buildingLookups.clear(); anyIntervals=false; periodic.clear(); shots.clear();previousState.clear();reportedDeaths.clear();removedPassives.clear();passiveBullets.clear();passiveDetonations.clear();stateTimers.clear(); applied.clear(); anyStateSkills=false; observePromotions=false; observeDeployments=false; needUnitPower=false; incomeTypes.clear(); rewardTypes.clear(); Research::reset(); counts.clear(); pending.clear(); bindings.clear(); skills.clear(); ready=false; }
 } // namespace
 
+#include "ActiveCast.inc"
+
+bool Research::Detail::Runtime::hasPassive(const string& id) { return skills.contains(id); }
+bool Research::Detail::Runtime::eligibleHouse(HouseClass* house) { return ::eligibleHouse(house); }
+bool Research::Detail::Runtime::conversionAvailable() { return ::conversionAvailable(); }
+bool Research::Detail::Runtime::nativeConversionTypesSafe(const TechnoTypeClass* from,const TechnoTypeClass* to) { return ::nativeConversionTypesSafe(from,to); }
+bool Research::Detail::Runtime::canTransformUnit(TechnoClass* unit,TechnoTypeClass* to) { return ::canTransformUnit(unit,to); }
+bool Research::Detail::Runtime::transformUnit(TechnoClass* unit,TechnoTypeClass* to) { return ::transformUnit(unit,to); }
+
 void Research::ensureReady() { if(!ready) readSkills(); }
-bool Research::isEnabled() { ensureReady();return enabled; }
 std::vector<int> Research::buildingOptions(unsigned long id,int house) {
     std::vector<int> result;
     if(!isEnabled()) return result;
@@ -3172,6 +3508,10 @@ std::vector<int> Research::buildingOptions(unsigned long id,int house) {
     BuildingClass* building=nullptr;
     for(auto* b:BuildingClass::Array) if(b && b->UniqueID==id) {building=b;break;}
     if(!building || !building->Type || !alive(building) || !building->IsOnMap || building->InLimbo || !building->Owner || building->Owner->ArrayIndex!=state->second.owner) return result;
+    const auto& rule=rewardRule(building->Type);
+    if((state->second.source==BuildingRewardSource::Engineer && !rule.engineer) ||
+       (state->second.source==BuildingRewardSource::Spy && !rule.spy) ||
+       state->second.source==BuildingRewardSource::None) return result;
     const auto& ids=rewardOptions(building->Type);
     if(ids.empty() || ids.size()>3) return result;
     for(const auto& key:ids) for(int i=0;i<static_cast<int>(options.size());++i)
@@ -3182,336 +3522,26 @@ bool Research::claimBuilding(unsigned long id,int house,int option) {
     auto choices=buildingOptions(id,house);
     if(std::find(choices.begin(),choices.end(),option)==choices.end() || !executeEffect(house,option)) return false;
     unlocked[house].insert(options[option].id);unlockOrder[house].push_back(options[option].id);
-    buildingRewards[id].claimed=true;buildingRewards[id].authorized=-1;
-    savedOffers.erase(house);refreshedSlots.erase(house);clearOfferCache();return true;
+    buildingRewards[id].claimed=true;buildingRewards[id].authorized=-1;buildingRewards[id].source=BuildingRewardSource::None;
+    savedOffers.erase(house);seenOffers.erase(house);refreshedSlots.erase(house);clearOfferCache();return true;
+}
+void authorizeBuildingReward(InfantryClass* infantry,BuildingClass* building,Research::BuildingRewardSource source) {
+    if(source==Research::BuildingRewardSource::None) return;
+    if(Research::isEnabled() && infantry && eligibleHouse(infantry->Owner) && building && building->Owner && building->Type && alive(building) && !rewardOptions(building->Type).empty()) {
+        const auto& rule=rewardRule(building->Type);
+        if(source==Research::BuildingRewardSource::Engineer && (!rule.engineer || !infantry->Type || !infantry->Type->Engineer || building->Owner!=infantry->Owner)) return;
+        if(source==Research::BuildingRewardSource::Spy && !rule.spy) return;
+        auto [it,added]=Research::buildingRewards.try_emplace(building->UniqueID,Research::BuildingReward{building->Owner->ArrayIndex,-1,false});
+        if(!it->second.claimed) {it->second.owner=building->Owner->ArrayIndex;it->second.authorized=infantry->Owner->ArrayIndex;it->second.source=source;}
+    }
+}
+DEFINE_HOOK(0x519F84, SF_EngineerResearchBuilding, 6) {
+    authorizeBuildingReward(R->ESI<InfantryClass*>(),R->EDI<BuildingClass*>(),Research::BuildingRewardSource::Engineer);
+    return 0;
 }
 DEFINE_HOOK(0x51A002, SF_SpyResearchBuilding, 6) {
-    auto spy=R->ESI<InfantryClass*>();auto building=R->EDI<BuildingClass*>();
-    if(Research::isEnabled() && spy && eligibleHouse(spy->Owner) && building && building->Owner && building->Type && !rewardOptions(building->Type).empty()) {
-        auto [it,added]=Research::buildingRewards.try_emplace(building->UniqueID,Research::BuildingReward{building->Owner->ArrayIndex,-1,false});
-        if(!it->second.claimed) {it->second.owner=building->Owner->ArrayIndex;it->second.authorized=spy->Owner->ArrayIndex;}
-    }
+    authorizeBuildingReward(R->ESI<InfantryClass*>(),R->EDI<BuildingClass*>(),Research::BuildingRewardSource::Spy);
     return 0;
-}
-namespace {
-// Purchased project IDs are already synchronized and saved per house. Resolve
-// their grants once per house, including technologies inside combined projects.
-std::map<int,std::set<TechnoTypeClass*>> productionLicenses;
-bool hasProductionLicense(const HouseClass* house,TechnoTypeClass* type) {
-    if(!house || !type || Research::unlocked.empty()) return false;
-    const int player=house->ArrayIndex;
-    auto owned=Research::unlocked.find(player);
-    if(owned==Research::unlocked.end() || owned->second.empty()) return false;
-    auto [entry,fresh]=productionLicenses.try_emplace(player);
-    if(fresh) {
-        auto collect=[&](const auto& effect) {
-            if(effect.effect==Research::Effect::Technology)
-                if(auto* item=TechnoTypeClass::Find(effect.technology.c_str())) entry->second.insert(item);
-        };
-        for(const auto& option:Research::options) if(owned->second.contains(option.id)) {
-            if(option.effectList) {for(const auto& effect:option.effects) collect(effect);}
-            else collect(option);
-        }
-    }
-    return entry->second.contains(type);
-}
-bool useLicensedProduction(const HouseClass* house,TechnoTypeClass* type) {
-    return hasProductionLicense(house,type) && type->FindFactory(true,false,false,house);
-}
-// Ares replaces the entire CanBuild routine. Forward to the installed checker
-// with its build-limit-only argument so its factory and limit checks still run.
-using ProductionCheck=CanBuildResult(__thiscall*)(const HouseClass*,TechnoTypeClass*,bool,bool);
-ProductionCheck previousProductionCheck=nullptr;
-CanBuildResult __fastcall checkLicensedProduction(const HouseClass* house,void*,TechnoTypeClass* type,bool limitsOnly,bool queued) {
-    return previousProductionCheck(house,type,limitsOnly || useLicensedProduction(house,type),queued);
-}
-void installProductionCheck() {
-    if(previousProductionCheck) return;
-    auto entry=reinterpret_cast<BYTE*>(0x4F7870);
-    if(entry[0]!=0xE9) return; // The original game takes the native hook below.
-    DWORD old;
-    if(!VirtualProtect(entry,5,PAGE_EXECUTE_READWRITE,&old)) {
-        OutputDebugStringA("Starfall: cannot chain production availability check\n");return;
-    }
-    int displacement;
-    memcpy(&displacement,entry+1,sizeof(displacement));
-    auto next=reinterpret_cast<uintptr_t>(entry+5);
-    previousProductionCheck=reinterpret_cast<ProductionCheck>(next+displacement);
-    displacement=static_cast<int>(reinterpret_cast<uintptr_t>(&checkLicensedProduction)-next);
-    memcpy(entry+1,&displacement,sizeof(displacement));
-    FlushInstructionCache(GetCurrentProcess(),entry,5);
-    VirtualProtect(entry,5,old,&old);
-}
-} // namespace
-// Vanilla has loaded buildLimitOnly into AL before pushing EDI.
-DEFINE_HOOK(0x4F787C,SF_NativeProductionLicense,7) {
-    if(!R->AL() && useLicensedProduction(R->EBP<HouseClass*>(),R->Stack<TechnoTypeClass*>(0x4C))) R->AL(1);
-    return 0;
-}
-namespace {
-bool matchesConversion(TechnoClass* unit,HouseClass* h,TechnoTypeClass* from,TechnoTypeClass* to) {
-    return unit && unit->Owner==h && alive(unit) && unit->GetTechnoType()==from && canTransformUnit(unit,to);
-}
-Research::EffectSpec singleEffect(const Research::Option& o) {
-    return {o.effect,o.passive,o.technology,o.from,o.to,o.types,o.credits,o.cost};
-}
-bool validResearchEffect(const Research::EffectSpec& o,const EffectWarning& warn) {
-    using Research::Effect;
-    auto fail=[&](const char* key,const char* reason) {if(warn) warn(key,reason);return false;};
-    switch(o.effect) {
-        case Effect::Passive: {
-            bool valid=true;
-            if(!skills.contains(o.passive)) valid=fail("Passive","被动 ID 未注册、未填写或该被动已停用");
-            if(o.types.empty()) return fail("TargetTypes","至少填写一个受益类型或类别");
-            for(const auto& type:o.types) if(type.starts_with('@') && !Research::isTargetCategory(type))
-                return fail("TargetTypes","未知的受益类别");
-            return valid;
-        }
-        case Effect::TypeCost: {
-            bool valid=true;
-            if(!o.cost.delta) valid=fail("CostModifier","价格修正须为非零整数或百分比");
-            if(o.types.empty()) return fail("TargetTypes","须填写有效的生产类型 ID");
-            for(const auto& id:o.types) if(!TechnoTypeClass::Find(id.c_str())) {
-                if(warn) warn("TargetTypes","未注册的生产类型 ["+id+"]");
-                return false;
-            }
-            return valid;
-        }
-        case Effect::CategoryCost: {
-            bool valid=true;
-            if(!o.cost.delta || !o.cost.percent) valid=fail("CostModifier","类别价格修正须为非零百分比");
-            if(o.cost.category==Research::CostCategory::Invalid) valid=fail("Category","未知的生产类别");
-            return valid;
-        }
-        case Effect::Credits: return o.credits>0 || fail("Credits","须填写正整数资金");
-        case Effect::Technology: return (!o.technology.empty() && TechnoTypeClass::Find(o.technology.c_str())) ||
-            fail("Technology","须填写已注册的单位或建筑类型 ID");
-        case Effect::ConvertInfantry:
-        case Effect::ConvertVehicle: {
-            auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
-            auto kind=o.effect==Effect::ConvertInfantry?AbstractType::InfantryType:AbstractType::UnitType;
-            bool valid=true;
-            if(!from || from->WhatAmI()!=kind) valid=fail("FromType","原类型不存在或类别不符");
-            if(!to || to->WhatAmI()!=kind) valid=fail("ToType","目标类型不存在或类别不符");
-            if(!valid) return false;
-            if(from==to || !IsEqualGUID(from->Locomotor,to->Locomotor)) return fail("ToType","两个类型相同或移动方式不兼容");
-            if(!conversionAvailable() || (!GetModuleHandleW(L"Phobos.dll") && !nativeConversionTypesSafe(from,to)))
-                return fail("ToType","当前转换接口不支持这组类型");
-            return true;
-        }
-        default: return fail("Effect","未知或缺少科研效果");
-    }
-}
-bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o) {
-    using Research::Effect;
-    if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
-    if(o.effect==Effect::Technology) {
-        auto type=TechnoTypeClass::Find(o.technology.c_str());
-        return type && !hasProductionLicense(h,type);
-    }
-    if(o.effect==Effect::ConvertInfantry || o.effect==Effect::ConvertVehicle) {
-        auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
-        for(auto unit:TechnoClass::Array) if(matchesConversion(unit,h,from,to)) return true;
-        return false;
-    }
-    return o.effect==Effect::Credits;
-}
-bool applyResearchEffect(HouseClass* h,const Research::EffectSpec& o) {
-    using Research::Effect;
-    if(!researchEffectCanApply(h,o)) return false;
-    if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
-    if(o.effect==Effect::Credits) {h->GiveMoney(o.credits);return true;}
-    if(o.effect==Effect::Technology) {
-        h->RecheckTechTree=true;return true;
-    }
-    auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
-    vector<TechnoClass*> targets;
-    for(auto unit:TechnoClass::Array) if(matchesConversion(unit,h,from,to)) targets.push_back(unit);
-    int changed=0;
-    for(auto unit:targets) if(matchesConversion(unit,h,from,to) && transformUnit(unit,to)) ++changed;
-    return changed>0;
-}
-}
-bool Research::available(int option) {
-    if(!isEnabled() || option<0 || option>=static_cast<int>(options.size())) return false;
-    const auto& o=options[option];
-    if(o.rarity==Rarity::Invalid) return false;
-    if(!o.effectList) return validResearchEffect(singleEffect(o));
-    return !o.effects.empty() && std::all_of(o.effects.begin(),o.effects.end(),[](const auto& effect){ return validResearchEffect(effect); });
-}
-bool Research::canApply(int house,int option) {
-    if(!isEnabled() || option<0 || option>=static_cast<int>(options.size()) || house<0 || house>=HouseClass::Array.Count) return false;
-    auto h=HouseClass::Array.Items[house];if(!eligibleHouse(h)) return false;
-    const auto& o=options[option];
-    if(!o.effectList) return researchEffectCanApply(h,singleEffect(o));
-    return std::any_of(o.effects.begin(),o.effects.end(),[h](const auto& effect){return researchEffectCanApply(h,effect);});
-}
-bool Research::executeEffect(int house,int option) {
-    if(!canApply(house,option)) return false;
-    auto h=HouseClass::Array.Items[house];const auto& o=options[option];
-    if(!o.effectList) return applyResearchEffect(h,singleEffect(o));
-    bool applied=false;
-    for(const auto& effect:o.effects) if(applyResearchEffect(h,effect)) applied=true;
-    return applied;
-}
-bool Research::meetsPrerequisites(int house,int option) {
-    const auto& project=options[option];
-    return project.validChain && std::all_of(project.prerequisites.begin(),project.prerequisites.end(),
-        [house](const auto& id){return owns(house,id);});
-}
-// Opening the local UI must not consume the simulation RNG. Use the shared match
-// seed plus the owner's index, and persist the chosen IDs rather than registry positions.
-namespace {
-struct OfferCache { string country; vector<int> rows,pool; };
-std::map<int,OfferCache> offerCache;
-}
-namespace {
-struct CostAdjustment {
-    long long percent=0, credits=0;
-    bool active=false;
-};
-using PriceKey=std::pair<int,TechnoTypeClass*>;
-std::map<PriceKey,CostAdjustment> priceCache;
-Research::CostCategory sidebarCategory(TechnoTypeClass* type) {
-    using C=Research::CostCategory;
-    switch(type->WhatAmI()) {
-        case AbstractType::BuildingType:
-            return static_cast<BuildingTypeClass*>(type)->BuildCat==BuildCat::Combat?C::Defense:C::Building;
-        case AbstractType::InfantryType: return C::Infantry;
-        case AbstractType::UnitType:
-        case AbstractType::AircraftType: return C::Vehicle;
-        default: return C::Invalid;
-    }
-}
-CostAdjustment costAdjustment(HouseClass* house,TechnoTypeClass* type) {
-    const auto owned=Research::unlocked.find(house->ArrayIndex);
-    if(owned==Research::unlocked.end() || owned->second.empty()) return {};
-    Research::ensureReady();
-    auto [it,added]=priceCache.try_emplace({house->ArrayIndex,type});
-    auto& sum=it->second;
-    if(!added) return sum;
-    const auto id=lower(type->ID);
-    const auto category=sidebarCategory(type);
-    auto collect=[&](const auto& e) {
-        using Research::Effect;
-        const bool byType=e.effect==Effect::TypeCost && includes(e.types,id);
-        const bool byCategory=e.effect==Effect::CategoryCost && e.cost.category==category && e.cost.percent;
-        if(!byType && !byCategory) return;
-        if(!e.cost.delta) return;
-        (e.cost.percent?sum.percent:sum.credits)+=e.cost.delta;
-        sum.active=true;
-    };
-    for(const auto& project:Research::options) if(owned->second.contains(project.id)) {
-        if(project.effectList) {for(const auto& effect:project.effects) collect(effect);}
-        else collect(project);
-    }
-    return sum;
-}
-}
-// GetActualCost has already applied country, difficulty and factory plant modifiers.
-DEFINE_HOOK(0x711F46,SF_ResearchProductionPrice,5) {
-    const int price=R->EAX<int>();
-    if(price<0 || Research::unlocked.empty()) return 0;
-    const auto mod=costAdjustment(R->EDI<HouseClass*>(),R->ESI<TechnoTypeClass*>());
-    if(mod.active) {
-        double adjusted=price*(100.0+mod.percent)/100.0+mod.credits;
-        R->EAX(static_cast<int>(std::round(std::clamp(adjusted,0.0,static_cast<double>(INT_MAX)))));
-    }
-    return 0;
-}
-// The vanilla cancellation code re-quotes the product. Its Value holds the
-// original order price, including for orders started before buying a project.
-DEFINE_HOOK(0x4CA03D,SF_ResearchProductionCancel,6) {
-    auto factory=R->ESI<FactoryClass*>();
-    if(!Research::unlocked.empty() && factory->Owner && factory->Object &&
-       costAdjustment(factory->Owner,factory->Object->GetTechnoType()).active)
-        R->EAX(factory->Object->Value);
-    return 0;
-}
-void Research::clearOfferCache() { offerCache.clear(); priceCache.clear(); productionLicenses.clear(); }
-const vector<int>& Research::offers(int house,const char* country) {
-    static const vector<int> empty;
-    if(!isEnabled()) return empty;
-    const string countryId=lower(country?country:"");
-    auto existing=offerCache.find(house);
-    if(existing!=offerCache.end() && existing->second.country==countryId) return existing->second.rows;
-    auto& result=offerCache[house];
-    result.country=countryId;
-    result.rows.clear();
-    result.pool.clear();
-    std::array<vector<int>,3> pools;
-    for(int i=0;i<static_cast<int>(options.size());++i) {
-        const auto& allowed=options[i].countries;
-        int rarity=static_cast<int>(options[i].rarity);
-        if(rarity>=0 && rarity<3 && rarityWeights[rarity]>0 && !owns(house,options[i].id) && available(i) && meetsPrerequisites(house,i) && (allowed.empty() || includes(allowed,"*") || includes(allowed,countryId))) pools[rarity].push_back(i);
-    }
-    auto& ids=savedOffers[house];
-    int chosen=-1;
-    for(const auto& id:ids) {
-        for(int rarity=0;rarity<3 && chosen<0;++rarity)
-            for(int i:pools[rarity]) if(options[i].id==id) {chosen=rarity;break;}
-        if(chosen>=0) break;
-    }
-    // Use only synchronized state, so opening the panel does not consume game RNG.
-    unsigned seed=static_cast<unsigned>(Game::Seed) ^ (0x9E3779B9u*(house+1u));
-    auto owned=unlocked.find(house);
-    if(owned!=unlocked.end()) for(const auto& id:owned->second) {
-        for(unsigned char c:id) seed=(seed^c)*16777619u;
-        seed=(seed^0xffu)*16777619u;
-    }
-    std::mt19937 rng(seed);
-    if(chosen<0) {
-        unsigned long long total=0;
-        for(int i=0;i<3;++i) if(!pools[i].empty()) total+=static_cast<unsigned>(rarityWeights[i]);
-        if(total) {
-            auto draw=std::uniform_int_distribution<unsigned long long>(0,total-1)(rng);
-            for(int i=0;i<3;++i) if(!pools[i].empty()) {
-                auto weight=static_cast<unsigned>(rarityWeights[i]);
-                if(draw<weight) {chosen=i;break;}
-                draw-=weight;
-            }
-        }
-    }
-    if(chosen<0) {ids.clear();return result.rows;}
-    auto& pool=pools[chosen];
-    auto remember=[&](int option) {
-        if(result.rows.size()<choices && std::find(pool.begin(),pool.end(),option)!=pool.end()
-            && std::find(result.rows.begin(),result.rows.end(),option)==result.rows.end()) result.rows.push_back(option);
-    };
-    for(const auto& id:ids)
-        for(int i:pool) if(options[i].id==id) { remember(i); break; }
-    if(pool.size()>choices) {
-        std::mt19937 shuffleRng(seed ^ 0xA511E9B3u);
-        std::shuffle(pool.begin(),pool.end(),shuffleRng);
-    }
-    for(int i:pool) { if(result.rows.size()==choices) break; remember(i); }
-    ids.clear();
-    for(int i:result.rows) ids.push_back(options[i].id);
-    result.pool=std::move(pool);
-    return result.rows;
-}
-bool Research::slotUsed(int house,int slot) {
-    auto it=refreshedSlots.find(house);
-    return slot>=0 && slot<choices && it!=refreshedSlots.end() && (it->second & (1u<<slot))!=0;
-}
-bool Research::canRefresh(int house,const char* country,int slot) {
-    ensureReady();
-    if(!allowCardRefresh || balance(house)<price || slot<0 || slot>=choices || slotUsed(house,slot)) return false;
-    const auto& rows=offers(house,country);
-    return static_cast<size_t>(slot)<rows.size() && offerCache.at(house).pool.size()>rows.size();
-}
-bool Research::refresh(int house,const char* country,int slot,int expected) {
-    if(!canRefresh(house,country,slot)) return false;
-    auto& board=offerCache.at(house);
-    if(board.rows[slot]!=expected) return false;
-    for(int option:board.pool) {
-        if(std::find(board.rows.begin(),board.rows.end(),option)!=board.rows.end()) continue;
-        board.rows[slot]=option;
-        savedOffers.at(house)[slot]=options[option].id;
-        refreshedSlots[house]|=1u<<slot;
-        return true;
-    }
-    return false;
 }
 static void replaceNumber(std::wstring& text,const std::wstring& key,int value) {
     const auto number=std::to_wstring(value); size_t pos=0;
@@ -3533,6 +3563,13 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
         if(a.action=="changemaxhealth") return a.maxHealthPercent?
             L"永久提高当前最大生命的 "+std::to_wstring(a.maxHealthPercent)+L"%":
             L"永久改变最大生命："+std::to_wstring(a.amount)+L" 点";
+        if(a.action=="playanim") return L"播放动画 "+displayText(a.playAnim->ID);
+        if(a.action=="playsound") return L"播放音效";
+        if(a.action=="shakescreen") return L"屏幕抖动";
+        if(a.action=="spawnparticlesystem") return L"生成粒子系统 "+displayText(a.particleSystem->ID);
+        if(a.action=="forcemove") return L"强制位移 "+std::to_wstring(a.forceMove.duration)+L" 帧";
+        if(a.action=="chronoteleport") return L"超时空传送至 ("+std::to_wstring(a.teleportCell.X)+L", "+std::to_wstring(a.teleportCell.Y)+L") 附近";
+        if(a.action=="applyironcurtain") return L"施加铁幕 "+std::to_wstring(a.duration)+L" 帧";
         if(a.action=="changeammo") return L"弹药变化："+std::to_wstring(a.amount);
         if(a.action=="spawncrate") {
             if(a.crateType==randomCrate) return L"生成一个随机升级箱";
@@ -3540,8 +3577,11 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
         }
         if(a.action=="selfdestruct") return L"触发后摧毁自身";
         if(a.action=="grantpassive") return L"授予被动："+displayText(a.passive)+(a.duration<0?L"（永久）":L"（"+std::to_wstring(a.duration)+L" 帧）")+(a.stackOnReapply?L"；重复授予加 1 层":L"");
+        if(a.action=="promote") return L"晋升 "+std::to_wstring(a.amount)+L" 级";
+        if(a.action=="runscript") return L"执行技能脚本："+displayText(a.script)+L"."+displayText(a.function);
         if(a.action=="removepassive") return L"移除目标的指定被动";
         if(a.action=="stealpassive") return L"夺取目标的指定被动，每项最多 "+std::to_wstring(a.amount)+L" 层";
+        if(a.action=="resetstatetimer") return L"重置被动持续计时："+displayText(a.passive);
         if(a.action=="changepassivestack") return L"修改被动层数："+displayText(a.passive)+L" "+(a.amount>0?L"+":L"")+std::to_wstring(a.amount);
         if(a.action=="consumepassenger") return L"消耗一名乘客";
         if(a.action=="blockdamage") return L"抵挡本次伤害";
@@ -3598,7 +3638,10 @@ static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&c
         if(s.triggerAnim) summary+=L"进入状态时播放动画  ";
         if(s.projectileScale!=100) summary=L"弹体、爆炸和范围 "+std::to_wstring(s.projectileScale)+L"%  "+summary;
         if(s.visualScale!=100) summary=L"体型 "+std::to_wstring(s.visualScale)+L"%  "+summary;
+        if(s.extraShotCount>0) summary+=L"额外射击 "+std::to_wstring(s.extraShotCount)+L" 个目标  ";
+        if(!s.multiShotFormula.expression.empty()) summary+=L"额外射击目标数按公式变化  ";
         if(s.berserk) summary=L"进入混乱状态  "+summary;
+        if(s.emp) summary=L"进入 EMP 停机  "+summary;
         if(s.aura.range) {
             summary+=s.aura.range==-1?L"全图光环 ":L"光环 "+std::to_wstring(s.aura.range)+L" 格 ";
             for(const auto& id:s.aura.passives) summary+=displayText(id)+L" ";
@@ -3606,6 +3649,7 @@ static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&c
         for(const auto& id:s.spawnPassives) summary+=L" 子机获得 "+displayText(id);
         if(s.immune) summary=L"免疫常规伤害  "+summary;
         if(s.mindImmune) summary=L"免疫心灵控制  "+summary;
+        if(s.cloakable) summary=L"获得隐形能力  "+summary;
         if(s.mirage) summary=L"载具静止时伪装  "+summary;
         for(int slot=0;slot<2;++slot) {
             if(s.slots[slot].disabled) summary+=slot?L"  禁用副武器":L"  禁用主武器";
@@ -3667,9 +3711,110 @@ DEFINE_HOOK(0x508D29,SF_BuildingPowerOutageCheck,5) {
     R->EAX(powerContribution(building,building->GetPowerOutput(),0));
     return 0x508D2E;
 }
+// Read the custom name at the native Type parser. Apart from this effect
+// marker and a point cursor, the SW remains an ordinary per-house instance.
+DEFINE_HOOK(0x6CEC32,SF_ActionSequenceType,7) {
+    if(_stricmp(R->lea_Stack<const char*>(0x58),"ActionSequence")) return 0;
+    auto sw=R->EBP<SuperWeaponTypeClass*>();
+    sw->Type=ActionSequence::type;sw->Action=Action::ParaDrop;
+    return 0x6CEC84;
+}
+bool fireSequence(SuperClass* sw,CellStruct point) {
+    if(!sw->Owner || sw->Owner->Defeated || !ActiveSkills::playable(point)) return false;
+    if(!ready) readSkills();
+    auto found=ActionSequence::definitions.find(lower(sw->Type->ID));
+    if(found==ActionSequence::definitions.end() || found->second.empty() || ActionSequence::lastCast==UINT32_MAX) return false;
+    auto id=++ActionSequence::lastCast;
+    auto& cast=ActionSequence::casts.emplace(id,ActionSequence::Cast{sw->Type->ID,sw->Owner->ArrayIndex,point}).first->second;
+    auto event=sequenceEvent(id,cast);
+    Objects live;
+    for(auto u:TechnoClass::Array) if(alive(u)) live.emplace(u->UniqueID,u);
+    auto previous=activeObjects;activeObjects=&live;
+    for(const auto& step:found->second) apply(step.actions.front(),event,nullptr,live,0);
+    activeObjects=previous;
+    ActionSequence::retire(id);
+    return true;
+}
+static bool consumeSequenceCommand(int sender,int index,CellStruct point) {
+    if(index<0 || index>=SuperWeaponTypeClass::Array.Count ||
+       SuperWeaponTypeClass::Array.Items[index]->Type!=ActionSequence::type) return false;
+    if(sender<0 || sender>=HouseClass::Array.Count) return true;
+    auto house=HouseClass::Array.Items[sender];
+    if(!house || house->IsObserver() || index>=house->Supers.Count) return true;
+    auto sw=house->Supers.Items[index];
+    if(!sw || !sw->IsPresent || !sw->IsReady || sw->IsSuspended || !fireSequence(sw,point)) return true;
+    sw->Reset();
+    if(sw->IsOneTime) {sw->IsOneTime=false;sw->Lose();}
+    if(house==HouseClass::CurrentPlayer && Unsorted::CurrentSWType==index) Unsorted::CurrentSWType=-1;
+    return true;
+}
+// Intercept only our point commands before extensions dispatch built-in SWs.
+DEFINE_HOOK(0x4C6CB0,SF_ActionSequenceCommand,6) {
+    auto event=R->ECX<EventClass*>();
+    if(event->Type==EventType::SpecialPlace &&
+       consumeSequenceCommand(event->HouseIndex,event->SpecialPlace.ID,event->SpecialPlace.Location)) return 0x4C6CEF;
+    return 0;
+}
+// At this site native ClickFire has checked availability. Rejoin its normal
+// charge/one-shot bookkeeping immediately after the built-in effect call.
+DEFINE_HOOK(0x6CBAF9,SF_ActionSequenceClick,8) {
+    auto sw=R->ESI<SuperClass*>();
+    if(sw->Type->Type!=ActionSequence::type) return 0;
+    auto point=R->Stack<CellStruct*>(0x24);
+    if(!sw->IsPresent || !sw->IsReady || sw->IsSuspended || !point || !fireSequence(sw,*point)) return 0x6CBC94;
+    if(sw->Owner==HouseClass::CurrentPlayer && Unsorted::CurrentSWType==sw->Type->ArrayIndex)
+        Unsorted::CurrentSWType=-1;
+    return 0x6CBB0A;
+}
+// Direct engine launches (e.g. scripted launches) bypass ClickFire.
+DEFINE_HOOK(0x6CC390,SF_ActionSequenceLaunch,6) {
+    auto sw=R->ECX<SuperClass*>();
+    if(sw->Type->Type!=ActionSequence::type) return 0;
+    if(auto point=R->Stack<CellStruct*>(4)) fireSequence(sw,*point);
+    return 0x6CC482;
+}
+DEFINE_HOOK(0x6CEEB0,SF_SelectedSequence,8) {
+    int index=Unsorted::CurrentSWType;
+    if(index>=0 && index<SuperWeaponTypeClass::Array.Count) {
+        auto sw=SuperWeaponTypeClass::Array.Items[index];
+        if(sw && sw->Type==ActionSequence::type && sw->Action==R->ECX<Action>()) {
+            R->EAX(sw);return 0x6CEEE5;
+        }
+    }
+    return 0;
+}
+// Custom type keys are in the scenario INI while it is being read. The rules INI
+// does not retain these entries after the engine applies its own type overrides.
+DEFINE_HOOK(0x68AD2F, SF_MapPassiveBindings, 5) {
+    auto ini=R->EDI<CCINIClass*>();
+    ActionSequence::mapFields.clear();ActionSequence::collect(ini,ActionSequence::mapFields);
+    mapPassiveBindings.clear();bindings.clear();
+    if(ini) for(auto section=ini->Sections.First();section && section->IsValid();section=section->Next()) {
+        if(!section->Name || strlen(section->Name)>127) continue;
+        char list[2048]{};
+        ini->ReadString(section->Name,"Starfall.Passives","",list,sizeof(list));
+        if(list[0]) mapPassiveBindings.emplace(lower(section->Name),list);
+    }
+    return 0;
+}
 DEFINE_HOOK(0x683549, SF_ScenarioStart, 9) { reset();installAresMindGuards(); return 0; }
+// New units (including aircraft born off-grid), and units lifted from a cell
+// between synchronous Lua calls, stay eligible even while no cell lists them.
+DEFINE_HOOK(0x6F3259,SF_NearbyUnitCreated,7) {
+    LuaNearby::moved(R->ESI<TechnoClass*>());
+    return 0;
+}
+DEFINE_HOOK(0x47EA90,SF_NearbyCellRemoval,8) {
+    if(LuaNearby::initialized) {
+        auto obj=R->Stack<ObjectClass*>(4);
+        if(obj && (obj->AbstractFlags & AbstractFlags::Techno)!=AbstractFlags::None)
+            LuaNearby::moved(static_cast<TechnoClass*>(obj));
+    }
+    return 0;
+}
 DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
     auto id=R->ECX<TechnoClass*>()->UniqueID;
+    LuaNearby::forget(id);
     auto power=buildingPower.find(id);
     if(power!=buildingPower.end()) {
         if(auto owner=power->second.owner) owner->RecheckPower=true;
@@ -3684,11 +3829,108 @@ DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
     std::erase_if(transportStateKeys,[&](const auto& key){return key.first==id;});
     spawnGrants.erase(id);
     UnitHealth::pools.erase(id);gainSeen.erase(id);gainInputs.erase(id);
-    warheadGrants.erase(id);passiveStacks.erase(id);mirageUnits.erase(id);immuneUnits.erase(id);mindImmuneUnits.erase(id);projectileBase.erase(id);projectileState.erase(id);rangeBase.erase(id);rangeState.erase(id);fireRateBase.erase(id);fireRateState.erase(id);
-    VisualScale::base.erase(id);VisualScale::state.erase(id);
+    hitSequences.erase(id);std::erase_if(observedHits,[&](const auto& entry){return entry.first.first==id;});
+    warheadGrants.erase(id);passiveStacks.erase(id);cloakableUnits.erase(id);mirageUnits.erase(id);immuneUnits.erase(id);mindImmuneUnits.erase(id);empUnits.erase(id);projectileBase.erase(id);projectileState.erase(id);rangeBase.erase(id);rangeState.erase(id);fireRateBase.erase(id);fireRateState.erase(id);
+    passiveTints.erase(id);VisualScale::base.erase(id);VisualScale::state.erase(id);
     weaponRules.erase(id); volleyWeapons.erase(id); mountCopies.erase({id,0});mountCopies.erase({id,1});
     previousState.erase(id); reportedDeaths.erase(id); removedPassives.erase(id); counts.erase(id); triggerTotals.erase(id); applied.erase(id); Research::producers.erase(id);
+    ForceMove::motions.erase(id);ForceMove::settling.erase(id);
+    LuaAnim::forget(id);scriptTimers.forget(id);
     if(activeObjects) activeObjects->erase(id);
+    return 0;
+}
+// Keep in-transit objects in the cell list for targeting, without setting or
+// clearing the native occupation bits belonging to a stationary object below.
+DEFINE_HOOK_AGAIN(0x5217C0,SF_ForceMoveOccupation,8)
+DEFINE_HOOK_AGAIN(0x521850,SF_ForceMoveOccupation,7)
+DEFINE_HOOK_AGAIN(0x744210,SF_ForceMoveOccupation,5)
+DEFINE_HOOK(0x7441B0,SF_ForceMoveOccupation,5) {
+    return ForceMove::unreserved(R->ECX<AbstractClass*>())?0x74420B:0;
+}
+// QueueMission and ForceMission ignore new orders while the motion owns the unit.
+DEFINE_HOOK(0x5B35E0,SF_ForceMoveQueue,5) {
+    if((ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>()))) {R->EAX(0);return 0x5B3642;}
+    return 0;
+}
+DEFINE_HOOK(0x5B2FD0,SF_ForceMoveMission,6) {
+    if((ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>())) && R->Stack<Mission>(4)!=Mission::Sleep) return 0x5B3030;
+    return 0;
+}
+// After the prologues shared with Phobos sync logging, before the destination is read.
+DEFINE_HOOK(0x74197A,SF_ForceMoveVehicleDestination,7) {
+    if((ForceMove::locked(R->EBP<AbstractClass*>()) || empLocked(R->EBP<AbstractClass*>()))) R->Stack<AbstractClass*>(0x8C,nullptr);
+    return 0;
+}
+DEFINE_HOOK(0x51AA45,SF_ForceMoveInfantryDestination,7) {
+    if((ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>()))) R->Stack<AbstractClass*>(0x38,nullptr);
+    return 0;
+}
+DEFINE_HOOK(0x700C40,SF_ForceMoveControl,9) {
+    if((ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>()))) {R->EAX(0);return 0x700C53;}
+    return 0;
+}
+// DrawIt takes a screen point by reference. Keep the native position grounded.
+DEFINE_HOOK_AGAIN(0x518F90,SF_ForceMoveDraw,7)
+DEFINE_HOOK(0x73CEC0,SF_ForceMoveDraw,5) {
+    if(ForceMove::motions.empty()) return 0;
+    auto it=ForceMove::motions.find(R->ECX<TechnoClass*>()->UniqueID);
+    if(it!=ForceMove::motions.end()) {
+        static Point2D location;
+        location=*R->Stack<Point2D*>(4);
+        location.Y-=TacticalClass::AdjustForZ(it->second.lift());
+        R->Stack(4,&location);
+    }
+    return 0;
+}
+// UnitClass::DrawIt is about to call DrawAsVXL with the projected point,
+// clipping rectangle, brightness and zero tint. Scope the extra rotations to
+// this draw so forced lean never trips gameplay checks for a tipping unit.
+DEFINE_HOOK(0x73D32B,SF_ForceMoveVoxelTilt,6) {
+    if(ForceMove::motions.empty() && ForceMove::settling.empty()) return 0;
+    auto unit=R->ESI<UnitClass*>();
+    auto lean=ForceMove::visualTilt(unit);
+    if(!lean.forward && !lean.side) return 0;
+    const float forward=unit->AngleRotatedForwards,side=unit->AngleRotatedSideways;
+    unit->AngleRotatedForwards=forward+lean.forward;
+    unit->AngleRotatedSideways=side+lean.side;
+    unit->DrawAsVXL(R->Stack<Point2D>(0x1C),*R->EBX<RectangleStruct*>(),R->EBP<int>(),0);
+    unit->AngleRotatedForwards=forward;
+    unit->AngleRotatedSideways=side;
+    return 0x73D395;
+}
+// At these draw-local sites the native/Phobos tint has already been selected.
+DEFINE_HOOK(0x73C15F,SF_PassiveTintVehicle,7) {
+    R->ESI(drawTint(R->EBP<TechnoClass*>(),R->ESI<int>()));
+    return 0;
+}
+DEFINE_HOOK(0x7067E4,SF_PassiveTintVoxel,8) {
+    R->Stack<int>(0x74,drawTint(R->EBP<TechnoClass*>(),R->Stack<int>(0x74)));
+    return 0;
+}
+DEFINE_HOOK(0x7063E4,SF_PassiveTintShape,7) {
+    R->Stack<int>(0x80,drawTint(R->ESI<TechnoClass*>(),R->Stack<int>(0x80)));
+    return 0;
+}
+DEFINE_HOOK(0x519082,SF_PassiveTintInfantry,7) {
+    R->Stack<int>(0x14,drawTint(R->EBP<TechnoClass*>(),R->Stack<int>(0x14)));
+    return 0;
+}
+DEFINE_HOOK(0x43D4EB,SF_PassiveTintBuilding,6) {
+    R->EDI(drawTint(R->ESI<TechnoClass*>(),R->EDI<int>()));
+    return 0;
+}
+DEFINE_HOOK(0x43DD8E,SF_PassiveTintBuildingLayer,10) {
+    R->Stack<int>(0x1C,drawTint(R->EBP<TechnoClass*>(),R->Stack<int>(0x1C)));
+    return 0;
+}
+// Building art can put most of its visible pixels in an active animation.
+DEFINE_HOOK(0x4235D3,SF_PassiveTintBuildingAnim,6) {
+    if(passiveTints.empty()) return 0;
+    auto anim=R->ESI<AnimClass*>();
+    if(anim->IsBuildingAnim && anim->OwnerObject && anim->OwnerObject->WhatAmI()==AbstractType::Building) {
+        int color=drawTint(static_cast<BuildingClass*>(anim->OwnerObject),R->EBP<int>());
+        if(color!=R->EBP<int>() && !R->Stack<int>(0x1C)) {R->EBP(color);R->Stack<int>(0x1C,color);}
+    }
     return 0;
 }
 DEFINE_HOOK(0x466507,SF_ProjectileLaunchScale,6) {
@@ -3719,6 +3961,7 @@ DEFINE_HOOK(0x469D06,SF_ExplosionEnd,6) {
 DEFINE_HOOK(0x4690BC,SF_ImpactEnter,5) {
     auto bullet=R->ECX<BulletClass*>();
     auto scale=VisualScale::projectiles.find(bullet->UniqueID);
+    impactCenters.emplace_back(R->EBP(),*R->Base<CoordStruct*>(8));
     beginReapplyImpact(R->EBP(),bullet->WH);
     enterSpread(R->EBP(),bullet->WH,scale==VisualScale::projectiles.end()?100:scale->second);
     if(passiveBullets.contains(bullet->UniqueID)) passiveDetonations.insert(R->EBP());
@@ -3729,6 +3972,10 @@ DEFINE_HOOK(0x469211,SF_BulletGrantPassives,6) {
     if(!grantRules.contains(bullet->WH)) return 0;
     auto at=R->Base<CoordStruct*>(8);
     auto house=bullet->Owner?bullet->Owner->Owner:nullptr;
+    if(!house) if(auto owner=passiveBulletOwners.find(bullet->UniqueID);owner!=passiveBulletOwners.end()) {
+        auto index=owner->second;
+        if(index>=0 && index<HouseClass::Array.Count) house=HouseClass::Array.Items[index];
+    }
     bulletGrantImpacts[R->EBP()]={bullet->WH,*at,house};
     deliverWarheadGrants(bullet->WH,*at,house,bullet->Target);
     return 0;
@@ -3745,22 +3992,24 @@ DEFINE_HOOK(0x48928C,SF_AreaGrantPassives,5) {
     // area calls (including nested hits at identical coordinates) are separate.
     bool bulletArea=!reapplyImpacts.empty() && reapplyImpacts.back().wh==wh &&
         reapplyImpacts.back().frame==R->Base<DWORD>(0) && R->Base<DWORD>(4)==0x469A88;
+    impactCenters.emplace_back(R->EBP(),*R->ECX<CoordStruct*>());
     if(!bulletArea) beginReapplyImpact(R->EBP(),wh);
     if(!grantRules.contains(wh) || !(wh->CellSpread>0)) return 0;
     auto firer=R->Base<TechnoClass*>(8);
     auto house=firer?firer->Owner:R->Base<HouseClass*>(0x14);
     auto at=R->ECX<CoordStruct*>();
     auto parent=bulletGrantImpacts.find(R->Base<DWORD>(0));
+    if(!house && bulletArea && parent!=bulletGrantImpacts.end() && parent->second.wh==wh) house=parent->second.source;
     if((grantRules.at(wh).stackOnReapply && !bulletArea) || parent==bulletGrantImpacts.end() || parent->second.wh!=wh ||
        parent->second.at!=*at || parent->second.source!=house) deliverWarheadGrants(wh,*at,house,nullptr);
     return 0;
 }
 DEFINE_HOOK_AGAIN(0x489B3B,SF_AreaSpreadLeave,5)
 DEFINE_HOOK_AGAIN(0x48A4DA,SF_AreaSpreadLeave,5)
-DEFINE_HOOK(0x48A4AE,SF_AreaSpreadLeave,5) {endReapplyImpact(R->EBP());leaveSpread(R->EBP());return 0;}
+DEFINE_HOOK(0x48A4AE,SF_AreaSpreadLeave,5) {leaveImpactCenter(R->EBP());endReapplyImpact(R->EBP());leaveSpread(R->EBP());return 0;}
 DEFINE_HOOK_AGAIN(0x46A2FB,SF_ImpactLeave,5)
-DEFINE_HOOK(0x46A290,SF_ImpactLeave,5) {endReapplyImpact(R->EBP());finishExplosions(R->EBP());leaveSpread(R->EBP());bulletGrantImpacts.erase(R->EBP());passiveDetonations.erase(R->EBP());return 0;}
-DEFINE_HOOK(0x4665E9,SF_BulletDestroyed,10) {auto id=R->ESI<BulletClass*>()->UniqueID;VisualScale::projectiles.erase(id);passiveBullets.erase(id);return 0;}
+DEFINE_HOOK(0x46A290,SF_ImpactLeave,5) {leaveImpactCenter(R->EBP());endReapplyImpact(R->EBP());finishExplosions(R->EBP());leaveSpread(R->EBP());bulletGrantImpacts.erase(R->EBP());passiveDetonations.erase(R->EBP());return 0;}
+DEFINE_HOOK(0x4665E9,SF_BulletDestroyed,10) {auto id=R->ESI<BulletClass*>()->UniqueID;VisualScale::projectiles.erase(id);passiveBullets.erase(id);passiveBulletOwners.erase(id);return 0;}
 void queueDeath(TechnoClass* victim,TechnoClass* killer) {
     vector<string> deathSkills;
     if(victim && interested(victim,"ondeath",&deathSkills) && reportedDeaths.insert(victim->UniqueID).second) {
@@ -3855,14 +4104,36 @@ DEFINE_HOOK(0x6F3330,SF_SelectEnabledSlot,5) {
     R->EAX(other);return 0x6F3813;
 }
 DEFINE_HOOK(0x6FC0B0,SF_DisabledSlotCheck,8) {
+    if((ForceMove::locked(R->ECX<TechnoClass*>()) || empLocked(R->ECX<TechnoClass*>()))) {R->EAX(static_cast<int>(FireError::BUSY));return 0x6FC876;}
     if(!weaponRules.empty()) {
         auto rule=slotRule(R->ECX<TechnoClass*>()->UniqueID,R->Stack<int>(8));
         if(rule && rule->disabled) { R->EAX(5); return 0x6FC876; }
     }
     return 0;
-}DEFINE_HOOK(0x6FDD7D,SF_StartFiring,5) {
+} 
+std::optional<Event> firingEvent(TechnoClass* unit,AbstractClass* aim) {
+    vector<string> ids;
+    if(applyingDamage || !passiveDetonations.empty() || !alive(unit) || !interested(unit,"onfire",&ids)) return {};
+    auto victim=aim && (aim->AbstractFlags & AbstractFlags::Techno)!=AbstractFlags::None?static_cast<TechnoClass*>(aim):nullptr;
+    auto e=eventSnapshot("onfire",unit,victim,unit,victim,0);
+    e.snapshot=std::move(ids);
+    if(aim) {
+        e.impact=aim->GetCoords();e.hasImpact=true;
+        if(!victim) e.distance=distanceCells(e.origin,e.impact);
+    }
+    return e;
+}
+// Missile spawners assign the destination through SpawnManager, outside the
+// ordinary projectile commit. This point is reached once per launched missile.
+DEFINE_HOOK(0x6B75BC,SF_SpawnMissileFired,6) {
+    auto manager=R->ESI<SpawnManagerClass*>();
+    if(auto e=firingEvent(manager->Owner,manager->Target)) pending.push_back(std::move(*e));
+    return 0;
+}
+DEFINE_HOOK(0x6FDD7D,SF_StartFiring,5) {
     auto u=R->ESI<TechnoClass*>(); auto key=R->EBP();shots.erase(key);
     int slot=R->Base<int>(12);
+    if(ForceMove::locked(u) || empLocked(u)) return 0x6FDE03;
     if(auto rule=slotRule(u->UniqueID,slot);rule && rule->disabled) return 0x6FDE03;
     if(slot>=0 && slot<2 && !applyingDamage && passiveDetonations.empty() && alive(u) &&
        (volleyWeapons.contains(u->UniqueID) || interested(u,"onbeforefire"))) {
@@ -3901,15 +4172,18 @@ DEFINE_HOOK(0x6FC0B0,SF_DisabledSlotCheck,8) {
             R->EBX(weapon);R->Stack(0x40,weapon);
         }
     }
-    vector<string> fireSkills;
-    if(!applyingDamage && passiveDetonations.empty() && alive(u) && interested(u,"onfire",&fireSkills)) {
-        auto aim=R->Base<AbstractClass*>(8);
-        auto victim=aim && (aim->AbstractFlags & AbstractFlags::Techno)!=AbstractFlags::None?static_cast<TechnoClass*>(aim):nullptr;
-        auto e=eventSnapshot("onfire",u,victim,u,victim,0);
-        e.snapshot=std::move(fireSkills);
-        if(aim) {e.impact=aim->GetCoords();e.hasImpact=true;if(!victim) e.distance=distanceCells(e.origin,e.impact);}
-        shots.emplace(key,std::move(e));
-    }return 0;
+    auto weapon=R->EBX<WeaponTypeClass*>();
+    const bool missileOrder=weapon && weapon->Spawner && u->SpawnManager && u->SpawnManager->SpawnType && u->SpawnManager->SpawnType->MissileSpawn;
+    if(!missileOrder) {
+        if(auto e=firingEvent(u,R->Base<AbstractClass*>(8))) shots.emplace(key,std::move(*e));
+    }
+    return 0;
+}
+// TechnoClass::Fire reaches this branch only after the original bullet's MoveTo succeeds.
+DEFINE_HOOK(0x6FF031,SF_MultiShotLaunch,10) {
+    if(anyMultiShot && !applyingDamage && passiveDetonations.empty())
+        multiShot(R->ESI<TechnoClass*>(),R->EBX<BulletClass*>(),R->Base<AbstractClass*>(8),R->Base<int>(12),R->Stack<CoordStruct>(0x44));
+    return 0;
 }
 DEFINE_HOOK(0x6FF660,SF_ShotCommitted,6) {
     auto it=shots.find(R->EBP());
@@ -3927,6 +4201,28 @@ DEFINE_HOOK(0x739956,SF_DeployedInto,6) {
         auto e=eventSnapshot("ondeploy",old,nullptr,building,building,0);
         e.holder=building->UniqueID;e.snapshot=std::move(ids);pending.push_back(std::move(e));
     }return 0;
+}
+// Unlimbo has accepted the upgrade and stored its type in the host's slot;
+// the temporary upgrade object is still alive at this point.
+DEFINE_HOOK(0x4409E9,SF_BuildingUpgradeInstalled,6) {
+    auto upgrade=R->ESI<BuildingClass*>();
+    auto host=R->EDI<BuildingClass*>();
+    if(!upgrade || !upgrade->Type || !alive(host)) return 0;
+    vector<string> ids;
+    for(const auto& id:boundSkills(upgrade->Type->ID)) {
+        auto it=skills.find(id);
+        if(it!=skills.end() && it->second.trigger=="onbuildingupgrade") ids.push_back(id);
+    }
+    if(!ids.empty()) {
+        auto e=eventSnapshot("onbuildingupgrade",host,host,host,host,0);
+        e.snapshot=std::move(ids);
+        for(const auto& id:e.snapshot) e.stackSnapshot[id]=1;
+        pending.push_back(std::move(e));
+    }
+    return 0;
+}
+DEFINE_HOOK(0x701CC2,SF_DamageWarheadOwner,6) {
+    return ownerDamageOverride==R->EBX<int*>()?0x701CD7:0;
 }
 // Preserve the original sign before Phobos and native damage adjustments.
 // The entry stack address distinguishes nested damage calls.
@@ -4078,6 +4374,15 @@ DEFINE_HOOK(0x53B270,SF_MindImmuneDominator,6) {
     auto target=R->ESI<TechnoClass*>();
     return target && mindImmuneUnits.contains(target->UniqueID)?0x53B364:0;
 }
+// Extend the base capability query, including FootClass's qualified base call.
+// The caller still applies CloakStop, detection, firing and native cloak timers.
+// Never write the object's Cloakable flag: crates, type conversion and other
+// extensions retain ownership of their own capability, including in saves.
+DEFINE_HOOK(0x70C5A0, SF_CloakableFlag, 6) {
+    auto unit=R->ECX<TechnoClass*>();
+    if(unit && cloakableUnits.contains(unit->UniqueID)) {R->AL(1);return 0x70C5AB;}
+    return 0;
+}
 // Run the native mirage update for affected vehicles without changing their shared type.
 DEFINE_HOOK(0x736486, SF_MirageUpdate, 6) {
     auto unit=R->ESI<UnitClass*>();
@@ -4096,17 +4401,37 @@ void clearCompletedVolleys() {
         if(it!=volleyWeapons.end() && (!alive(unit) || (unit->CurrentBurstIndex==0 && it->second.frame!=frame))) volleyWeapons.erase(it);
     }
 }
-DEFINE_HOOK(0x55B4E1, SF_Frame, 5) { incomingDamage.clear();clearCompletedVolleys();UnitHealth::syncAll();tickBuildings(); refreshSpawnGrants(); expireWarheadGrants(); refreshAuras(); refreshTransportGrants(); reconcileAllStacks(); tickGains(); observeTransitions(); tickStates(); tickIntervals(); dispatch(); return 0; }
+DEFINE_HOOK(0x55B4E1, SF_Frame, 5) { LuaAnim::tick();LuaNearby::expire();ForceMove::tick();incomingDamage.clear();clearCompletedVolleys();UnitHealth::syncAll();tickBuildings(); refreshSpawnGrants(); expireWarheadGrants(); refreshAuras(); refreshTransportGrants(); reconcileAllStacks(); tickGains(); observeTransitions(); tickStates(); tickIntervals(); dispatch(); tickScriptTimers(); return 0; }
 DEFINE_HOOK(0x6DD8B0, SF_MapAction, 6) {
     auto action=R->ECX<TActionClass*>();
     auto kind=static_cast<int>(action->ActionKind);
-    if(kind!=9600 && kind!=9601) return 0;
+    if(kind!=9600 && kind!=9601 && kind!=9602) return 0;
     int target=action->Param4;
     auto house=R->Stack<HouseClass*>(4);
     if(kind==9601) {
         Research::ensureReady();
         auto preset=grantPresets.find(action->Param3);
         if(preset!=grantPresets.end()) grantFromTrigger(preset->second,target,house,R->Stack<ObjectClass*>(8),R->Stack<TriggerClass*>(12));
+    } else if(kind==9602) {
+        if(target!=0) house=HouseClass::Index_IsMP(target)?HouseClass::FindByPlayerAt(target):nullptr;
+        Research::ensureReady();
+        auto preset=ActionSequence::mapScripts.find(action->Param3);
+        if(house && preset!=ActionSequence::mapScripts.end() && ActionSequence::lastCast!=UINT32_MAX) {
+            auto object=R->Stack<ObjectClass*>(8);DWORD objectId=0;
+            if(object && (object->AbstractFlags&AbstractFlags::Techno)!=AbstractFlags::None)
+                objectId=object->UniqueID;
+            auto at=R->Stack<CellStruct*>(16);
+            CellStruct point{-1,-1};
+            if(at && at->X>=0 && at->Y>=0 && at->X<512 && at->Y<512 && MapClass::Instance.IsWithinUsableArea(*at,false)) point=*at;
+            auto id=++ActionSequence::lastCast;
+            auto name=preset->second+":"+std::to_string(objectId);
+            auto& cast=ActionSequence::casts.emplace(id,ActionSequence::Cast{name,house->ArrayIndex,point}).first->second;
+            auto event=sequenceEvent(id,cast);
+            Objects live;for(auto unit:TechnoClass::Array) if(alive(unit)) live.emplace(unit->UniqueID,unit);
+            auto previous=activeObjects;activeObjects=&live;
+            if(auto step=ActionSequence::stepFor(cast,preset->second)) apply(step->actions.front(),event,findLive(live,objectId),live,0);
+            activeObjects=previous;ActionSequence::retire(id);
+        } else configLog("Map action 9602: unknown script preset or invalid house: "+std::to_string(action->Param3));
     } else {
         if(target!=0) house=HouseClass::Index_IsMP(target)?HouseClass::FindByPlayerAt(target):nullptr;
         if(eligibleHouse(house)) Research::award(house->ArrayIndex,action->Param3);
@@ -4132,6 +4457,18 @@ namespace {
 constexpr wchar_t stateStreamName[]=L"Starfall.Passives";
 constexpr DWORD passengerPassivesSaveTag=0x59504653; // SFPY
 constexpr DWORD signalSaveTag=0x5A504653; // SFPZ
+constexpr DWORD mapPassiveSaveTag=0x5D504653;
+constexpr DWORD forceMoveSaveTag=0x5E504653;
+constexpr DWORD forceMoveTiltSaveTag=0x5F504653;
+constexpr DWORD forceMoveCollisionSaveTag=0x60504653;
+constexpr DWORD sequenceSaveTag=0x61504653;
+constexpr DWORD seenOffersSaveTag=0x62504653;
+constexpr DWORD unhitSaveTag=0x63504653;
+constexpr DWORD luaAnimSaveTag=0x64504653;
+constexpr DWORD bulletOwnerSaveTag=0x65504653;
+constexpr DWORD cloakableSaveTag=0x66504653;
+constexpr DWORD luaTimerSaveTag=0x5C504653;
+constexpr DWORD buildingRewardSourceSaveTag=0x5B504653;
 constexpr DWORD auraSaveTag=0x58504653; // SFPX
 constexpr DWORD selfCostSaveTag=0x57504653; // SFPW
 constexpr DWORD targetCostSaveTag=0x56504653; // SFPV
@@ -4182,9 +4519,9 @@ struct Reader {
         if(value<1 || value>INT_MAX) ok=false;
         return value;
     }
-    string str() {
+    string str(size_t maxLength=127) {
         DWORD n=word();
-        if(n>127 || n>bytes.size()-pos) { ok=false; return {}; }
+        if(n>maxLength || n>bytes.size()-pos) { ok=false; return {}; }
         string s(reinterpret_cast<const char*>(bytes.data()+pos),n);
         pos+=n; return s;
     }
@@ -4199,6 +4536,8 @@ bool saveState(IStream* stream) {
     }
     w.word(static_cast<DWORD>(pending.size()));
     for(const Event& e:pending) {
+        w.word(e.blastCenter.has_value());
+        if(e.blastCenter) {w.word(e.blastCenter->X);w.word(e.blastCenter->Y);w.word(e.blastCenter->Z);}
         w.str(e.trigger); w.str(e.kind); w.str(e.relation);
         w.word(e.holder); w.word(e.attacker); w.word(e.victim);
         w.word(e.damage); w.word(e.hp); w.word(e.maxHp); w.word(e.state);
@@ -4273,7 +4612,7 @@ bool saveState(IStream* stream) {
     w.word(static_cast<DWORD>(activeAnimStates.size()));
     for(const auto& key:activeAnimStates) { w.word(key.first); w.str(key.second); }
     w.word(static_cast<DWORD>(Research::buildingRewards.size()));
-    for(const auto& [id,state]:Research::buildingRewards) {w.word(id);w.word(state.owner);w.word(state.authorized);w.word(state.claimed);}
+    for(const auto& [id,state]:Research::buildingRewards) {w.word(id);w.word(state.owner);w.word(state.authorized);w.word(state.claimed);w.word(static_cast<DWORD>(state.source));}
     w.word(static_cast<DWORD>(VisualScale::base.size()));
     for(const auto& [id,size]:VisualScale::base) {w.word(id);w.word(static_cast<DWORD>(size));w.word(static_cast<DWORD>(size>>32));}
     w.word(static_cast<DWORD>(mirageUnits.size()));for(auto id:mirageUnits) w.word(id);
@@ -4342,28 +4681,66 @@ bool saveState(IStream* stream) {
     for(const auto& [target,ids]:auraLosses) {
         w.word(target);w.word(static_cast<DWORD>(ids.size()));for(const auto& id:ids) w.str(id);
     }
-    DWORD header[]={signalSaveTag,static_cast<DWORD>(w.bytes.size())};
+    scriptTimers.ensureSeed(Game::Seed); // Also preserve the stream when saved before the first Lua draw.
+    scriptTimers.write(w);
+    w.word(static_cast<DWORD>(mapPassiveBindings.size()));
+    for(const auto& [type,list]:mapPassiveBindings) {w.str(type);w.str(list);}
+    w.word(static_cast<DWORD>(ForceMove::motions.size()));
+    for(const auto& [id,m]:ForceMove::motions) {
+        w.word(id);
+        w.word(m.lastFrame);
+        for(int v:{m.x,m.y,m.dx,m.dy,m.height,m.startHeight,m.duration,m.elapsed,int(m.blocked),int(m.tilt),int(m.easing),int(m.ignoreCollision)}) w.word(v);
+    }
+    w.word(static_cast<DWORD>(ForceMove::settling.size()));
+    for(const auto& [id,lean]:ForceMove::settling) {
+        w.word(id);w.word(lean.dx);w.word(lean.dy);w.word(lean.start);
+    }
+    ActionSequence::write(w);
+    w.word(static_cast<DWORD>(Research::seenOffers.size()));
+    for(const auto& [house,ids]:Research::seenOffers) {
+        w.word(house);w.word(static_cast<DWORD>(ids.size()));
+        for(const auto& id:ids) w.str(id);
+    }
+    w.word(static_cast<DWORD>(hitSequences.size()));
+    for(const auto& [id,seq]:hitSequences) {w.word(id);w.word(seq);}
+    w.word(static_cast<DWORD>(observedHits.size()));
+    for(const auto& [key,seq]:observedHits) {w.word(key.first);w.str(key.second);w.word(seq);}
+    w.word(static_cast<DWORD>(LuaAnim::entries.size()));
+    for(const auto& [id,e]:LuaAnim::entries) {
+        w.word(id);w.word(e.owner);w.word(e.cast);w.str(e.skill);w.word(e.remaining);w.word(e.loop);w.word(e.zOffset);
+        for(int v:{e.start.X,e.start.Y,e.start.Z,e.finish.X,e.finish.Y,e.finish.Z})w.word(v);
+        w.word(e.duration);w.word(e.elapsed);w.word(e.lastFrame);
+    }
+    if(w.bytes.size()>64*1024*1024) return false;
+    w.word(static_cast<DWORD>(passiveBulletOwners.size()));
+    for(auto [id,owner]:passiveBulletOwners) {w.word(id);w.word(owner);}
+    w.word(static_cast<DWORD>(cloakableUnits.size()));
+    for(auto id:cloakableUnits) w.word(id);
+    if(w.bytes.size()>64*1024*1024) return false;
+    DWORD header[]={cloakableSaveTag,static_cast<DWORD>(w.bytes.size())};
     ULONG written=0;
     return SUCCEEDED(stream->Write(header,sizeof(header),&written)) && written==sizeof(header)
         && SUCCEEDED(stream->Write(w.bytes.data(),header[1],&written)) && written==header[1];
 }
-void loadState(IStream* stream) {
-    reset();
-    // Existing saves predate global income: never issue the initial grant again.
-    Research::globalIncome.initialized=true;
-    Research::globalIncome.lastFrame=static_cast<unsigned>(Unsorted::CurrentFrame);
-    if(!stream) return;
+bool loadState(IStream* stream) {
+    auto fail=[](const char* reason) {
+        std::ofstream("Starfall.log",std::ios::app)<<"Starfall: save data rejected: "<<reason<<"\n";
+        return false;
+    };
+    if(!stream) return fail("missing stream");
     DWORD header[2]{};
     ULONG got=0;
-    if(FAILED(stream->Read(header,sizeof(header),&got)) || got!=sizeof(header) ||
-       (header[0]&0xFFFFFF)!=(saveTag&0xFFFFFF) || header[0]<saveTag || header[0]>signalSaveTag) return;
-    if(header[1]>64*1024*1024) return;
+    if(FAILED(stream->Read(header,sizeof(header),&got)) || got!=sizeof(header)) return fail("truncated header");
+    if((header[0]&0xFFFFFF)!=(saveTag&0xFFFFFF) || header[0]<saveTag || header[0]>cloakableSaveTag)
+        return fail("unsupported format version");
+    if(header[1]>64*1024*1024) return fail("payload exceeds size limit");
     vector<BYTE> data(header[1]);
-    if(FAILED(stream->Read(data.data(),header[1],&got)) || got!=header[1]) return;
+    if(FAILED(stream->Read(data.data(),header[1],&got)) || got!=header[1]) return fail("truncated payload");
     Reader r{data};
     Counts restored;
     vector<Event> events;
     std::map<DWORD,std::shared_ptr<SignalChain>> signalChains;
+    DWORD restoredNextSignalChain=1;
     for(DWORD n=r.word(); n && r.ok; --n) {
         DWORD id=r.word();
         for(DWORD m=r.word(); m && r.ok; --m) {
@@ -4373,8 +4750,12 @@ void loadState(IStream* stream) {
         }
     }
     for(DWORD n=r.word(); n && r.ok; --n) {
+        std::optional<CoordStruct> center;
+        if(header[0]>=forceMoveSaveTag && r.word())
+            center=CoordStruct{static_cast<int>(r.word()),static_cast<int>(r.word()),static_cast<int>(r.word())};
         Event e{r.str(),r.str(),r.str(),r.word(),r.word(),r.word(),
             static_cast<int>(r.word()),static_cast<int>(r.word()),static_cast<int>(r.word())};
+        e.blastCenter=center;
         if(header[0]>=0x35504653) e.state=static_cast<int>(r.word());
         if(header[0]>=0x37504653) {
             e.hasImpact=r.word()!=0;e.impact={static_cast<int>(r.word()),static_cast<int>(r.word()),static_cast<int>(r.word())};
@@ -4420,7 +4801,7 @@ void loadState(IStream* stream) {
                 auto [it,created]=signalChains.try_emplace(id,std::make_shared<SignalChain>(SignalChain{id,remaining}));
                 if(!created && it->second->remaining!=remaining) r.ok=false;
                 e.signalChain=it->second;
-                if(id>=nextSignalChain) nextSignalChain=id+1;
+                if(id>=restoredNextSignalChain) restoredNextSignalChain=id+1;
             }
         }
         events.push_back(std::move(e));
@@ -4547,7 +4928,11 @@ void loadState(IStream* stream) {
     decltype(Research::buildingRewards) rewards;
     if(header[0]>=0x3E504653) for(DWORD n=r.word();r.ok && n--;) {
         DWORD id=r.word();int owner=static_cast<int>(r.word()),authorized=static_cast<int>(r.word());DWORD claimed=r.word();
-        if(owner<0 || owner>127 || authorized< -1 || authorized>127 || claimed>1 || !rewards.emplace(id,Research::BuildingReward{owner,authorized,claimed!=0}).second) r.ok=false;
+        DWORD source=header[0]>=buildingRewardSourceSaveTag?r.word():0;
+        if(header[0]<buildingRewardSourceSaveTag) authorized=-1; // Old saves cannot distinguish how authorization was granted.
+        if(owner<0 || owner>127 || authorized< -1 || authorized>127 || claimed>1 || source>2 ||
+           (claimed && (authorized!=-1 || source!=0)) || ((authorized==-1)!=(source==0)) ||
+           !rewards.emplace(id,Research::BuildingReward{owner,authorized,claimed!=0,static_cast<Research::BuildingRewardSource>(source)}).second) r.ok=false;
     }
     decltype(VisualScale::base) sizes;
     if(header[0]>=0x3F504653) for(DWORD n=r.word();r.ok && n--;) {
@@ -4704,7 +5089,93 @@ void loadState(IStream* stream) {
             }
         }
     }
+    LuaTimers::Store restoredTimers;
+    if(header[0]>=luaTimerSaveTag && r.ok) restoredTimers.read(r);
+    decltype(mapPassiveBindings) restoredBindings;
+    if(header[0]>=mapPassiveSaveTag && r.ok) for(auto n=r.word();r.ok && n--;) {
+        auto type=r.str(),list=r.str(2047);
+        if(type.empty() || list.empty() || !restoredBindings.emplace(std::move(type),std::move(list)).second) r.ok=false;
+    }
+    decltype(ForceMove::motions) moves;
+    if(header[0]>=forceMoveSaveTag && r.ok) for(auto n=r.word();r.ok && n--;) {
+        DWORD id=r.word();ForceMove::Motion m;m.lastFrame=r.word();
+        for(auto out:{&m.x,&m.y,&m.dx,&m.dy,&m.height,&m.startHeight,&m.duration,&m.elapsed})
+            *out=static_cast<int>(r.word());
+        auto blocked=r.word();m.blocked=blocked!=0;
+        if(header[0]>=forceMoveTiltSaveTag) {
+            auto tilt=r.word();if(tilt>1) r.ok=false;
+            m.tilt=tilt!=0;
+            auto easing=r.word();
+            if(easing>static_cast<DWORD>(ForceMove::Easing::EaseInOut)) r.ok=false;
+            m.easing=static_cast<ForceMove::Easing>(easing);
+        }
+        auto ignoreCollision=header[0]>=forceMoveCollisionSaveTag?r.word():0;
+        if(ignoreCollision>1) r.ok=false;
+        m.ignoreCollision=ignoreCollision!=0;
+        constexpr int limit=ForceMove::mapExtent;
+        if(m.x<0 || m.x>=limit || m.y<0 || m.y>=limit || m.dx< -limit || m.dx>limit ||
+           m.dy< -limit || m.dy>limit || m.height<0 || m.height>limit || m.startHeight<0 || m.startHeight>4*limit ||
+           m.duration<=0 || m.elapsed<0 || m.elapsed>=m.duration || blocked>1 || !moves.emplace(id,m).second) r.ok=false;
+    }
+    decltype(ForceMove::settling) settling;
+    if(header[0]>=forceMoveTiltSaveTag && r.ok) for(auto n=r.word();r.ok && n--;) {
+        auto id=r.word();
+        ForceMove::SettlingTilt lean{static_cast<int>(r.word()),static_cast<int>(r.word()),r.word()};
+        constexpr int limit=ForceMove::mapExtent;
+        if((!lean.dx && !lean.dy) || lean.dx< -limit || lean.dx>limit || lean.dy< -limit || lean.dy>limit ||
+           !settling.emplace(id,lean).second) r.ok=false;
+    }
+    ActionSequence::SavedState sequenceState;
+    if(header[0]>=sequenceSaveTag && r.ok) sequenceState=ActionSequence::readSaved(r);
+    decltype(Research::seenOffers) seen;
+    if(header[0]>=seenOffersSaveTag && r.ok) for(auto n=r.word();n && r.ok;--n) {
+        auto house=r.word(),count=r.word();
+        if(house>=128 || count>100000 || seen.contains(house)) {r.ok=false;break;}
+        auto& ids=seen[house];
+        while(count-- && r.ok) {auto id=r.str();if(id.empty() || !ids.insert(id).second) r.ok=false;}
+    }
+    decltype(hitSequences) restoredHitSequences;
+    decltype(observedHits) restoredObservedHits;
+    if(header[0]>=unhitSaveTag && r.ok) {
+        for(auto n=r.word();n && r.ok;--n) {auto id=r.word(),seq=r.word();if(!restoredHitSequences.emplace(id,seq).second) r.ok=false;}
+        for(auto n=r.word();n && r.ok;--n) {auto id=r.word();auto skill=r.str();auto seq=r.word();if(skill.empty() || !restoredObservedHits.emplace(TimerKey{id,skill},seq).second) r.ok=false;}
+    }
+    decltype(LuaAnim::entries) restoredLuaAnimations;
+    if(header[0]>=luaAnimSaveTag && r.ok) {
+        auto count=r.word();if(count>LuaAnim::maxEntries)r.ok=false;
+        for(DWORD i=0;i<count && r.ok;++i) {
+            auto id=r.word(),owner=r.word(),cast=r.word();auto skill=r.str();auto remaining=r.word(),loop=r.word();int zOffset=static_cast<int>(r.word());
+            CoordStruct start{static_cast<int>(r.word()),static_cast<int>(r.word()),static_cast<int>(r.word())};
+            CoordStruct finish{static_cast<int>(r.word()),static_cast<int>(r.word()),static_cast<int>(r.word())};
+            auto duration=r.word(),elapsed=r.word(),lastFrame=r.word();
+            if(!id || (!owner && !cast) || skill.empty() || remaining>LuaAnim::maxDuration || loop>1 || zOffset< -64*256 || zOffset>64*256 || duration>LuaAnim::maxDuration || elapsed>duration ||
+               !restoredLuaAnimations.emplace(id,LuaAnim::Entry{owner,cast,skill,remaining,loop!=0,zOffset,start,finish,duration,elapsed,lastFrame}).second)r.ok=false;
+        }
+    }
+    decltype(passiveBulletOwners) restoredBulletOwners;
+    if(header[0]>=bulletOwnerSaveTag && r.ok) for(auto n=r.word();n && r.ok;--n) {
+        auto id=r.word();int owner=static_cast<int>(r.word());
+        if(!id || owner<0 || owner>127 || !restoredBulletOwners.emplace(id,owner).second) r.ok=false;
+    }
+    decltype(cloakableUnits) restoredCloakables;
+    if(header[0]>=cloakableSaveTag && r.ok) for(auto n=r.word();n && r.ok;--n) {
+        auto id=r.word();
+        if(!id || !restoredCloakables.insert(id).second) r.ok=false;
+    }
+    if(!r.ok || r.pos!=data.size()) return fail("invalid or trailing payload fields");
+    // Parsing above must not mutate live state, including sequence and signal IDs.
+    reset();
+    passiveBulletOwners.swap(restoredBulletOwners);
+    cloakableUnits.swap(restoredCloakables);
+    nextSignalChain=restoredNextSignalChain;
+    sequenceState.commit();
+    LuaAnim::entries.swap(restoredLuaAnimations);
+    if(r.ok && r.pos==data.size()) {hitSequences.swap(restoredHitSequences);observedHits.swap(restoredObservedHits);Research::seenOffers.swap(seen);}
     if(r.ok && r.pos==data.size()) {
+        ForceMove::settling.swap(settling);
+        ForceMove::motions.swap(moves);
+        mapPassiveBindings.swap(restoredBindings);
+        scriptTimers=std::move(restoredTimers);
         auraSources.swap(restoredAuras);auraLosses.swap(restoredLosses);discoverAuras=discoverAfterLoad;
         if(!auraSources.empty()) {
             for(auto unit:TechnoClass::Array) if(unit) {
@@ -4724,6 +5195,7 @@ void loadState(IStream* stream) {
         VisualScale::attachedAnims.clear();
         for(const auto& [key,anim]:attachedAnims) VisualScale::attachedAnims[anim.id]=key.first;
     }
+    return true;
 }
 }
 // gamemd 1.001: EAX is the open IStorage immediately before CreateStream("CONTENTS").
@@ -4741,15 +5213,28 @@ DEFINE_HOOK(0x67D074, SF_SaveStorage, 6) {
 DEFINE_HOOK(0x67E67B, SF_LoadStorage, 5) {
     auto storage=R->Stack<IStorage*>(0x18);
     IStream* stream=nullptr;
-    if(storage && SUCCEEDED(storage->OpenStream(stateStreamName,nullptr,STGM_READ|STGM_SHARE_EXCLUSIVE,0,&stream))) {
-        loadState(stream);
+    const HRESULT opened=storage?storage->OpenStream(stateStreamName,nullptr,STGM_READ|STGM_SHARE_EXCLUSIVE,0,&stream):E_POINTER;
+    bool valid=true;
+    if(SUCCEEDED(opened)) {
+        valid=loadState(stream);
         stream->Release();
         // Per-building multipliers are derived from the restored passives and timers.
         for(auto house:HouseClass::Array) if(house) house->RecheckPower=true;
-    } else {
+    } else if(opened==STG_E_FILENOTFOUND) {
+        // Saves made before Starfall was installed legitimately have no stream.
         reset();
         Research::globalIncome.initialized=true;
         Research::globalIncome.lastFrame=static_cast<unsigned>(Unsorted::CurrentFrame);
+    } else {
+        std::ofstream("Starfall.log",std::ios::app)<<"Starfall: cannot open saved state, HRESULT "<<std::hex<<opened<<"\n";
+        valid=false;
+    }
+    if(!valid) {
+        // Native objects have already been loaded. Continuing or returning to the
+        // old scenario here would leave engine and extension state inconsistent.
+        MessageBoxW(nullptr,L"流火存档数据损坏或版本不受支持，无法继续载入。\n游戏将关闭；请查看 Starfall.log，并使用匹配的版本或其他存档。",
+            L"Starfall：读档失败",MB_OK|MB_ICONERROR);
+        ExitProcess(EXIT_FAILURE);
     }
     return 0;
 }
@@ -4757,7 +5242,7 @@ SYRINGE_HANDSHAKE(info) {
     if(!info || info->cbSize<sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
     if(info->exeCRC!=0x54CC0A13) return E_FAIL;
     if(info->Message && info->cchMessage>0)
-        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.35 - spawn passives");
+        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.36");
     return S_OK;
 }
 

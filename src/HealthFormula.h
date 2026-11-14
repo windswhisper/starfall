@@ -136,16 +136,19 @@ public:
     }
     std::optional<double> evaluate(int hp,int maximum,int damage=0,std::optional<double> distance=std::nullopt,int stacks=0,std::optional<Values> target=std::nullopt,bool* missing=nullptr,std::optional<int> selfCost=std::nullopt,std::optional<int> selfAmmo=std::nullopt,std::optional<int> selfPassengers=std::nullopt,std::optional<Values> sender=std::nullopt,std::optional<double> signalValue=std::nullopt) const {
         if(missing) *missing=false;
-        if(empty() || maximum<=0) return {};
-        const double health=std::clamp(hp,0,maximum);
+        if(empty()) return {};
         std::array<double,limit> stack;
         size_t used=0;
         for(size_t pc=0;pc<code.size();) {
             auto ins=code[pc++];
             switch(ins.op) {
                 case Op::Literal: stack[used++]=ins.number; break;
-                case Op::Health: stack[used++]=health; break;
-                case Op::MaxHealth: stack[used++]=maximum; break;
+                case Op::Health:
+                    if(maximum<=0) {if(missing) *missing=true;return {};}
+                    stack[used++]=std::clamp(hp,0,maximum);break;
+                case Op::MaxHealth:
+                    if(maximum<=0) {if(missing) *missing=true;return {};}
+                    stack[used++]=maximum;break;
                 case Op::SelfCost:
                     if(!selfCost) {if(missing) *missing=true;return {};}
                     stack[used++]=*selfCost;

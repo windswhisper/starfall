@@ -1,5 +1,6 @@
 #pragma once
 #include "Research.h"
+#include "ResourceCache.h"
 #include <GameOptionsClass.h>
 #include <Windows.h>
 #include <mmsystem.h>
@@ -80,21 +81,33 @@ struct Voice {
         if(device) {waveOutReset(device);if(header.dwFlags&WHDR_PREPARED) waveOutUnprepareHeader(device,&header,sizeof(header));waveOutClose(device);}
     }
 };
+inline auto& sampleCache() {
+    static Resources::Cache<std::string,Sample> cache(64,32*1024*1024);
+    return cache;
+}
+inline std::shared_ptr<const Sample> sampleFor(const std::string& path) {
+    return sampleCache().get(Resources::pathKey(path),[&] {
+        auto sample=load(path);
+        if(sample.data.empty()) std::ofstream("Starfall.log",std::ios::app)<<"Starfall: invalid or missing PCM WAV: "<<path<<"\n";
+        return sample;
+    },[](const std::string& key,const Sample& sample) {
+        return sample.data.capacity()+2*(key.size()+1)+sizeof(Sample);
+    });
+}
 inline std::vector<std::unique_ptr<Voice>>& voices() {static std::vector<std::unique_ptr<Voice>> value;return value;}
+inline void clearCache(bool stopVoices=false) {
+    sampleCache().clear();
+    if(stopVoices) voices().clear();
+}
 inline void pump() {
     auto& active=voices();
     std::erase_if(active,[](const auto& voice){return (voice->header.dwFlags&WHDR_DONE)!=0;});
 }
-inline bool play(Research::SoundCue cue) {
-    pump();const auto& path=Research::soundFiles[static_cast<size_t>(cue)];
+inline bool playPath(const std::string& path) {
+    pump();
     if(path.empty()) return false;
-    static std::map<std::string,Sample> cache;
-    auto [it,fresh]=cache.try_emplace(path);
-    if(fresh) {
-        it->second=load(path);
-        if(it->second.data.empty()) std::ofstream("Starfall.log",std::ios::app)<<"Starfall: invalid or missing PCM WAV: "<<path<<"\n";
-    }
-    const auto& sample=it->second;
+    auto loaded=sampleFor(path);
+    const auto& sample=*loaded;
     if(sample.data.empty()) return false;
     float volume=GameOptionsClass::Instance.SoundVolume;
     if(!std::isfinite(volume)) volume=0;
@@ -114,5 +127,8 @@ inline bool play(Research::SoundCue cue) {
     if(waveOutPrepareHeader(voice->device,&voice->header,sizeof(voice->header))!=MMSYSERR_NOERROR ||
        waveOutWrite(voice->device,&voice->header,sizeof(voice->header))!=MMSYSERR_NOERROR) return false;
     voices().push_back(std::move(voice));return true;
+}
+inline bool play(Research::SoundCue cue) {
+    return playPath(Research::soundFiles[static_cast<size_t>(cue)]);
 }
 }

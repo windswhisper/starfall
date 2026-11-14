@@ -8,8 +8,10 @@ if not exist "references\Phobos\YRpp\TechnoClass.h" (
         exit /b 1
     )
 )
+call tools\module-sources.cmd
 call tools\msvc-x86.cmd || exit /b 1
 if not exist build\obj mkdir build\obj || exit /b 1
+call tools\build-lua.cmd build\obj\lua || exit /b 1
 rc /nologo /fo build\obj\research.res assets\research\ui.rc || exit /b 1
-cl /nologo /std:c++20 /EHsc /O2 /MT /LD /utf-8 /DSYR_VER=2 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Ireferences\Phobos\YRpp /Fobuild\obj\ /Febuild\Starfall.dll src\Starfall.cpp src\ResearchUI.cpp src\VisualScale.cpp build\obj\research.res /link /IMPLIB:build\obj\Starfall.lib /INCREMENTAL:NO /OPT:REF /OPT:NOICF
+cl /nologo /std:c++20 /EHsc /O2 /MT /LD /utf-8 /DSYR_VER=2 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Ireferences\Phobos\YRpp /Fobuild\obj\ /Febuild\Starfall.dll src\Starfall.cpp src\ResearchUI.cpp %starfallModules% build\obj\lua\lua.lib build\obj\research.res /link /IMPLIB:build\obj\Starfall.lib /INCREMENTAL:NO /OPT:REF /OPT:NOICF
 exit /b %errorlevel%

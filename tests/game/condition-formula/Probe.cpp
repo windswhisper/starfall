@@ -52,10 +52,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestConditionFormula,5) {
         check(Research::balance(house->ArrayIndex)==points+4,"event numeric formula snapshot");
         u->Type->Ammo=oldAmmoType;u->Ammo=oldAmmo;u->Passengers.NumPassengers=oldPassengers;
         passiveStacks[u->UniqueID]["stackgate"]=5;tickStates();
+        check(skills.contains("resetclock") && skills.contains("resetonkill"),"reset configuration");
+        grantToUnit(u,PassiveGrant{{"resetclock","resetonkill"},-1});
+        auto hp=UnitHealth::read(u);auto bits=stateOf(u);unsigned t=static_cast<unsigned>(Unsorted::CurrentFrame);
+        auto& clock=skills.at("resetclock");
+        check(!stateActive(u,clock,bits,hp,t-15) && stateActive(u,clock,bits,hp,t),"timer charged");
+        capture("onkill",u,enemy,u,enemy,0);dispatch();
+        check(!stateActive(u,clock,bits,hp,t),"event reset timer");
+        check(stateActive(u,clock,bits,hp,t+15),"timer charges after reset");
         std::ofstream("condition-formula.id")<<u->UniqueID;
         check(ScenarioClass::SaveGame("Saved Games\\ConditionFormula.sav",L"Condition Formula"),"saved");
     } else {
         tickStates();
+        check(stateTimers.contains({id,"resetclock"}),"reset timer survives save");
         check(stackCount(id,"stackgate")==5 && u->FirepowerMultiplier==2.0,"stack and condition loaded");
         TerminateProcess(GetCurrentProcess(),0);
     }

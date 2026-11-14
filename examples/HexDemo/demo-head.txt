@@ -1,0 +1,185 @@
+[Basic]
+Name=Starfall - Hex Brawl Cinematic Demo
+Author=Starfall Lab
+GameMode=standard
+MinPlayer=2
+MaxPlayer=2
+MultiplayerOnly=1
+NewINIFormat=4
+Official=no
+TiberiumGrowthEnabled=no
+
+[Map]
+Theater=TEMPERATE
+Size=0,0,64,64
+LocalSize=2,4,60,54
+
+[Lighting]
+Ambient=1.000000
+Red=1.000000
+Green=1.000000
+Blue=1.000000
+Ground=0.000000
+Level=0.000000
+
+[Waypoints]
+0=75048
+1=48075
+2=71052
+3=56067
+4=64060
+5=68054
+6=62059
+7=57065
+8=73049
+9=70052
+
+[ScriptTypes]
+0=SF_DEMO_ATTACK
+1=SF_DEMO_REINFORCE
+
+[SF_DEMO_ATTACK]
+Name=Attack the defense line
+0=16,4
+1=16,7
+2=0,1
+
+[SF_DEMO_REINFORCE]
+Name=Armored second wave
+0=16,6
+1=16,7
+2=0,1
+
+[TaskForces]
+0=SF_DEMO_FORCE1
+1=SF_DEMO_FORCE2
+
+[SF_DEMO_FORCE1]
+Name=First armored assault
+Group=-1
+0=10,HTNK
+1=4,DRON
+
+[SF_DEMO_FORCE2]
+Name=Second armored assault
+Group=-1
+0=8,HTNK
+1=4,APOC
+
+[TeamTypes]
+0=SF_DEMO_TEAM1
+1=SF_DEMO_TEAM2
+
+[SF_DEMO_TEAM1]
+Name=First armored assault
+Max=20
+Full=yes
+Group=-1
+House=<Player @ A>
+Script=SF_DEMO_ATTACK
+TaskForce=SF_DEMO_FORCE1
+VeteranLevel=1
+Waypoint=I
+TechLevel=0
+Priority=5
+Autocreate=no
+Prebuild=no
+Reinforce=no
+Recruiter=no
+LooseRecruit=no
+AreTeamMembersRecruitable=no
+Aggressive=yes
+AvoidThreats=no
+Suicide=no
+Loadable=no
+Droppod=no
+GuardSlower=no
+OnlyTargetHouseEnemy=yes
+UseTransportOrigin=no
+OnTransOnly=no
+TransportsReturnOnUnload=no
+MindControlDecision=0
+IsBaseDefense=no
+IonImmune=no
+Whiner=no
+Annoyance=no
+
+[SF_DEMO_TEAM2]
+Name=Second armored assault
+Max=20
+Full=yes
+Group=-1
+House=<Player @ A>
+Script=SF_DEMO_REINFORCE
+TaskForce=SF_DEMO_FORCE2
+VeteranLevel=1
+Waypoint=J
+TechLevel=0
+Priority=5
+Autocreate=no
+Prebuild=no
+Reinforce=no
+Recruiter=no
+LooseRecruit=no
+AreTeamMembersRecruitable=no
+Aggressive=yes
+AvoidThreats=no
+Suicide=no
+Loadable=no
+Droppod=no
+GuardSlower=no
+OnlyTargetHouseEnemy=yes
+UseTransportOrigin=no
+OnTransOnly=no
+TransportsReturnOnUnload=no
+MindControlDecision=0
+IsBaseDefense=no
+IonImmune=no
+Whiner=no
+Annoyance=no
+
+[Triggers]
+5F010001=Neutral,<none>,Give attackers,0,1,1,1,0
+5F010003=Neutral,<none>,Give defenders,0,1,1,1,0
+5F010005=Neutral,<none>,Open camera,0,1,1,1,0
+5F010007=Neutral,<none>,Assault wave,0,1,1,1,0
+5F010009=Neutral,<none>,Battle camera,0,1,1,1,0
+5F01000B=Neutral,<none>,Second wave,0,1,1,1,0
+5F01000D=Neutral,<none>,Defense camera,0,1,1,1,0
+
+[Events]
+5F010001=1,13,0,0
+5F010003=1,13,0,0
+5F010005=1,13,0,0
+5F010007=1,13,0,3
+5F010009=1,13,0,4
+5F01000B=1,13,0,7
+5F01000D=1,13,0,9
+
+[Actions]
+5F010001=1,14,0,4475,0,0,0,0,A
+5F010003=1,14,0,4476,0,0,0,0,A
+5F010005=2,16,0,0,0,0,0,0,A,112,0,2,0,0,0,0,C
+5F010007=1,80,1,SF_DEMO_TEAM1,0,0,0,0,I
+5F010009=1,112,0,4,0,0,0,0,E
+5F01000B=1,80,1,SF_DEMO_TEAM2,0,0,0,0,J
+5F01000D=1,112,0,3,0,0,0,0,D
+
+[Tags]
+5F010002=0,Give attackers,5F010001
+5F010004=0,Give defenders,5F010003
+5F010006=0,Open camera,5F010005
+5F010008=0,Assault wave,5F010007
+5F01000A=0,Battle camera,5F010009
+5F01000C=0,Second wave,5F01000B
+5F01000E=0,Defense camera,5F01000D
+
+[Structures]
+0=Neutral,GAPOWR,256,52,68,0,5F010004,0,0,1,0,0,None,None,None,1,0
+1=Neutral,GAPOWR,256,54,70,0,5F010004,0,0,1,0,0,None,None,None,1,0
+2=Neutral,GTGCAN,256,56,64,0,5F010004,0,0,1,0,0,None,None,None,1,0
+3=Neutral,GTGCAN,256,59,67,0,5F010004,0,0,1,0,0,None,None,None,1,0
+4=Neutral,GTGCAN,256,62,70,0,5F010004,0,0,1,0,0,None,None,None,1,0
+5=Neutral,NASAM,256,52,72,0,5F010004,0,0,1,0,0,None,None,None,1,0
+
+[Units]

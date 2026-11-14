@@ -33,7 +33,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestImmunity,5) {
     for(auto u:UnitClass::Array) {
         if(!enemy && u->Owner==HouseClass::FindByPlayerAt(HouseClass::PlayerAtB)) enemy=u;
         if(u->Owner!=human || _stricmp(u->Type->ID,"MTNK")) continue;
-        if(warheadGrants.contains(u->UniqueID) || (!tank && f==18)) tank=u;
+        if((warheadGrants.contains(u->UniqueID) && warheadGrants.at(u->UniqueID).skills.contains("lowhealthimmune")) || (!tank && f==18)) tank=u;
         else if(!peer) peer=u;
     }
     checkImmune(tank && peer && enemy && tank->Type==peer->Type,"test units");
@@ -83,7 +83,49 @@ DEFINE_HOOK(0x55B4EB,SF_TestImmunity,5) {
         checkImmune(peer->Owner==enemy->Owner && peer->IsMindControlled(),"mind dominator peer captured");
         peer->MindControlledByAUnit=false;peer->SetOwningHouse(human,false);
         rules->DominatorDamage=oldDamage;PsyDom::Owner=oldOwner;PsyDom::Coords=oldCoords;
-        checkImmune(ScenarioClass::SaveGame("Saved Games\\Immune.sav",L"Immune"),"saved");
+        checkImmune(skills.contains("irontarget") && !skills.contains("invalidironduration") &&
+                    !skills.contains("ironmissingduration"),"iron duration validation");
+        grantToUnit(tank,PassiveGrant{{"irontarget"},-1});
+        auto fire=[&](TechnoClass* target){capture("onfire",tank,target,tank,target,0);dispatch();};
+        peer->IronCurtain(60,human,false);fire(peer);
+        checkImmune(peer->IronCurtainTimer.GetTimeLeft()==60 && !triggerTotals[tank->UniqueID]["irontarget"],"longer iron preserved");
+        peer->IronCurtain(10,human,true);fire(peer);
+        checkImmune(peer->ForceShielded && peer->IronCurtainTimer.GetTimeLeft()==10 &&
+                    !triggerTotals[tank->UniqueID]["irontarget"],"force shield preserved");
+        peer->IronCurtain(5,human,false);fire(peer);
+        checkImmune(!tank->IsIronCurtained() && peer->IsIronCurtained() && !peer->ForceShielded &&
+                    peer->IronCurtainTimer.GetTimeLeft()==30 && triggerTotals[tank->UniqueID]["irontarget"]==1,"apply iron to target");
+        checkImmune(skills.contains("testemp"),"EMP configuration");
+        grantToUnit(peer,PassiveGrant{{"testemp","testemp2"},-1});
+        tickStates();
+        checkImmune(empLocked(peer) && !peer->IsControllable() && !ActiveSkills::readyCaster(peer,human),"EMP locks vehicle");
+        auto aircraft=static_cast<AircraftClass*>(AircraftTypeClass::Find("ORCA")->CreateObject(human));
+        checkImmune(aircraft && aircraft->Unlimbo(MapClass::Instance.GetCellAt(CellStruct{42,72})->GetCoords(),DirType::North),"EMP aircraft placed");
+        aircraft->SetHeight(1024);
+        checkImmune(aircraft->IsInAir(),"EMP aircraft airborne");
+        TargetClass airHandle(aircraft);
+        grantToUnit(aircraft,PassiveGrant{{"testemp"},-1});
+        tickStates();
+        auto air=airHandle.As_Foot();
+        checkImmune(!air || air->IsCrashing || !air->IsAlive || air->Health<=0,"EMP aircraft crashes");
+        std::ofstream("iron-target.id")<<peer->UniqueID;
+        checkImmune(ScenarioClass::SaveGame(GetModuleHandleA("CnCNet-Spawner.dll")?"Immune.sav":"Saved Games\\Immune.sav",L"Immune"),"saved");
+    }
+    if(f==56 || f==82) {
+        DWORD id=0;std::ifstream("iron-target.id")>>id;
+        UnitClass* protectedUnit=nullptr;
+        for(auto u:UnitClass::Array) if(u->UniqueID==id) protectedUnit=u;
+        checkImmune(protectedUnit!=nullptr,"iron target exists");
+        if(f==56) {
+            checkImmune(empLocked(protectedUnit) && !protectedUnit->IsControllable(),"EMP restored");
+            removeHeldPassive(protectedUnit,"testemp");tickStates();
+            checkImmune(empLocked(protectedUnit),"EMP overlapping source retained");
+            removeHeldPassive(protectedUnit,"testemp2");tickStates();
+            checkImmune(!empLocked(protectedUnit) && protectedUnit->IsControllable() &&
+                protectedUnit->CurrentMission==Mission::Guard,"EMP release");
+        }
+        if(f==56) checkImmune(protectedUnit->IronCurtainTimer.GetTimeLeft()==19 && damageUnit(protectedUnit,enemy)==0,"iron timer and protection restored");
+        else checkImmune(!protectedUnit->IsIronCurtained() && damageUnit(protectedUnit,enemy)>0,"iron expires naturally");
     }
     if(f==56) {
         checkImmune(damageUnit(tank,enemy)==0,"loaded immunity");

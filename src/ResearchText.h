@@ -1,6 +1,7 @@
 #pragma once
 #include <Drawing.h>
 #include <map>
+#include <list>
 #include <string>
 #include <vector>
 #pragma comment(lib, "gdi32.lib")
@@ -39,11 +40,35 @@ inline Mask raster(const wchar_t* text,int size) {
     SelectObject(dc,previous);if(font) DeleteObject(font);DeleteDC(dc);
     return result;
 }
+struct Cache {
+    using Key=std::pair<int,std::wstring>;
+    struct Entry { Mask mask;std::list<Key>::iterator recent;size_t bytes; };
+    static constexpr size_t maxEntries=256,maxBytes=4*1024*1024;
+    std::map<Key,Entry> entries;
+    std::list<Key> recent;
+    size_t bytes=0;
+    const Mask& get(const wchar_t* text,int size) {
+        Key key{size,text};
+        if(auto it=entries.find(key);it!=entries.end()) {
+            recent.splice(recent.begin(),recent,it->second.recent);
+            return it->second.mask;
+        }
+        auto mask=raster(text,size);
+        size_t cost=mask.alpha.size()+2*(key.second.size()+1)*sizeof(wchar_t);
+        // Oversized or failed rasterization uses draw()'s native-font fallback.
+        if(mask.alpha.empty() || cost>maxBytes) {static const Mask empty;return empty;}
+        while(entries.size()>=maxEntries || bytes+cost>maxBytes) {
+            auto oldest=entries.find(recent.back());
+            bytes-=oldest->second.bytes;entries.erase(oldest);recent.pop_back();
+        }
+        recent.push_front(key);
+        auto [it,added]=entries.emplace(std::move(key),Entry{std::move(mask),recent.begin(),cost});
+        bytes+=cost;return it->second.mask;
+    }
+};
 inline const Mask& maskFor(const wchar_t* text,int size) {
-    static std::map<std::pair<int,std::wstring>,Mask> cache;
-    auto [it,fresh]=cache.try_emplace({size,text});
-    if(fresh) it->second=raster(text,size);
-    return it->second;
+    static Cache cache;
+    return cache.get(text,size);
 }
 inline void draw(const wchar_t* text,int x,int y,int color,int size=15,int maxWidth=INT_MAX) {
     const Mask& mask=maskFor(text,size);

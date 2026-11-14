@@ -12,6 +12,32 @@ FootClass* addPassenger(UnitClass* carrier,InfantryTypeClass* type) {
 }
 void sample() {refreshTransportGrants();tickGains();tickStates();dispatch();}
 bool approx(double x,double y) {return std::abs(x-y)<0.001;}
+void checkTheft(UnitClass* donor,TechnoClass* receiver) {
+    auto type=InfantryTypeClass::Find("E1");
+    Skill loot{};loot.id="theftloot";loot.stackMax=10;skills[loot.id]=loot;
+    Skill support{};support.id="theftsupport";support.trigger="whilestate";
+    support.transportPassives={loot.id};support.transportStack=true;skills[support.id]=support;
+    auto a=addPassenger(donor,type),b=addPassenger(donor,type);
+    check(a && b,"theft passengers");
+    for(auto p:{a,b}) grantToUnit(p,PassiveGrant{{support.id},-1});
+    refreshTransportGrants();
+    PassiveAction action{};action.passiveList={loot.id};action.amount=1;
+    check(stackCount(donor->UniqueID,loot.id)==2 && !stealPassives(receiver,donor,action) &&
+        !stealPassives(receiver,donor,action) && stackCount(receiver->UniqueID,loot.id)==0,"support layers cannot be duplicated");
+    changeStacks(donor->UniqueID,loot.id,2,10);
+    check(stealPassives(receiver,donor,action) && stackCount(donor->UniqueID,loot.id)==3 &&
+        stackCount(receiver->UniqueID,loot.id)==1,"mixed source manual theft");
+    check(stealPassives(receiver,donor,action) && !stealPassives(receiver,donor,action) &&
+        stackCount(donor->UniqueID,loot.id)==2 && ownsPassive(donor,loot.id) &&
+        stackCount(receiver->UniqueID,loot.id)==2,"support survives manual theft");
+    refreshTransportGrants();
+    check(!stealPassives(receiver,donor,action) && stackCount(receiver->UniqueID,loot.id)==2,"refresh does not replenish stolen inventory");
+    for(int i=0;i<2;++i) {auto p=donor->RemoveFirstPassenger();p->Transporter=nullptr;p->UnInit();}
+    refreshTransportGrants();
+    check(stackCount(donor->UniqueID,loot.id)==0 && stackCount(receiver->UniqueID,loot.id)==2,"withdrawal preserves transferred manual layers");
+    removeHeldPassive(receiver,loot.id);
+    skills.erase(support.id);skills.erase(loot.id);
+}
 int fullRearm(FootClass* passenger) {
     auto random=ScenarioClass::Instance->Random;
     int oldBurst=passenger->CurrentBurstIndex;
@@ -46,6 +72,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestTransportSupport,5) {
     }
     check(u && enemy,"units");
     if(!loading) {
+        checkTheft(u,enemy);
         check(skills.contains("support") && skills.contains("boost") && skills.contains("nonstacksupport") && !skills.contains("badcycle"),"configuration");
         auto type=InfantryTypeClass::Find("E1");check(type!=nullptr,"infantry type");
         auto a=addPassenger(u,type),b=addPassenger(u,type);

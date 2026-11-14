@@ -1,0 +1,1665 @@
+{
+  "Version": 1,
+  "Units": [
+    "LuaRuntimeTest",
+    "ResearchAudioTest",
+    "ResearchTextTest",
+    "ResourceCacheTest",
+    "ResearchModelTest",
+    "ActionArgumentsTest"
+  ],
+  "Suites": {
+    "quick": [
+      "unit"
+    ],
+    "smoke": [
+      "unit",
+      "health-formula",
+      "cloakable",
+      "lua-skills",
+      "research-cost",
+      "action-sequence"
+    ],
+    "passives": [
+      "condition-formula",
+      "passive-gained",
+      "reapply",
+      "passive-stacks",
+      "aura",
+      "transport-support",
+      "spawn-passives",
+      "signal",
+      "promotion",
+      "deployed-state",
+      "immune",
+      "cloakable",
+      "before-damage",
+      "before-fire",
+      "multi-shot",
+      "fire-rate",
+      "weapon-range",
+      "max-health",
+      "passenger-consume"
+    ],
+    "lua": [
+      "lua-skills",
+      "lua-timers",
+      "lua-anim",
+      "active-skills",
+      "area-barrage",
+      "map-lua",
+      "action-sequence"
+    ],
+    "research": [
+      "research-hud",
+      "research-cost",
+      "building-reward",
+      "building-upgrade",
+      "conversion",
+      "passive-gained"
+    ],
+    "visuals": [
+      "hex-icons",
+      "passive-animations",
+      "projectiles",
+      "tornado"
+    ],
+    "movement": [
+      "force-move",
+      "chrono-teleport",
+      "tornado"
+    ],
+    "network": [
+      "multiplayer"
+    ],
+    "full": [
+      "unit",
+      "action-sequence",
+      "active-skills",
+      "area-barrage",
+      "aura",
+      "before-damage",
+      "before-fire",
+      "building-reward",
+      "building-upgrade",
+      "chrono-teleport",
+      "cloakable",
+      "condition-formula",
+      "conversion",
+      "deployed-state",
+      "fire-rate",
+      "force-move",
+      "health-formula",
+      "hex-icons",
+      "immune",
+      "lua-anim",
+      "lua-skills",
+      "lua-timers",
+      "map-lua",
+      "max-health",
+      "multi-shot",
+      "multiplayer",
+      "passenger-consume",
+      "passive-animations",
+      "passive-gained",
+      "passive-stacks",
+      "power-state",
+      "projectiles",
+      "promotion",
+      "reapply",
+      "research-cost",
+      "research-hud",
+      "script-grants",
+      "signal",
+      "spawn-passives",
+      "tornado",
+      "transport-support",
+      "weapon-range"
+    ]
+  },
+  "Cases": [
+    {
+      "Name": "action-sequence",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Sequence.sav",
+      "Log": "sequence.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": true,
+      "Expected": {
+        "fresh": [
+          "PASS delayed damage",
+          "PASS retired cast",
+          "Ares 0 Phobos 0",
+          "PASS presentation config",
+          "PASS global shake and offscreen local shake",
+          "PASS native positional sound from INI and Lua",
+          "PASS one-shot unit and point animations",
+          "PASS particle systems at both locations",
+          "PASS visible local shake",
+          "PASS local preference preserves action success",
+          "PASS death position without owner object",
+          "PASS directed particle target and owner",
+          "PASS ordered spatial equivalence",
+          "PASS detached unit in same frame",
+          "PASS detached move in same frame",
+          "PASS upper cell chain",
+          "PASS airborne query target",
+          "PASS new aircraft in next snapshot",
+          "PASS benchmark counts",
+          "PASS 50 percent verses on one target",
+          "PASS allies excluded",
+          "PASS neutral and enemy flags",
+          "PASS owner override",
+          "PASS InfDeath 3 explosion",
+          "PASS InfDeath 4 flames",
+          "PASS native provider grant",
+          "PASS duplicate command queued",
+          "PASS two sequence types",
+          "PASS first selected index",
+          "PASS second selected index",
+          "PASS reinforcement and credits",
+          "PASS independent charge",
+          "PASS saved after launch"
+        ],
+        "load": [
+          "PASS delayed damage",
+          "PASS retired cast"
+        ]
+      },
+      "ExpectedPhobos": {
+        "fresh": [
+          "PASS delayed damage",
+          "PASS retired cast",
+          "Ares 1 Phobos 1",
+          "PASS presentation config",
+          "PASS global shake and offscreen local shake",
+          "PASS native positional sound from INI and Lua",
+          "PASS one-shot unit and point animations",
+          "PASS particle systems at both locations",
+          "PASS visible local shake",
+          "PASS local preference preserves action success",
+          "PASS death position without owner object",
+          "PASS directed particle target and owner",
+          "PASS ordered spatial equivalence",
+          "PASS detached unit in same frame",
+          "PASS detached move in same frame",
+          "PASS upper cell chain",
+          "PASS airborne query target",
+          "PASS new aircraft in next snapshot",
+          "PASS benchmark counts",
+          "PASS 50 percent verses on one target",
+          "PASS allies excluded",
+          "PASS neutral and enemy flags",
+          "PASS owner override",
+          "PASS InfDeath 3 explosion",
+          "PASS InfDeath 4 flames",
+          "PASS native provider grant",
+          "PASS duplicate command queued",
+          "PASS two sequence types",
+          "PASS first selected index",
+          "PASS second selected index",
+          "PASS reinforcement and credits",
+          "PASS independent charge",
+          "PASS saved after launch"
+        ]
+      }
+    },
+    {
+      "Name": "active-skills",
+      "Kind": "game",
+      "Map": "maps/Starfall_AreaBarrage.map",
+      "Save": "Active.sav",
+      "Log": "active.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS both skills bound",
+          "PASS INI binding overrides legacy",
+          "PASS INI display and parameters",
+          "PASS shared script variant",
+          "PASS independent skill parameters",
+          "PASS canceled without orders",
+          "PASS single nearest caster",
+          "PASS both directional shots",
+          "PASS unit target",
+          "PASS exact clicked cell",
+          "PASS immediate cast once",
+          "PASS ordinary terrain issues a native order",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS cooldown after load",
+          "PASS resumed barrage"
+        ]
+      }
+    },
+    {
+      "Name": "area-barrage",
+      "Kind": "game",
+      "Map": "maps/Starfall_AreaBarrage.map",
+      "Save": "Barrage.sav",
+      "Log": "barrage.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS bindings",
+          "PASS V3 barrage",
+          "PASS Grizzly barrage",
+          "PASS visible impacts",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS saved map binding on new tank",
+          "PASS real ground attack after load"
+        ]
+      }
+    },
+    {
+      "Name": "aura",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Aura.sav",
+      "Log": "aura.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS local range and overlap",
+          "PASS global filters",
+          "PASS atomic handoff",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS loaded sample",
+          "PASS sampled exit",
+          "PASS real reacquisition",
+          "PASS source destruction"
+        ]
+      }
+    },
+    {
+      "Name": "before-damage",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "BeforeDamage.sav",
+      "Log": "before-damage.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS config",
+          "PASS zero damage ignored",
+          "PASS lethal blocked",
+          "PASS blocked no damage event",
+          "PASS baseline",
+          "PASS second same frame hits",
+          "PASS unblocked damage event",
+          "PASS formula after armor",
+          "PASS formula chain",
+          "PASS filter ignored friendly",
+          "PASS second enemy hit blocked",
+          "PASS invalid formula skipped",
+          "PASS forced damage bypasses",
+          "PASS forced hit preserves charge",
+          "PASS block cooldown",
+          "PASS extra health lethal blocked",
+          "PASS extra health next hit",
+          "PASS missing attacker skips formula",
+          "PASS attacker health formula",
+          "PASS stack damage formula",
+          "PASS building lethal blocked",
+          "PASS outgoing config",
+          "PASS area per victim threshold",
+          "PASS outgoing before incoming",
+          "PASS no attacker skips finisher",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS trigger count loaded",
+          "PASS blocked charge remains spent",
+          "PASS outgoing grant loaded"
+        ]
+      }
+    },
+    {
+      "Name": "before-fire",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "BeforeFire.sav",
+      "Log": "before-fire.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS replacement fired",
+          "PASS burst maintained",
+          "PASS remaining burst retained",
+          "PASS next volley restores original",
+          "PASS invalid target fallback",
+          "PASS range fallback",
+          "PASS onfire still triggers",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS volley restored",
+          "PASS volley shot after load"
+        ]
+      }
+    },
+    {
+      "Name": "building-reward",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "BuildingReward.sav",
+      "Log": "building-reward.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS defaults closed",
+          "PASS independent flags",
+          "PASS spy privilege revoked on transfer",
+          "PASS engineer privilege",
+          "PASS claimed once",
+          "PASS native engineer capture",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS saved permissions",
+          "PASS saved claimed",
+          "PASS loaded no duplicate"
+        ]
+      }
+    },
+    {
+      "Name": "building-upgrade",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "BuildingUpgrade.sav",
+      "Log": "building-upgrade.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS upgraded target receives result",
+          "PASS no repeat after load",
+          "PASS failed upgrade ignored",
+          "PASS native upgrade event",
+          "PASS saved pending event"
+        ],
+        "load": [
+          "PASS upgraded target receives result",
+          "PASS no repeat after load"
+        ]
+      }
+    },
+    {
+      "Name": "chrono-teleport",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Teleport.sav",
+      "Log": "teleport.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS all arrive with original identity",
+          "PASS blocker and passengers intact",
+          "PASS config validation",
+          "PASS exact destination",
+          "PASS distinct fallback",
+          "PASS Lua moves target",
+          "PASS saved in transit"
+        ],
+        "load": [
+          "PASS all arrive with original identity",
+          "PASS blocker and passengers intact"
+        ]
+      }
+    },
+    {
+      "Name": "cloakable",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Cloakable.sav",
+      "Log": "cloakable.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": true,
+      "Expected": {
+        "fresh": [
+          "PASS cloak and capability survive save",
+          "PASS overlapping source remains",
+          "PASS native capability coexists",
+          "PASS infantry building aircraft capability",
+          "PASS other class withdrawal",
+          "PASS destroyed object cleaned",
+          "PASS off-map capability suspended",
+          "PASS return restores active source",
+          "PASS explicit removal withdraws capability",
+          "PASS regrant restores capability",
+          "PASS native capability survives expiry",
+          "PASS last source expires",
+          "PASS native decloak and independent capability retained",
+          "PASS configuration validation",
+          "PASS delayed entry and no switch",
+          "PASS delay remains pending",
+          "PASS same type isolation without native flag writes",
+          "PASS native cloak transition",
+          "PASS truncated cloak data is atomic",
+          "PASS zero cloak ID rejected atomically",
+          "PASS previous save format accepted",
+          "PASS cloak capability restored immediately",
+          "PASS saved while cloaked"
+        ],
+        "load": [
+          "PASS cloak and capability survive save",
+          "PASS overlapping source remains",
+          "PASS native capability coexists",
+          "PASS infantry building aircraft capability",
+          "PASS other class withdrawal",
+          "PASS destroyed object cleaned",
+          "PASS off-map capability suspended",
+          "PASS return restores active source",
+          "PASS explicit removal withdraws capability",
+          "PASS regrant restores capability",
+          "PASS native capability survives expiry",
+          "PASS last source expires",
+          "PASS native decloak and independent capability retained"
+        ]
+      }
+    },
+    {
+      "Name": "condition-formula",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ConditionFormula.sav",
+      "Log": "condition-formula.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS below stack threshold",
+          "PASS inclusive stack threshold",
+          "PASS stack withdrawal",
+          "PASS ammo passengers health true",
+          "PASS ammo below threshold",
+          "PASS empty passenger false",
+          "PASS health above threshold",
+          "PASS unlimited ammo minus one",
+          "PASS missing target false",
+          "PASS live target condition",
+          "PASS lost target false",
+          "PASS event condition snapshot",
+          "PASS event numeric formula snapshot",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS stack and condition loaded"
+        ]
+      }
+    },
+    {
+      "Name": "conversion",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Conversion.sav",
+      "Log": "conversion.log",
+      "Phases": [
+        "fresh",
+        "without-phobos",
+        "without-phobos-load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS legacy Phobos unavailable"
+        ],
+        "without-phobos": [
+          "PASS compatible fixture",
+          "PASS unsupported complex type skipped",
+          "PASS conversion",
+          "PASS identity and ownership",
+          "PASS house tracking",
+          "PASS passive retained",
+          "PASS passive action conversion",
+          "PASS infantry conversion",
+          "PASS aircraft conversion",
+          "PASS research conversion",
+          "PASS saved",
+          "PASS builtin health and ammo"
+        ],
+        "without-phobos-load": [
+          "PASS loaded conversion",
+          "PASS loaded passive"
+        ],
+        "load": [
+          "PASS loaded conversion",
+          "PASS loaded passive"
+        ]
+      },
+      "PhobosPhases": [
+        "fresh",
+        "load"
+      ],
+      "ExpectedPhobos": {
+        "fresh": [
+          "PASS public Phobos API",
+          "PASS compatible fixture",
+          "PASS conversion",
+          "PASS identity and ownership",
+          "PASS house tracking",
+          "PASS passive retained",
+          "PASS passive action conversion",
+          "PASS infantry conversion",
+          "PASS aircraft conversion",
+          "PASS research conversion",
+          "PASS saved"
+        ]
+      }
+    },
+    {
+      "Name": "deployed-state",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "DeployedState.sav",
+      "Log": "deployment.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS deployed after save",
+          "PASS packed up",
+          "PASS redeployed",
+          "PASS initial posture",
+          "PASS deployed effects",
+          "PASS delay",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS deployed after save",
+          "PASS packed up",
+          "PASS redeployed"
+        ]
+      }
+    },
+    {
+      "Name": "fire-rate",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "FireRate.sav",
+      "Log": "rate.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS retained rate",
+          "PASS state exit",
+          "PASS lower limit",
+          "PASS upper limit",
+          "PASS stacked rate",
+          "PASS burst cadence",
+          "PASS real shots",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS retained rate",
+          "PASS state exit",
+          "PASS lower limit"
+        ]
+      }
+    },
+    {
+      "Name": "force-move",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ForceMove.sav",
+      "Log": "force-move.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS overlap in transit without damage",
+          "PASS landing crushes occupant only",
+          "PASS building hurt and falling unit lost",
+          "PASS invalid terrain landing",
+          "PASS crossed unit retains occupation",
+          "PASS held and settling tilt",
+          "PASS eased last quarter",
+          "PASS all curves arrive",
+          "PASS INI and Lua disabled tilt",
+          "PASS released before upright",
+          "PASS resumed motion",
+          "PASS damage during forced move",
+          "PASS airborne replacement",
+          "PASS airborne collision waits for landing",
+          "PASS Lua offset lands vehicle at destination cell center",
+          "PASS orders enabled after landing",
+          "PASS pull stops at occupied center",
+          "PASS interrupt moving unit",
+          "PASS canceled path stays canceled",
+          "PASS interrupted vehicle reaches new order",
+          "PASS weight and iron configuration",
+          "PASS equal weight rejected",
+          "PASS heavier target retains control",
+          "PASS iron immune by default",
+          "PASS INI permits light iron target",
+          "PASS rejected replacement preserves motion",
+          "PASS Lua overrides weight and iron",
+          "PASS immediate directional tilt",
+          "PASS tilted voxel pixels only",
+          "PASS eased first quarter",
+          "PASS Lua and INI start",
+          "PASS orders rejected",
+          "PASS wall stops ground push",
+          "PASS saved in flight"
+        ],
+        "load": [
+          "PASS overlap in transit without damage",
+          "PASS landing crushes occupant only",
+          "PASS building hurt and falling unit lost",
+          "PASS invalid terrain landing",
+          "PASS crossed unit retains occupation",
+          "PASS held and settling tilt",
+          "PASS eased last quarter",
+          "PASS all curves arrive",
+          "PASS INI and Lua disabled tilt",
+          "PASS released before upright",
+          "PASS resumed motion",
+          "PASS damage during forced move",
+          "PASS airborne replacement",
+          "PASS airborne collision waits for landing",
+          "PASS Lua offset lands vehicle at destination cell center",
+          "PASS orders enabled after landing",
+          "PASS pull stops at occupied center",
+          "PASS interrupt moving unit",
+          "PASS canceled path stays canceled",
+          "PASS interrupted vehicle reaches new order"
+        ]
+      }
+    },
+    {
+      "Name": "health-formula",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "HealthFormula.sav",
+      "Log": "formula.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS retained fractional stats",
+          "PASS retained state",
+          "PASS healed state",
+          "PASS legacy integer stats",
+          "PASS legacy shield records skipped",
+          "PASS valid save commits all staged state",
+          "PASS removed shield action rejected",
+          "PASS grammar",
+          "PASS comparison true",
+          "PASS comparison false",
+          "PASS invalid conditional syntax",
+          "PASS if distance threshold",
+          "PASS if lazy nested branches",
+          "PASS conditional state without target",
+          "PASS conditional distance state",
+          "PASS conditional event without target",
+          "PASS target health grammar",
+          "PASS target maximum increased",
+          "PASS dead target snapshot",
+          "PASS target event snapshot",
+          "PASS target event formula results",
+          "PASS target state current health",
+          "PASS target state live update",
+          "PASS target state no target",
+          "PASS target missing skips action",
+          "PASS damage grammar",
+          "PASS damage trigger validation",
+          "PASS damage formula results",
+          "PASS distance grammar",
+          "PASS distance geometry and attacker",
+          "PASS distance state target",
+          "PASS distance state no target",
+          "PASS distance missing target",
+          "PASS distance event snapshot",
+          "PASS rejected invalid skill",
+          "PASS event snapshot",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS retained fractional stats",
+          "PASS retained state",
+          "PASS healed state",
+          "PASS legacy integer stats",
+          "PASS legacy shield records skipped",
+          "PASS valid save commits all staged state",
+          "PASS distance result after load"
+        ]
+      }
+    },
+    {
+      "Name": "hex-icons",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ScriptGrantTest.sav",
+      "Log": "hex-icons.log",
+      "Phases": [
+        "fresh"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS atlas and rarity",
+          "PASS PCX and fallback",
+          "PASS bounded image cache and LRU",
+          "PASS image reload and card cache cleanup"
+        ],
+        "load": [
+          "PASS atlas and rarity",
+          "PASS PCX and fallback",
+          "PASS bounded image cache and LRU",
+          "PASS image reload and card cache cleanup"
+        ]
+      }
+    },
+    {
+      "Name": "immune",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Immune.sav",
+      "Log": "immune.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": true,
+      "Expected": {
+        "fresh": [
+          "PASS EMP restored",
+          "PASS EMP overlapping source retained",
+          "PASS EMP release",
+          "PASS iron timer and protection restored",
+          "PASS iron expires naturally",
+          "PASS loaded immunity",
+          "PASS one source left",
+          "PASS immunity ends",
+          "PASS innate immunity preserved",
+          "PASS mind loaded",
+          "PASS mind one source left",
+          "PASS mind immunity ends",
+          "PASS mind capture after expiry",
+          "PASS mind bullet after expiry",
+          "PASS mind release after expiry",
+          "PASS EMP aircraft crashes",
+          "PASS EMP locks vehicle",
+          "PASS iron duration validation",
+          "PASS longer iron preserved",
+          "PASS force shield preserved",
+          "PASS apply iron to target",
+          "PASS delayed entry",
+          "PASS same type isolation",
+          "PASS bypass",
+          "PASS native cursor",
+          "PASS mind delay",
+          "PASS mind isolation",
+          "PASS mind can capture",
+          "PASS mind direct blocked",
+          "PASS mind direct peer captured",
+          "PASS mind direct peer released",
+          "PASS mind bullet blocked",
+          "PASS mind peer captured",
+          "PASS mind peer released",
+          "PASS permanent mind bullet blocked",
+          "PASS permanent mind peer captured",
+          "PASS mind dominator blocked",
+          "PASS mind dominator peer captured",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS EMP restored",
+          "PASS EMP overlapping source retained",
+          "PASS EMP release",
+          "PASS iron timer and protection restored",
+          "PASS iron expires naturally",
+          "PASS loaded immunity",
+          "PASS one source left",
+          "PASS immunity ends",
+          "PASS innate immunity preserved",
+          "PASS mind loaded",
+          "PASS mind one source left",
+          "PASS mind immunity ends",
+          "PASS mind capture after expiry",
+          "PASS mind bullet after expiry",
+          "PASS mind release after expiry"
+        ]
+      }
+    },
+    {
+      "Name": "lua-anim",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "LuaAnim.sav",
+      "Log": "lua-anim.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS started",
+          "PASS invalid handles safe",
+          "PASS owner cleanup",
+          "PASS short survives one frame",
+          "PASS short expires on schedule",
+          "PASS midpoint",
+          "PASS short expiry",
+          "PASS saved",
+          "PASS endpoint",
+          "PASS removed once",
+          "PASS legacy save compatible",
+          "PASS missing native image fixture"
+        ],
+        "load": [
+          "PASS restored midpoint",
+          "PASS endpoint",
+          "PASS removed once",
+          "PASS legacy save compatible"
+        ]
+      }
+    },
+    {
+      "Name": "lua-skills",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "LuaSkills.sav",
+      "Log": "lua-skills.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS registration",
+          "PASS deploy promotion and filters",
+          "PASS promotion event",
+          "PASS synchronous damage",
+          "PASS error isolation",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS loaded action chain",
+          "PASS Lua iron curtain",
+          "PASS no duplicate callback"
+        ]
+      }
+    },
+    {
+      "Name": "lua-timers",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "LuaTimers.sav",
+      "Log": "lua-timers.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS eight strikes per caster",
+          "PASS saved",
+          "PASS twenty strikes per caster",
+          "PASS timer data and cancellation",
+          "PASS owner cleanup"
+        ],
+        "load": [
+          "PASS twelve remaining strikes per caster",
+          "PASS identical frames and impact cells",
+          "PASS timer data and cancellation"
+        ]
+      }
+    },
+    {
+      "Name": "map-lua",
+      "Kind": "game",
+      "Map": "game/map-lua/MapLua.map",
+      "Save": "MapLua.sav",
+      "Log": "map-lua.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS scheduled execution",
+          "PASS native map trigger and map configuration",
+          "PASS map script dispatch",
+          "PASS object and position dispatch",
+          "PASS saved pending"
+        ],
+        "load": [
+          "PASS scheduled execution"
+        ]
+      }
+    },
+    {
+      "Name": "max-health",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "MaxHealth.sav",
+      "Log": "hp.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS retained points",
+          "PASS minimum and clamp",
+          "PASS lethal",
+          "PASS grant and isolation",
+          "PASS native repair",
+          "PASS exact damage",
+          "PASS no damage on reduction",
+          "PASS engine growth 19",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS retained points",
+          "PASS minimum and clamp",
+          "PASS lethal",
+          "PASS engine count retained",
+          "PASS engine growth 20",
+          "PASS engine growth capped"
+        ]
+      }
+    },
+    {
+      "Name": "multi-shot",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "MultiShot.sav",
+      "Log": "multishot.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS zero stacks",
+          "PASS lone target",
+          "PASS nearest extra",
+          "PASS two distinct extras",
+          "PASS fewer enemies than layers",
+          "PASS conditional exit",
+          "PASS three extra without stacks",
+          "PASS fixed plus formula",
+          "PASS fraction rounded down",
+          "PASS formula follows stacks",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS restored layered shot",
+          "PASS one round consumed",
+          "PASS removed passive",
+          "PASS both extra targets took damage"
+        ]
+      }
+    },
+    {
+      "Kind": "network",
+      "Name": "multiplayer",
+      "Tags": [
+        "network"
+      ]
+    },
+    {
+      "Name": "passenger-consume",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "PassengerConsume.sav",
+      "Log": "passenger-consume.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS two passengers",
+          "PASS invalid nested list remains intact",
+          "PASS nested subtree removed and sibling retained",
+          "PASS one passenger consumed",
+          "PASS passenger removed",
+          "PASS target cost and original event isolated",
+          "PASS removed target is not original enemy",
+          "PASS consumed event snapshot",
+          "PASS same action list steals direct passenger stacks",
+          "PASS queued abilities share remaining stacks and zero stack ownership",
+          "PASS consumed event reward",
+          "PASS empty skips chained reward",
+          "PASS open transport cleanup",
+          "PASS consume target carrier",
+          "PASS target carrier receives event",
+          "PASS building passenger consumed",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS load pending event",
+          "PASS loaded event uses passenger snapshot",
+          "PASS loaded remaining stacks and zero stack ownership",
+          "PASS no duplicate inherited stacks",
+          "PASS event once after load"
+        ]
+      }
+    },
+    {
+      "Name": "passive-animations",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "PassiveAnimations.sav",
+      "Log": "animations.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS retained after save",
+          "PASS condition exit",
+          "PASS cloak hides animation",
+          "PASS uncloak restores animation",
+          "PASS removed passive clears animation",
+          "PASS tint after load",
+          "PASS condition exits restore tint",
+          "PASS cloak hides tint",
+          "PASS iron curtain takes precedence",
+          "PASS lost passive clears tint",
+          "PASS configuration",
+          "PASS initial visibility",
+          "PASS condition and delay",
+          "PASS delayed activation and scale",
+          "PASS animation raster scales",
+          "PASS animation follows live scale",
+          "PASS tint configuration",
+          "PASS voxel body tint",
+          "PASS infantry body tint",
+          "PASS aircraft body tint",
+          "PASS building body tint",
+          "PASS combined tint without invulnerability",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS retained after save",
+          "PASS condition exit",
+          "PASS cloak hides animation",
+          "PASS uncloak restores animation",
+          "PASS removed passive clears animation",
+          "PASS tint after load",
+          "PASS condition exits restore tint",
+          "PASS cloak hides tint",
+          "PASS iron curtain takes precedence",
+          "PASS lost passive clears tint"
+        ]
+      }
+    },
+    {
+      "Name": "passive-gained",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "PassiveGained.sav",
+      "Log": "gained.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS no repeat after save",
+          "PASS pending gain",
+          "PASS reacquisition",
+          "PASS death reward",
+          "PASS actual damage points",
+          "PASS inclusive thresholds",
+          "PASS research and spawn",
+          "PASS source renewal",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS no repeat after save",
+          "PASS pending gain",
+          "PASS reacquisition",
+          "PASS death reward",
+          "PASS actual damage points"
+        ]
+      }
+    },
+    {
+      "Name": "passive-stacks",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "PassiveStacks.sav",
+      "Log": "stacks.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS stack retained",
+          "PASS queued stack snapshot retained",
+          "PASS last source expired",
+          "PASS reacquire starts zero",
+          "PASS reacquire can gain",
+          "PASS explicit removal clears",
+          "PASS explicit reacquire starts zero",
+          "PASS transferred ownership retained",
+          "PASS batch remove skips absent and clears all matches",
+          "PASS stack formula namespace",
+          "PASS configuration validation",
+          "PASS initial zero",
+          "PASS cap and unit isolation",
+          "PASS absent target skipped",
+          "PASS modify another unit",
+          "PASS death stack snapshot",
+          "PASS decrement and formula",
+          "PASS minimum zero",
+          "PASS lost research clears stack",
+          "PASS event stack snapshot",
+          "PASS overlapping source retained",
+          "PASS steal list validation",
+          "PASS partial and zero stack theft",
+          "PASS acquisition sees stolen stacks",
+          "PASS steal respects capacity",
+          "PASS last stack removes only matching passive",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS stack retained",
+          "PASS queued stack snapshot retained",
+          "PASS last source expired",
+          "PASS reacquire starts zero",
+          "PASS reacquire can gain",
+          "PASS explicit removal clears",
+          "PASS explicit reacquire starts zero",
+          "PASS transferred ownership retained",
+          "PASS batch remove skips absent and clears all matches"
+        ]
+      }
+    },
+    {
+      "Name": "power-state",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "PowerState.sav",
+      "Log": "power-state.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS same passive halves output and drain",
+          "PASS stacked output and formula drain",
+          "PASS zero and withdrawal",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS restored grid",
+          "PASS owner transfer",
+          "PASS removed source"
+        ]
+      }
+    },
+    {
+      "Name": "projectiles",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ProjectileScale.sav",
+      "Log": "probe.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "live Cannon 300",
+          "live BlimpBombP 300",
+          "completed 150",
+          "PASS triple explosion width",
+          "unit model 100",
+          "created 100 at distance 480",
+          "damage 0 restored 1 stack 0",
+          "created 300 at distance 480",
+          "saved 1"
+        ],
+        "load": [
+          "live Cannon 300",
+          "live BlimpBombP 300",
+          "completed 150",
+          "PASS triple explosion width",
+          "boot 27 base 1 shots 2"
+        ]
+      }
+    },
+    {
+      "Name": "promotion",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Promotion.sav",
+      "Log": "promotion.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS baseline",
+          "PASS veteran",
+          "PASS elite",
+          "PASS direct elite",
+          "PASS specific only",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS queued promotion after load",
+          "PASS no repeated promotion"
+        ]
+      }
+    },
+    {
+      "Name": "reapply",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Reapply.sav",
+      "Log": "reapply.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS first grant and opt out",
+          "PASS two actions two stacks",
+          "PASS no change no cooldown",
+          "PASS direct and area deduplicated",
+          "PASS independent hits in one frame",
+          "PASS capped renewal",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS restored stacks and duration",
+          "PASS expiry preserves other sources",
+          "PASS aura refresh is not an application",
+          "PASS reacquired at zero"
+        ]
+      }
+    },
+    {
+      "Name": "research-cost",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Prices.sav",
+      "Log": "prices.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS stacked price and category",
+          "PASS other player unchanged",
+          "PASS ownership",
+          "PASS loaded production license",
+          "PASS licensed unit in production queue",
+          "PASS purchase production license",
+          "PASS license respects build limit",
+          "PASS reject invalid price options",
+          "PASS locked order",
+          "PASS refund paid credits",
+          "PASS factory matches quoted price",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS stacked price and category",
+          "PASS other player unchanged",
+          "PASS ownership",
+          "PASS loaded production license",
+          "PASS licensed unit in production queue"
+        ]
+      }
+    },
+    {
+      "Name": "research-hud",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ResearchHUD.sav",
+      "Log": "hud.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS half border",
+          "PASS disabled at 50",
+          "PASS completed icons",
+          "PASS transparent badge on dark plate",
+          "PASS left badge hover",
+          "PASS balance tooltip",
+          "PASS retained refresh limits",
+          "PASS purchase",
+          "PASS purchase animation closes panel",
+          "PASS no alternative preserves allowance",
+          "PASS scenario reset releases voices and cached audio",
+          "PASS configuration reload preserves playing audio and clears cache",
+          "PASS legacy options ignored",
+          "PASS unregistered projects empty",
+          "PASS registered projects restored",
+          "PASS empty border",
+          "PASS native click sound configured",
+          "PASS configured wav loaded",
+          "PASS embedded wav loaded",
+          "PASS embedded wav playback",
+          "PASS wav playback queued",
+          "PASS engine blocks click through",
+          "PASS canceled HUD release cannot issue an order",
+          "PASS card drag cannot select behind",
+          "PASS disabled at 99",
+          "PASS funded mid-click",
+          "PASS full border",
+          "PASS ini disables refresh",
+          "PASS independent refresh",
+          "PASS three free refreshes",
+          "PASS unique eligible projects",
+          "PASS reopen retains cards",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS half border",
+          "PASS disabled at 50",
+          "PASS completed icons",
+          "PASS transparent badge on dark plate",
+          "PASS left badge hover",
+          "PASS balance tooltip",
+          "PASS retained refresh limits",
+          "PASS purchase",
+          "PASS purchase animation closes panel",
+          "PASS no alternative preserves allowance",
+          "PASS scenario reset releases voices and cached audio"
+        ]
+      }
+    },
+    {
+      "Name": "script-grants",
+      "Kind": "game",
+      "Map": "game/script-grants/ScriptGrants.map",
+      "Save": "ScriptGrantTest.sav",
+      "Log": "integration.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "team line=3 success=1 members=2",
+          "frame 510",
+          "sf_fieldreload HTNK 0 = 1",
+          "object action 1",
+          "saved 1",
+          "sf_shotreward MTNK 0 = 2",
+          "sf_closedefense HTNK 0 = 10"
+        ],
+        "load": [
+          "team line=3 success=1 members=2",
+          "frame 510",
+          "sf_fieldreload HTNK 0 = 1",
+          "boot 60",
+          "sf_shotreward MTNK 0 = 2",
+          "sf_closedefense HTNK 0 = 10"
+        ]
+      }
+    },
+    {
+      "Name": "signal",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Signal.sav",
+      "Log": "signal.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS broadcast snapshots",
+          "PASS saved",
+          "PASS signal values",
+          "PASS dead target snapshot",
+          "PASS dead sender snapshot",
+          "PASS limited chain"
+        ],
+        "load": [
+          "PASS signal values loaded",
+          "PASS once after load"
+        ]
+      }
+    },
+    {
+      "Name": "spawn-passives",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Spawns.sav",
+      "Log": "spawns.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS own children only",
+          "PASS child event",
+          "PASS withdraw and preserve other source",
+          "PASS reactivate",
+          "PASS regenerated child inherits",
+          "PASS validate references",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS own children only",
+          "PASS child event",
+          "PASS withdraw and preserve other source",
+          "PASS reactivate",
+          "PASS regenerated child inherits"
+        ]
+      }
+    },
+    {
+      "Name": "tornado",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Tornado.sav",
+      "Log": "tornado.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS moving nearby query",
+          "PASS tornado visual follows eye",
+          "PASS tornado visual removed",
+          "PASS reached peak",
+          "PASS landed and released",
+          "PASS all houses hit along route",
+          "PASS sixteen damage pulses",
+          "PASS picked up along route",
+          "PASS building hit along route",
+          "PASS player drives out after tornado",
+          "PASS tornado WAV configured and decoded",
+          "PASS directional cast",
+          "PASS tornado visual created",
+          "PASS tornado native animation configured",
+          "PASS tornado native animation drawn",
+          "PASS tornado skips heavy and protected targets",
+          "PASS vortex tilts vehicle",
+          "PASS five turn rising spiral",
+          "PASS saved in vortex"
+        ],
+        "load": [
+          "PASS moving nearby query",
+          "PASS tornado visual follows eye",
+          "PASS tornado visual removed",
+          "PASS reached peak",
+          "PASS landed and released",
+          "PASS all houses hit along route",
+          "PASS sixteen damage pulses",
+          "PASS picked up along route",
+          "PASS building hit along route",
+          "PASS player drives out after tornado",
+          "PASS identical flight after load",
+          "PASS tornado visual restored",
+          "PASS restored tornado native animation drawn"
+        ]
+      }
+    },
+    {
+      "Name": "transport-support",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "TransportSupport.sav",
+      "Log": "transport-support.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS configuration",
+          "PASS two passengers stack",
+          "PASS snapshot layers",
+          "PASS passenger withdrawal",
+          "PASS separate layers",
+          "PASS conditional support",
+          "PASS no stack",
+          "PASS passenger combat multipliers",
+          "PASS passenger stats isolated",
+          "PASS passenger healing clears combat bonus",
+          "PASS open topped passenger range boundary",
+          "PASS open topped shot damage",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS load sources",
+          "PASS load no repeated gain",
+          "PASS passenger combat multipliers",
+          "PASS detached limbo clears combat bonus",
+          "PASS unloaded passenger uses normal state",
+          "PASS load removal"
+        ]
+      }
+    },
+    {
+      "Name": "weapon-range",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "WeaponRange.sav",
+      "Log": "range.log",
+      "Phases": [
+        "fresh",
+        "load"
+      ],
+      "Standalone": false,
+      "Expected": {
+        "fresh": [
+          "PASS retained per-unit range",
+          "PASS state exit",
+          "PASS event lower limit",
+          "PASS event upper limit",
+          "PASS two layers",
+          "PASS firing boundary",
+          "PASS acquired distant enemy",
+          "PASS shot at distant enemy",
+          "PASS saved"
+        ],
+        "load": [
+          "PASS retained per-unit range",
+          "PASS state exit",
+          "PASS event lower limit"
+        ]
+      }
+    }
+  ]
+}
