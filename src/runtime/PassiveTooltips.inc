@@ -1,17 +1,3 @@
-bool appendTooltipNumber(std::wstring& line,double value,int decimals) {
-    char digits[320]; // Full fixed representation of a finite double, plus six decimals.
-    auto [end,error]=std::to_chars(digits,digits+sizeof(digits),value,std::chars_format::fixed,decimals<0?2:decimals);
-    if(error!=std::errc{}) return false;
-    if(decimals<0) {
-        while(end>digits && end[-1]=='0') --end;
-        if(end>digits && end[-1]=='.') --end;
-    }
-    const char* first=digits;
-    if(*first=='-' && std::none_of(first+1,static_cast<const char*>(end),[](char c){return c>='1' && c<='9';})) ++first;
-    while(first!=end) line.push_back(*first++);
-    return true;
-}
-
 const wchar_t* unitHoverText(TechnoClass* unit,const wchar_t* nativeName) {
     if(!unit || !nativeName || !*nativeName || activeTooltips.empty()) return nativeName;
     auto it=activeTooltips.find(unit->UniqueID);
@@ -32,7 +18,7 @@ const wchar_t* unitHoverText(TechnoClass* unit,const wchar_t* nativeName) {
             line+=part.literal;
             if(part.number.expression.empty()) continue;
             auto value=stateFormulaValue(part.number,unit,unit->Target,hp,skill->id,true);
-            if(!value || !appendTooltipNumber(line,*value,skill->tooltipDecimals)) {line.clear();break;}
+            if(!value || !ConfigText::appendTooltipNumber(line,*value,skill->tooltipDecimals)) {line.clear();break;}
         }
         auto count=std::min(line.size(),limit-text.size()-1);
         if(count && line[count-1]>=0xD800 && line[count-1]<=0xDBFF) --count;

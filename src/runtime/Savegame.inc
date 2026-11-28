@@ -20,6 +20,17 @@ constexpr DWORD transportCapacitySaveTag=0x6B504653;
 constexpr DWORD bombSnapshotSaveTag=0x6C504653;
 constexpr DWORD deathTypeSaveTag=0x6F504653;
 constexpr DWORD mountSaveTag=0x71504653;
+constexpr DWORD landingSaveTag=0x72504653;
+constexpr DWORD splitTargetsSaveTag=0x73504653;
+constexpr DWORD ejectSpeedSaveTag=0x78504653;
+constexpr DWORD researchCounterSaveTag=0x79504653;
+constexpr DWORD repeatResearchSaveTag=0x7C504653;
+constexpr DWORD researchBondSaveTag=0x7B504653;
+constexpr DWORD researchStageSaveTag=0x7A504653;
+constexpr DWORD ejectSaveTag=0x77504653;
+constexpr DWORD jumpEffectSaveTag=0x76504653;
+constexpr DWORD jumpSaveTag=0x75504653;
+constexpr DWORD tauntSaveTag=0x74504653;
 constexpr DWORD deathTeamSaveTag=0x70504653;
 constexpr DWORD replacedResearchSaveTag=0x6E504653;
 constexpr DWORD freeResearchSaveTag=0x6D504653;
@@ -84,9 +95,72 @@ struct Reader {
         pos+=n; return s;
     }
 };
+#include "../../modules/ActSp/UnitOrderSave.inc"
+constexpr wchar_t flightStreamName[]=L"Starfall.ProjectileScript";
+bool saveFlightState(IStorage* storage) {
+    Writer w;
+    w.word(1);w.word(static_cast<DWORD>(ProjectileScript::mapSpeeds.size()));
+    for(const auto& [key,speed]:ProjectileScript::mapSpeeds) {w.str(key);w.word(speed);}
+    w.word(static_cast<DWORD>(ProjectileScript::flights.size()));
+    for(const auto& [id,f]:ProjectileScript::flights) {
+        w.word(id);w.word(f.age);w.word(f.life);w.word(f.nextTick);w.word(f.weaponSpeed);w.real(f.launchSpeed);
+        for(auto v:{f.velocity,f.remainder}) {w.real(v.X);w.real(v.Y);w.real(v.Z);}
+        w.word(f.aim.X);w.word(f.aim.Y);w.word(f.aim.Z);w.word(f.target.m_ID);w.word(f.target.m_RTTI);
+        LuaTaskData::write(w,f.state);
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    IStream* stream=nullptr;
+    if(FAILED(storage->CreateStream(flightStreamName,STGM_CREATE|STGM_WRITE|STGM_SHARE_EXCLUSIVE,0,0,&stream))) return false;
+    ULONG n=0;auto size=static_cast<ULONG>(w.bytes.size());
+    bool ok=SUCCEEDED(stream->Write(w.bytes.data(),size,&n)) && n==size && SUCCEEDED(stream->Commit(STGC_DEFAULT));
+    stream->Release();return ok;
+}
+bool loadFlightState(IStorage* storage) {
+    IStream* stream=nullptr;
+    auto hr=storage->OpenStream(flightStreamName,nullptr,STGM_READ|STGM_SHARE_EXCLUSIVE,0,&stream);
+    if(hr==STG_E_FILENOTFOUND) return true;
+    if(FAILED(hr)) return false;
+    STATSTG stat{};ULONG got=0;
+    bool ok=SUCCEEDED(stream->Stat(&stat,STATFLAG_NONAME)) && stat.cbSize.QuadPart<=64*1024*1024;
+    vector<BYTE> bytes(ok?stat.cbSize.LowPart:0);
+    ok=ok && SUCCEEDED(stream->Read(bytes.data(),static_cast<ULONG>(bytes.size()),&got)) && got==bytes.size();
+    stream->Release();
+    Reader r{bytes};if(!ok || r.word()!=1) return false;
+    decltype(ProjectileScript::mapSpeeds) overrides;
+    for(auto n=r.word();n && r.ok;--n) {
+        auto key=r.str();int speed=int(r.word());
+        if(key.empty() || !overrides.emplace(key,speed).second) return false;
+    }
+    decltype(ProjectileScript::flights) restored;
+    for(auto n=r.word();r.ok && n--;) {
+        auto id=r.word();ProjectileScript::Flight f;
+        f.age=r.word();f.life=r.word();f.nextTick=r.word();f.weaponSpeed=r.word();f.launchSpeed=r.real();
+        f.velocity={r.real(),r.real(),r.real()};f.remainder={r.real(),r.real(),r.real()};
+        f.aim={int(r.word()),int(r.word()),int(r.word())};f.target.m_ID=r.word();
+        auto kind=r.word();f.target.m_RTTI=static_cast<unsigned char>(kind);
+        f.state=LuaTaskData::read(r);
+        if(!id || (kind && kind!=unsigned(AbstractType::Abstract) && kind!=unsigned(AbstractType::Cell)) ||
+           f.age<0 || f.age>=f.life || f.life>1000000 || f.nextTick<0 ||
+           ProjectileScript::length(f.velocity)>4000000 || ProjectileScript::length(f.remainder)>1 ||
+           f.state.type!=LuaTaskData::Type::Table || !restored.emplace(id,std::move(f)).second) return false;
+    }
+    if(!r.ok || r.pos!=bytes.size()) return false;
+    ProjectileScript::mapSpeeds.swap(overrides);
+    ProjectileScript::flights.swap(restored);return true;
+}
+
 bool saveState(IStream* stream) {
     if(!stream) return false;
-    const bool saveMounts=!UnitMount::links.empty();
+    const bool saveRepeats=!Research::repeatCounts.empty();
+    const bool saveBonds=saveRepeats || !Research::bondProgress.empty();
+    const bool saveStages=saveBonds || !Research::stageProgress.empty();
+    const bool saveCounters=saveStages || !Research::counterValues.empty();
+    const bool saveEject=saveCounters || !ForceMove::ejectOrders.empty() || !ForceMove::descending.empty() ||
+        std::any_of(ForceMove::motions.begin(),ForceMove::motions.end(),[](const auto& e){return e.second.landing && e.second.landing->openHeight;});
+    const bool saveJumps=saveEject || std::any_of(ForceMove::motions.begin(),ForceMove::motions.end(),[](const auto& e){return e.second.landing.has_value();});
+    const bool saveSplits=saveJumps || !Taunt::controls.empty() || !splitTargets.empty();
+    const bool saveLandings=saveSplits || std::any_of(pending.begin(),pending.end(),[](const Event& e){return e.landing.has_value();});
+    const bool saveMounts=saveLandings || !UnitMount::links.empty();
     const bool saveDeathTypes=saveMounts || std::any_of(pending.begin(),pending.end(),[](const Event& e){return !e.deathType.empty();});
     const bool saveDeathTeams=saveMounts || std::any_of(pending.begin(),pending.end(),[](const Event& e){return e.deathTeam!=0;});
     Writer w;
@@ -97,6 +171,19 @@ bool saveState(IStream* stream) {
     }
     w.word(static_cast<DWORD>(pending.size()));
     for(const Event& e:pending) {
+        if(saveLandings) {
+            w.word(e.landing.has_value());
+            if(e.landing) {
+                const auto& l=*e.landing;
+                w.word(l.unit);w.word(l.house);w.word(l.started);w.word(l.cell.X);w.word(l.cell.Y);
+                w.str(l.from);w.str(l.to);w.str(l.skill);w.word(l.nextDraw);
+                w.word(e.consumedTarget);w.str(e.consumedKind);w.word(e.consumedOwner);
+                w.word(e.consumedPosition.X);w.word(e.consumedPosition.Y);w.word(e.consumedPosition.Z);
+                bool extraSnapshot=e.trigger!="onpassengerconsumed" && e.passengerPassives;
+                w.word(extraSnapshot?static_cast<DWORD>(e.passengerPassives->size()):0);
+                if(extraSnapshot) for(const auto& [skill,layers]:*e.passengerPassives) {w.str(skill);w.word(layers);}
+            }
+        }
         w.word(e.blastCenter.has_value());
         if(e.blastCenter) {w.word(e.blastCenter->X);w.word(e.blastCenter->Y);w.word(e.blastCenter->Z);}
         w.str(e.trigger); w.str(e.kind); w.str(e.relation);
@@ -253,6 +340,18 @@ bool saveState(IStream* stream) {
         w.word(id);
         w.word(m.lastFrame);
         for(int v:{m.x,m.y,m.dx,m.dy,m.height,m.startHeight,m.duration,m.elapsed,int(m.blocked),int(m.tilt),int(m.easing),int(m.ignoreCollision),m.airborneHeight,int(m.nativeTracked)}) w.word(v);
+        if(saveJumps) {
+            w.word(m.landing.has_value());
+            if(m.landing) {
+                const auto& l=*m.landing;
+                w.word(l.startZ);w.word(l.endZ);w.word(l.level);w.word(l.deck);w.word(l.bridge);w.word(l.crush);
+                w.str(l.effect.anim);w.str(l.effect.sound);
+                if(saveEject) {
+                    w.word(l.openHeight);
+                    if(l.openHeight) w.real(l.ejectSpeed);
+                }
+            }
+        }
     }
     w.word(static_cast<DWORD>(ForceMove::settling.size()));
     for(const auto& [id,lean]:ForceMove::settling) {
@@ -283,7 +382,7 @@ bool saveState(IStream* stream) {
     // Even a free-rewards-only house needs the new format to preserve round zero.
     const bool saveReplacements=saveDeathTypes || !Research::retired.empty();
     const bool saveTickets=saveReplacements || Research::lastTicket!=0;
-    const bool saveResearchRounds=saveTickets || !bombSnapshots.empty() || !mapPassengersBySize.empty() || Research::sharedRaritySequence || Research::raritySequenceSeed.has_value() || !Research::completedRounds.empty() ||
+    const bool saveResearchRounds=saveTickets || !bombSnapshots.empty() || !mapPassengersBySize.empty() || Research::sharedRaritySequence || Research::mixedRarityPool || Research::raritySequenceSeed.has_value() || !Research::completedRounds.empty() ||
         std::any_of(Research::buildingRewards.begin(),Research::buildingRewards.end(),[](const auto& entry){return entry.second.authorized>=0;}) ||
         std::any_of(Research::unlocked.begin(),Research::unlocked.end(),[](const auto& entry){return !entry.second.empty();});
     if(!linkedGrants.empty() || !groundPickups.empty() || saveResearchRounds) {
@@ -348,7 +447,71 @@ bool saveState(IStream* stream) {
             for(const auto& value:l.excluded) w.str(value);
         }
     }
-    DWORD header[]={saveMounts?mountSaveTag:saveDeathTeams?deathTeamSaveTag:saveDeathTypes?deathTypeSaveTag:saveReplacements?replacedResearchSaveTag:saveTickets?freeResearchSaveTag:!bombSnapshots.empty()?bombSnapshotSaveTag:!mapPassengersBySize.empty()?transportCapacitySaveTag:saveResearchRounds?researchRoundsSaveTag:
+    if(saveSplits) {
+        w.word(static_cast<DWORD>(splitTargets.size()));
+        for(const auto& [firer,shot]:splitTargets) {
+            w.word(firer);w.word(shot.primary);w.word(shot.slot);w.str(shot.weapon);
+            w.word(static_cast<DWORD>(shot.branches.size()));
+            for(auto id:shot.branches) w.word(id);
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    if(saveJumps || !Taunt::controls.empty()) {
+        w.word(static_cast<DWORD>(Taunt::controls.size()));
+        for(const auto& [id,control]:Taunt::controls) {
+            w.word(id);w.word(control.current);w.word(static_cast<DWORD>(control.bindings.size()));
+            for(const auto& [key,binding]:control.bindings) {
+                w.str(key.first);w.word(key.second);w.word(binding.target);
+                w.word(binding.time.start);w.word(binding.time.duration);
+            }
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    if(saveEject) {
+        w.word(static_cast<DWORD>(ForceMove::ejectOrders.size()));
+        for(const auto& [id,q]:ForceMove::ejectOrders) {
+            w.word(id);w.word(q.target.X);w.word(q.target.Y);w.word(q.nextFrame);
+            w.word(q.spec.range);w.word(q.spec.openHeight);w.real(q.spec.horizontalSpeed);w.word(q.spec.interval);
+            w.word(static_cast<DWORD>(q.passengers.size()));for(auto rider:q.passengers) w.word(rider);
+        }
+        w.word(static_cast<DWORD>(ForceMove::descending.size()));
+        for(const auto& [id,cell]:ForceMove::descending) {w.word(id);w.word(cell.X);w.word(cell.Y);}
+    }
+    if(saveCounters) {
+        w.word(static_cast<DWORD>(Research::counterValues.size()));
+        for(const auto& [house,entries]:Research::counterValues) {
+            w.word(house);w.word(static_cast<DWORD>(entries.size()));
+            for(const auto& [key,value]:entries) {w.str(key);w.word(value);}
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    if(saveStages) {
+        w.word(static_cast<DWORD>(Research::stageProgress.size()));
+        for(const auto& [key,effects]:Research::stageProgress) {
+            const auto& [house,project,stage]=key;
+            w.word(house);w.str(project);w.str(stage);w.word(static_cast<DWORD>(effects.size()));
+            for(const auto& id:effects) w.str(id);
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    if(saveBonds) {
+        w.word(static_cast<DWORD>(Research::bondProgress.size()));
+        for(const auto& [key,state]:Research::bondProgress) {
+            const auto& [house,bond,tier]=key;
+            w.word(house);w.str(bond);w.str(tier);w.word(state.active);
+            w.word(static_cast<DWORD>(state.grants.size()));
+            for(const auto& id:state.grants) w.str(id);
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    if(saveRepeats) {
+        w.word(static_cast<DWORD>(Research::repeatCounts.size()));
+        for(const auto& [key,count]:Research::repeatCounts) {
+            w.word(key.first);w.str(key.second);w.word(count);
+        }
+        if(w.bytes.size()>64*1024*1024) return false;
+    }
+    DWORD header[]={saveRepeats?repeatResearchSaveTag:saveBonds?researchBondSaveTag:saveStages?researchStageSaveTag:saveCounters?researchCounterSaveTag:saveEject?ejectSpeedSaveTag:saveJumps?jumpEffectSaveTag:!Taunt::controls.empty()?tauntSaveTag:saveSplits?splitTargetsSaveTag:saveLandings?landingSaveTag:saveMounts?mountSaveTag:saveDeathTeams?deathTeamSaveTag:saveDeathTypes?deathTypeSaveTag:saveReplacements?replacedResearchSaveTag:saveTickets?freeResearchSaveTag:!bombSnapshots.empty()?bombSnapshotSaveTag:!mapPassengersBySize.empty()?transportCapacitySaveTag:saveResearchRounds?researchRoundsSaveTag:
         !groundPickups.empty()?pickupSaveTag:linkedGrants.empty()?forceMoveAirSaveTag:linkedSaveTag,static_cast<DWORD>(w.bytes.size())};
     ULONG written=0;
     return SUCCEEDED(stream->Write(header,sizeof(header),&written)) && written==sizeof(header)
@@ -363,7 +526,7 @@ bool loadState(IStream* stream) {
     DWORD header[2]{};
     ULONG got=0;
     if(FAILED(stream->Read(header,sizeof(header),&got)) || got!=sizeof(header)) return fail("truncated header");
-    if((header[0]&0xFFFFFF)!=(saveTag&0xFFFFFF) || header[0]<saveTag || header[0]>mountSaveTag)
+    if((header[0]&0xFFFFFF)!=(saveTag&0xFFFFFF) || header[0]<saveTag || header[0]>repeatResearchSaveTag)
         return fail("unsupported format version");
     if(header[1]>64*1024*1024) return fail("payload exceeds size limit");
     vector<BYTE> data(header[1]);
@@ -382,6 +545,23 @@ bool loadState(IStream* stream) {
         }
     }
     for(DWORD n=r.word(); n && r.ok; --n) {
+        std::optional<LandingOrder> landing;
+        std::shared_ptr<PassengerPassives> landingSnapshot;
+        DWORD consumed=0;string kind;int owner=-1;CoordStruct position{};
+        if(header[0]>=landingSaveTag && r.word()) {
+            auto unit=r.word(),house=r.word(),started=r.word(),x=r.word(),y=r.word();
+            LandingOrder order{unit,house,started,{short(x),short(y)},r.str(),r.str(),r.str(),static_cast<int>(r.word())};
+            consumed=r.word();kind=r.str();owner=r.word();position={int(r.word()),int(r.word()),int(r.word())};
+            if(auto count=r.word()) {
+                landingSnapshot=std::make_shared<PassengerPassives>();
+                for(;r.ok && count;--count) {
+                    auto id=r.str();int layers=r.word();
+                    if(id.empty() || layers<0 || !landingSnapshot->emplace(id,layers).second) r.ok=false;
+                }
+            }
+            if(!unit || house>=128 || x>=512 || y>=512 || order.nextDraw<1 || order.skill.empty() || order.from.empty() || order.to.empty()) r.ok=false;
+            landing=std::move(order);
+        }
         std::optional<CoordStruct> center;
         if(header[0]>=forceMoveSaveTag && r.word())
             center=CoordStruct{static_cast<int>(r.word()),static_cast<int>(r.word()),static_cast<int>(r.word())};
@@ -437,6 +617,11 @@ bool loadState(IStream* stream) {
                 e.signalChain=it->second;
                 if(id>=restoredNextSignalChain) restoredNextSignalChain=id+1;
             }
+        }
+        if(landing) {
+            e.landing=std::move(landing);e.consumedTarget=consumed;e.consumedKind=std::move(kind);
+            e.consumedOwner=owner;e.consumedPosition=position;
+            if(landingSnapshot) e.passengerPassives=std::move(landingSnapshot);
         }
         events.push_back(std::move(e));
     }
@@ -751,6 +936,28 @@ bool loadState(IStream* stream) {
         auto nativeTracked=header[0]>=forceMoveAirSaveTag?r.word():0;
         if(nativeTracked>1) r.ok=false;
         m.nativeTracked=nativeTracked!=0;
+        if(header[0]>=jumpSaveTag) {
+            auto jump=r.word();if(jump>1) r.ok=false;
+            if(jump) {
+                ForceMove::Landing l{};
+                l.startZ=static_cast<int>(r.word());l.endZ=static_cast<int>(r.word());l.level=static_cast<int>(r.word());
+                l.deck=r.word();auto bridge=r.word(),crush=r.word();
+                if(bridge>1 || crush>1 || !m.ignoreCollision || l.level<0 || l.level>255 ||
+                   std::abs(int64_t(l.startZ))>ForceMove::mapExtent || std::abs(int64_t(l.endZ))>ForceMove::mapExtent) r.ok=false;
+                if(header[0]>=jumpEffectSaveTag) {
+                    l.effect.anim=r.str();l.effect.sound=r.str(2047);
+                }
+                if(header[0]>=ejectSaveTag) {
+                    l.openHeight=static_cast<int>(r.word());
+                    if(header[0]>=ejectSpeedSaveTag && l.openHeight) {
+                        l.ejectSpeed=r.real();
+                        if(!ForceMove::EjectSpec::validSpeed(l.ejectSpeed)) r.ok=false;
+                    }
+                    if(l.openHeight<0 || l.openHeight>128*256 || (l.openHeight && crush)) r.ok=false;
+                }
+                l.bridge=bridge!=0;l.crush=crush!=0;m.landing=std::move(l);
+            }
+        }
         constexpr int limit=ForceMove::mapExtent;
         if(m.x<0 || m.x>=limit || m.y<0 || m.y>=limit || m.dx< -limit || m.dx>limit ||
            m.dy< -limit || m.dy>limit || m.height<0 || m.height>limit || m.startHeight<0 || m.startHeight>4*limit ||
@@ -878,7 +1085,7 @@ bool loadState(IStream* stream) {
             }
         }
         for(auto [house,round]:restoredResearchRounds)
-            if(round>upgrades.at(house).size()+(retired.contains(house)?retired.at(house).size():0)) r.ok=false;
+            if(header[0]<repeatResearchSaveTag && round>upgrades.at(house).size()+(retired.contains(house)?retired.at(house).size():0)) r.ok=false;
     }
     decltype(UnitMount::links) mounts;
     std::set<std::pair<DWORD,string>> usedMountSlots;
@@ -894,9 +1101,130 @@ bool loadState(IStream* stream) {
         if(!id || id==l.parentId || turret>1 || fire>1 || !mounts.emplace(id,std::move(l)).second) r.ok=false;
     }
     for(const auto& [id,l]:mounts) if(mounts.contains(l.parentId)) r.ok=false;
+    decltype(splitTargets) restoredSplits;
+    if(header[0]>=splitTargetsSaveTag) for(DWORD n=r.word();r.ok && n--;) {
+        auto firer=r.word();
+        SplitTargets shot{r.word(),static_cast<int>(r.word()),r.str(),{}};
+        auto size=r.word();
+        if(!firer || shot.slot<0 || shot.slot>=TechnoTypeClass::MaxWeapons || shot.weapon.empty() ||
+           !size || size>(r.bytes.size()-r.pos)/sizeof(DWORD)) {r.ok=false;break;}
+        std::set<DWORD> seen;
+        while(size--) {
+            auto id=r.word();
+            if(id && (id==firer || id==shot.primary || !seen.insert(id).second)) {r.ok=false;break;}
+            shot.branches.push_back(id);
+        }
+        if(seen.empty() || !restoredSplits.emplace(firer,std::move(shot)).second) r.ok=false;
+    }
+    decltype(Taunt::controls) restoredTaunts;
+    if(header[0]>=tauntSaveTag) for(DWORD n=r.word();r.ok && n--;) {
+        DWORD id=r.word();
+        auto [it,fresh]=restoredTaunts.try_emplace(id);
+        if(!id || !fresh) {r.ok=false;break;}
+        auto& control=it->second;
+        control.current=r.word();
+        for(DWORD k=r.word();r.ok && k--;) {
+            Taunt::Key key{r.str(),r.word()};
+            Taunt::Binding binding{r.word(),{r.word(),static_cast<int>(r.word())}};
+            if(key.first.empty() || !key.second || !binding.target || binding.target==id ||
+               !binding.time.duration || binding.time.duration< -1 || !control.bindings.emplace(key,binding).second) r.ok=false;
+        }
+    }
+    decltype(ForceMove::ejectOrders) ejectOrders;
+    decltype(ForceMove::descending) descending;
+    if(header[0]>=ejectSaveTag) {
+        auto cell=[&] {auto x=r.word(),y=r.word();if(x>=512 || y>=512) r.ok=false;return CellStruct{short(x),short(y)};};
+        for(auto n=r.word();r.ok && n--;) {
+            auto id=r.word();ForceMove::EjectOrder q{};q.target=cell();q.nextFrame=r.word();
+            q.spec.range=int(r.word());q.spec.openHeight=int(r.word());
+            if(header[0]>=ejectSpeedSaveTag) q.spec.horizontalSpeed=r.real();
+            else {
+                // Older queues stored a fixed duration. Match it at the order's maximum range.
+                auto frames=r.word();
+                if(!frames || frames>3600) r.ok=false;
+                else q.spec.horizontalSpeed=q.spec.range*15.0/frames;
+            }
+            q.spec.interval=int(r.word());
+            auto count=r.word();if(!q.spec.valid() || !count || count>65535) r.ok=false;
+            for(;r.ok && count--;) q.passengers.push_back(r.word());
+            if(!ejectOrders.emplace(id,std::move(q)).second) r.ok=false;
+        }
+        for(auto n=r.word();r.ok && n--;) {
+            auto id=r.word();if(!descending.emplace(id,cell()).second) r.ok=false;
+        }
+    }
+    Research::CounterValues restoredCounters;
+    if(header[0]>=researchCounterSaveTag) {
+        for(auto n=r.word();r.ok && n--;) {
+            auto house=r.word(), count=r.word();
+            if(house>=128 || !count || restoredCounters.contains(house)) {r.ok=false;break;}
+            auto& entries=restoredCounters[house];
+            for(;r.ok && count--;) {
+                auto key=r.str(255);
+                auto dot=key.find('.');
+                auto value=r.word();
+                if(dot==string::npos || !dot || dot>127 || dot+1>=key.size() || key.size()-dot-1>127 ||
+                    key.find('.',dot+1)!=string::npos || key.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_.")!=string::npos ||
+                    !value || value>INT_MAX || !entries.emplace(key,value).second) r.ok=false;
+            }
+        }
+    }
+    Research::StageProgress restoredStages;
+    if(header[0]>=researchStageSaveTag) {
+        for(auto n=r.word();r.ok && n--;) {
+            auto house=r.word();
+            auto project=r.str(),stage=r.str();
+            if(house>=128 || project.empty() || stage.empty()) {r.ok=false;break;}
+            auto [it,added]=restoredStages.try_emplace({house,project,stage});
+            if(!added) {r.ok=false;break;}
+            for(auto count=r.word();r.ok && count--;) {
+                auto id=r.str();
+                if(id.empty() || !it->second.insert(id).second) r.ok=false;
+            }
+        }
+    }
+    Research::BondProgress restoredBonds;
+    if(header[0]>=researchBondSaveTag) {
+        for(auto n=r.word();r.ok && n--;) {
+            auto house=r.word();auto bond=r.str(),tier=r.str();
+            auto active=r.word(),count=r.word();
+            if(house>=128 || bond.empty() || tier.empty() || active>1 || (!active && count)) {r.ok=false;break;}
+            auto [it,fresh]=restoredBonds.try_emplace({house,bond,tier});
+            if(!fresh) {r.ok=false;break;}
+            it->second.active=active!=0;
+            for(;r.ok && count--;) {
+                auto id=r.str();
+                if(id.empty() || !it->second.grants.insert(id).second) r.ok=false;
+            }
+        }
+    }
+    decltype(Research::repeatCounts) repeats;
+    if(header[0]>=repeatResearchSaveTag) {
+        std::map<int,uint64_t> extra;
+        for(auto n=r.word();r.ok && n--;) {
+            auto house=r.word();auto id=r.str();auto count=r.word();
+            if(house>=128 || id.empty() || count<2 || count>INT_MAX ||
+                ((!upgrades.contains(house) || !upgrades.at(house).contains(id)) &&
+                 (!retired.contains(house) || !retired.at(house).contains(id))) ||
+                !repeats.emplace(std::make_pair(static_cast<int>(house),id),count).second) r.ok=false;
+            else extra[house]+=count-1;
+        }
+        for(auto [house,round]:restoredResearchRounds)
+            if(round>extra[house]+upgrades.at(house).size()+(retired.contains(house)?retired.at(house).size():0)) r.ok=false;
+    }
     if(!r.ok || r.pos!=data.size()) return fail("invalid or trailing payload fields");
     // Parsing above must not mutate live state, including sequence and signal IDs.
     reset();
+    // Older saves allocated a blank reward for every eligible building.
+    std::erase_if(rewards,[](const auto& entry){return !entry.second.claimed && entry.second.authorized<0;});
+    Research::counterValues.swap(restoredCounters);
+    Research::stageProgress.swap(restoredStages);
+    Research::bondProgress.swap(restoredBonds);
+    Research::repeatCounts.swap(repeats);
+    recheckLoadedStages=!upgrades.empty();
+    ForceMove::ejectOrders.swap(ejectOrders);ForceMove::descending.swap(descending);
+    splitTargets.swap(restoredSplits);
+    Taunt::controls.swap(restoredTaunts);Taunt::rebind=!Taunt::controls.empty();
     UnitMount::links.swap(mounts);Mount::rebind=!UnitMount::links.empty();
     Research::retired.swap(retired);
     Research::lastTicket=restoredLastTicket;Research::freeTickets.swap(restoredTickets);
@@ -911,6 +1239,7 @@ bool loadState(IStream* stream) {
     linkedGrants.swap(restoredLinks);
     nextSignalChain=restoredNextSignalChain;
     sequenceState.commit();
+    if(ready) ArtSp::TipsLabel::readRules();
     LuaAnim::entries.swap(restoredLuaAnimations);
     if(r.ok && r.pos==data.size()) {hitSequences.swap(restoredHitSequences);observedHits.swap(restoredObservedHits);Research::seenOffers.swap(seen);}
     if(r.ok && r.pos==data.size()) {
@@ -948,7 +1277,7 @@ DEFINE_HOOK(0x67D074, SF_SaveStorage, 6) {
         return 0x67D08F;
     const bool ok=saveState(stream) && SUCCEEDED(stream->Commit(STGC_DEFAULT));
     stream->Release();
-    return ok && ActSp::save(storage) ? 0 : 0x67D08F;
+    return ok && saveUnitOrders(storage) && saveFlightState(storage) && ActSp::save(storage) ? 0 : 0x67D08F;
 }
 
 // Object load and scenario resets have finished; the source IStorage is still open.
@@ -971,7 +1300,7 @@ DEFINE_HOOK(0x67E67B, SF_LoadStorage, 5) {
         std::ofstream("Starfall.log",std::ios::app)<<"Starfall: cannot open saved state, HRESULT "<<std::hex<<opened<<"\n";
         valid=false;
     }
-    if(!valid || !ActSp::load(storage)) {
+    if(!valid || !ActSp::load(storage) || !loadFlightState(storage) || !loadUnitOrders(storage)) {
         // Native objects have already been loaded. Continuing or returning to the
         // old scenario here would leave engine and extension state inconsistent.
         MessageBoxW(nullptr,L"流火或特殊行为子模块的存档数据损坏或版本不受支持，无法继续载入。\n游戏将关闭；请使用匹配的版本或其他存档。",

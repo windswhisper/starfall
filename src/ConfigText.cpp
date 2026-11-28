@@ -36,6 +36,17 @@ int number(string s, bool percent) {
 bool includes(const vector<string>& list, const string& s) {
     return std::find(list.begin(),list.end(),s) != list.end();
 }
+std::optional<std::array<int,3>> rgb(const string& value) {
+    std::array<int,3> channels{};
+    size_t start=0;
+    for(size_t i=0;i<channels.size();++i) {
+        auto comma=value.find(',',start);
+        channels[i]=number(trim(value.substr(start,comma-start)));
+        if(channels[i]<0 || channels[i]>255 || (i<2)!=(comma!=string::npos)) return {};
+        start=comma+1;
+    }
+    return channels;
+}
 std::wstring displayText(const string& value) {
     if(value.empty()) return {};
     UINT cp=CP_UTF8;
@@ -46,6 +57,19 @@ std::wstring displayText(const string& value) {
     MultiByteToWideChar(cp,0,value.c_str(),-1,result.data(),n);
     result.pop_back();
     return result;
+}
+bool appendTooltipNumber(std::wstring& line,double value,int decimals) {
+    char digits[320]; // Full fixed representation of a finite double, plus six decimals.
+    auto [end,error]=std::to_chars(digits,digits+sizeof(digits),value,std::chars_format::fixed,decimals<0?2:decimals);
+    if(error!=std::errc{}) return false;
+    if(decimals<0) {
+        while(end>digits && end[-1]=='0') --end;
+        if(end>digits && end[-1]=='.') --end;
+    }
+    const char* first=digits;
+    if(*first=='-' && std::none_of(first+1,static_cast<const char*>(end),[](char c){return c>='1' && c<='9';})) ++first;
+    while(first!=end) line.push_back(*first++);
+    return true;
 }
 void configLog(const string& message) {
     const string line="Starfall: "+message+"\n";

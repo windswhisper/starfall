@@ -10,6 +10,7 @@ class HouseClass;
 // registry and conversion engine; research never accesses their private containers.
 namespace Research::Detail {
 extern std::array<std::wstring,rarityCount> rarityNameOverrides;
+extern std::array<std::optional<std::array<int,3>>,rarityCount> rarityColors;
 using ResearchWarning=std::function<void(const std::string&,const char*,const std::string&)>;
 using EffectWarning=std::function<void(const char*,const std::string&)>;
 inline EffectSpec singleEffect(const Option& o) {
@@ -19,6 +20,13 @@ bool validateEffect(const EffectSpec& effect,const EffectWarning& warn={});
 bool hasProductionLicense(const HouseClass* house,TechnoTypeClass* type);
 void installProductionCheck();
 void clearEffectCaches();
+bool applyResearchEffect(HouseClass* h,const EffectSpec& effect,int source);
+bool hasReplacement(const HouseClass* owner,const EffectSpec& spec);
+bool persistentEffect(Effect effect);
+bool activateStageEffect(HouseClass* owner,const StageEffect& effect);
+void checkBonds(int house,int acquired=-1);
+void indexStages();
+void checkStages(int house,const std::string* changedCounter=nullptr);
 void recordAcquisition(int house,int option);
 unsigned matchSeed();
 int randomIndex(int count);

@@ -133,6 +133,20 @@ return {
 - Callbacks run at the simulation event dispatch. The shooter must still exist. Pending callbacks and timers survive save/load. An invalid module or function logs a configuration error and leaves ordinary firing enabled. A runtime error in an accepted volley logs the error and still consumes the volley.
 - This entry covers the standard firing path. `Suicide`, `Spawner`, `LimboLaunch`, and `DiskLaser` weapons are rejected at registration. The Lua `FireWeapon` action emits its named projectile directly and can use the same weapon ID without recursively starting a volley.
 
+A Lua `FireWeapon` call can set its own launch point for one shot:
+
+```lua
+local p = ctx.point
+ctx:action("FireWeapon", {
+    Weapon = "PrismShot",
+    Target = ctx.target or p,
+    Origin = {x = p.x - 1.5, y = p.y, height = 6},
+})
+```
+
+`Origin` accepts a playable map point or a live on-map unit handle. Point coordinates use cells with integers at cell centers. Fractional X/Y allow subcell placement. Optional `height` uses cells above the terrain or bridge surface directly under the point (default 0, one cell = 256 leptons). A handle uses the unit's actual position, including flight height. Invalid points and unavailable handles raise a Lua error before firing. The origin applies only to this shot and takes precedence over the weapon's `FireOrigin` and offset. Omitting it uses the normal weapon settings. The target, projectile tracking and damage owner retain their usual meanings. This option covers the same conventional weapons as [target-relative weapon origins](actsp.md#target-relative-weapon-origin); unsupported weapons return false with an explicit origin.
+
+
 ### Run Lua on warhead detonation
 
 Place these keys on a registered warhead. The module must export the named Lua function. The default function is `onDetonate`. Rules, Starfall.ini and map overrides are supported, with the map taking precedence.
@@ -201,128 +215,7 @@ Map callbacks have `ctx.owner`, optional associated `ctx.self`, optional valid `
 
 ### Active skills
 
-Active skills share `[Starfall.PassiveTypes]` registration and passive ownership sources. They require `Trigger=Active` and exactly one `Action=RunScript`. The accepted parent keys are `Trigger`, `Cooldown`, `Action`, `Action.Script`, `Action.Function`, `Script.Param.*`, the `Active.*` keys below, `GainAnim`, `Tint.Color`, and `Tint.Strength`. Do not add ordinary filters, Chance, Actions, state conditions, or Stack.Max to an active definition.
-
-```ini
-[ActiveSkillID]
-Active.Name=(text or ID)
-; Display label.
-; Default: Skill ID
-
-Active.Icon=(text or ID)
-; PNG/PCX resource path.
-; Default: built-in fallback
-
-Active.Indicator.Texture=(PNG file path)
-; Transparent PNG for the ground target preview. Area uses a ring; Unit/Point/Direction use a reticle.
-; Default: built-in ring/reticle
-
-Active.Indicator.Opacity=(number)
-; Integer 0..100, applied to the texture alpha. Zero hides textured previews.
-; Default: 90
-
-Active.Indicator.Arrow.Texture=(PNG file path)
-; Transparent PNG pointing upward, used by Direction skills.
-; Default: built-in arrow
-
-Active.Indicator.Arrow.Width=(number)
-; Arrow width in world cells, decimal 0.1..8.
-; Default: 0.75
-
-Active.Indicator.Arrow.Head=(number)
-; Top cap as an integer percentage of the arrow's trimmed image height; 1..98.
-; Default: 25
-
-Active.Indicator.Arrow.Tail=(number)
-; Bottom cap percentage, 1..98. Head plus Tail must be less than 100.
-; Default: 37
-
-Active.CastMode=(Single or All)
-; Single or All. Single picks the closest eligible selected caster, with unit ID as tie-breaker.
-; Default: Single
-
-Active.InterruptOrders=(boolean)
-; yes / no. Accepted casts may stop current movement/attack orders.
-; Default: yes
-
-Active.Target=(None, Unit, Point, Area, or Direction)
-; None,Unit,Point,Area,Direction.
-; Default: None
-
-Active.Range=(number)
-; Integer 0..128; zero unlimited for Unit/Point/Area. Must be zero for None/Direction.
-; Default: 0
-
-Active.Houses=(list)
-; List Self,Allies,Enemies,Neutral,All; Unit target only.
-; Default: all
-
-Active.Radius=(integer cells)
-; Required positive 1..128 for Area; otherwise must be zero.
-; Default: 0
-
-Active.Shape=(Circle)
-; If supplied, must be Circle with Area.
-; Default: circle behavior
-
-Active.Distance=(integer cells)
-; Required positive 1..128 for Direction; otherwise must be zero.
-; Default: 0
-
-Cooldown=(number)
-; Nonnegative frames, independently tracked per holder.
-; Default: 0
-
-```
-
-Cooling skill buttons show remaining game seconds rounded upward (`ceil(remainingFrames / 15)`), and the hover tooltip shows the same value. Positive fractions display at least `1`; the countdown disappears at zero. For a shared button, hide the countdown whenever any selected holder is ready; otherwise display the shortest positive remaining cooldown among selected holders. The countdown follows simulation frames, including game speed and pauses, and preserves PNG transparency.
-
-Casters must belong to the issuing player, hold the skill, be alive/on-map/outside transports, and be free of incompatible EMP, forced movement, sinking, or removal states. Invalid/duplicate/foreign commands are rejected. Unit targets obey relevant cloak/disguise visibility rules. Direction clicks cannot equal the caster's cell; the endpoint is shortened at the map edge.
-
-Indicator PNGs are top-down source artwork, not pre-flattened isometric images. Drawing rotates them in world space and then applies the game's 45-degree orthographic map projection, including bridge/ground height. They are local overlays clipped to the tactical viewport, not terrain decals with per-pixel terrain occlusion. Transparent borders are trimmed using an alpha threshold of 16/255; keep any intentional padding inside the visible artwork. The default images are embedded in the DLL and can be overridden by `sfindicator_ring.png`, `sfindicator_target.png`, and `sfindicator_arrow.png` in the game directory, or by the per-skill paths above. Missing/empty custom images fall back to the embedded defaults; drawing failure falls back to lines. Invalid targets are tinted red. Images use the existing bounded presentation cache and are refreshed with that cache on reload.
-
-The upward arrow is split vertically into head, middle, and tail after trimming. Width determines the uniform scale of both caps; only the middle stretches to cover the remaining distance. Short arrows omit the middle and crop the overlapping tail, then the bottom of the head if necessary, preserving cap proportions and the endpoint. Supply straight parallel rails in the middle band so extension does not elongate decorative chevrons. These settings do not change skill range, hit geometry, commands, or network state.
-
-Same-ID skills share a UI button in mixed selection. All mode issues separate casts for eligible selected holders. Left click confirms a target; right click cancels. A successful native action, persistent-state change, or task scheduling can count as callback success; returning `true` from Lua alone does not. Cooldown starts on reported success. `Active.InterruptOrders=yes` interrupts after caster/aim validation and before running the script, so a script that ultimately makes no change can still have interrupted orders.
-
-Range/caster rings rotate once every 6 seconds in the world plane before projection, keeping the ground footprint and radius fixed. Target reticles loop a 1.5-second elastic scale sequence (90% contraction, 112% overshoot, then settling at 100%) around their existing center. A local monotonic clock drives both animations independently of game speed; they do not alter targeting, simulation state, random numbers, or network commands. Valid indicator textures, including custom PNGs and arrows, are tinted bright blue (`#40A8FF`) while retaining alpha and brightness detail. Invalid targets remain red. Arrow head/tail geometry is not animated.
-
-**Complete active example**, assuming `MTNK` exists:
-
-```ini
-[Starfall.PassiveTypes]
-0=SF_Recall
-
-[MTNK]
-Starfall.Passives=SF_Recall
-
-[SF_Recall]
-Trigger=Active
-Active.Name=Recall
-Active.Target=Point
-Active.Range=12
-Active.CastMode=Single
-Cooldown=300
-Action=RunScript
-Action.Script=Recall.lua
-Action.Function=onCast
-```
-
-`Recall.lua`:
-
-```lua
-return {
-    onCast = function(ctx)
-        if ctx.self and ctx.self:alive() and ctx.point then
-            ctx:action("ChronoTeleport", {
-                Target = ctx.self, Destination = ctx.point, SearchRadius = 3,
-            })
-        end
-    end,
-}
-```
-
-For Area, `ctx.area={center=point,radius=...}`. For Direction, `ctx.point` is the projected endpoint and `ctx.direction={x=...,y=...}` is the unit direction vector. Copy any of these values into task data if delayed callbacks need the original aim.
+See the [active skills guide](active-skills.md#active-skills).
 
 ## Lua API
 
@@ -330,7 +223,7 @@ For Area, `ctx.area={center=point,radius=...}`. For Direction, `ctx.point` is th
 
 The embedded runtime is Lua 5.4.8. Each UTF-8 `.lua` file must return a table of callback functions. A UTF-8 BOM is accepted. Files are discovered from the game root at setup/load, with a 1 MiB per-file limit. `Action.Script` can omit `.lua`. INI function lookup is case-insensitive but rejects ambiguous names differing only by case; scheduled callback names must exactly match a returned function name.
 
-Every callback creates a fresh Lua state and runs the cached module prototype again. Module/global changes are not persistent. Do not use module initialization for game mutations or assume an initialized `ctx` exists at top level. Persistent data belongs in the interfaces below.
+The runtime pools Lua VMs and caches compiled module code for skill, timer and projectile callbacks. Each invocation runs the module again with fresh globals, writable standard-library tables and module locals. Nested callbacks borrow a separate VM. Reloading scripts clears the idle pool. Do not use module initialization for game mutations or assume an initialized `ctx` exists at top level. Persistent data belongs in the interfaces below.
 
 `Script.Param.<Name>` is read from the executing parent skill or sequence step, not automatically from an unrelated reusable action section. It appears as `ctx.params.<lowercase-name>`. Numeric strings become Lua numbers; other values remain case-preserved strings. Thus an INI parameter `yes` is a string, not a Lua boolean. Scheduled callbacks use the definition's current parameters.
 
@@ -359,9 +252,13 @@ Legacy Lua metadata (`id`, `trigger`, `callback`, `units`, `cooldown`, `interval
 
 There is no general `ctx.sender`, `ctx.trigger`, `ctx.attacker`, `ctx.victim`, or arbitrary engine object API. Formula `Sender` does not imply an identically named Lua property.
 
+### Projectile callbacks
+
+Use `ProjectileScript` on the projectile type to control individual rounds from `onLaunch(p)` and `onTick(p)`. Use `onTravel(p, from, to)` for actions on a clipped movement segment, `p:groundPoint()` for the ground below it and `p:nearbyUnits()` for target acquisition. The projectile context exposes movement, its aim and per-flight state. Enable `Piercing.Enabled=yes` on the same projectile to apply piercing hits along its scripted path. See [Lua projectile motion](actsp.md#lua-projectile-motion) for units, lifecycle, collision and the complete API.
+
 ### Unit handles and house snapshots
 
-A unit handle can come from `ctx.self` (the skill holder), `ctx.target` (the event counterpart), or an element of the array returned by `ctx:nearbyUnits(...)`. Read context fields with a dot and call unit methods with a colon. A callback without a counterpart can have `ctx.target == nil`. Use `if unit and unit:alive() then` before reading live properties. On an existing handle that no longer resolves, `id()` still returns its original ID, `alive()` returns `false`, and its other property queries return `nil`.
+A unit handle can come from `ctx.self` (the skill holder), `ctx.target` (the event counterpart), `ctx:nearbyUnits(...)`, or `container:occupants()`. Read context fields with a dot and call unit methods with a colon. A callback without a counterpart can have `ctx.target == nil`. Use `if unit and unit:alive() then` before reading live properties. On a handle that no longer resolves, `id()` still returns its original ID, `alive()` returns `false`, `occupants()` returns an empty array, and the remaining property queries return `nil`.
 
 Use `unit:type() == "MTNK"` to match any Grizzly Tank. To match the same individual tank across callbacks, store the handle in task data or `ctx.state`, check `:alive()` when you retrieve it, and compare handles with `a == b`.
 
@@ -377,13 +274,24 @@ Use `unit:type() == "MTNK"` to match any Grizzly Tank. To match the same individ
 | `unit:maxHealth()` | integer | Current maximum hit points including active maximum-health changes. `unit:health() * 2 <= unit:maxHealth()` tests for half health or less. |
 | `unit:ammo()` | integer | Remaining ammunition. `0` means empty and `-1` means unlimited ammunition. |
 | `unit:passengers()` | integer | Number of passengers directly aboard this unit. An empty transport returns `0`. |
+| `unit:occupants()` | array of unit handles | Lists direct cargo (including carried vehicles), infantry in a building garrison, and the tank fully parked inside a tank bunker. Works with both native and BetterGarrison firing rules. Returns an empty array if there are no live members. |
 | `unit:rank()` | integer | Current veterancy rank: `0` rookie, `1` veteran, `2` elite. |
 | `unit:trainable()` | boolean | The current type’s `Trainable` flag. Use `unit:trainable() and unit:rank() < 2` to check for a trainable unit below elite rank. |
 | `unit:cost()` | integer | Base `Cost` of the current rules type. Use it for rewards based on a unit’s base price. |
 | `unit:hasPassive(passiveId)` | boolean | Whether the unit currently owns the named passive. Pass its registered ID as a string, e.g. `unit:hasPassive("SF_FieldCommander")`. The lookup is case-insensitive. |
-| `unit:stack(passiveId)` | integer | Effective layer count for the named passive, including stackable passenger contributions. Returns `0` if absent. An owned passive may also have zero layers. Use `hasPassive(passiveId)` to test ownership. |
+| `unit:stack(passiveId)` | integer | Effective layer count for the named passive, including stackable passenger contributions. Returns `0` if absent. An owned passive has at least one layer. Use `hasPassive(passiveId)` to test ownership. |
 
 For event-time values, use snapshots such as `ctx.event.selfHealth` and `ctx.event.targetHealth` when available. During `OnDeath`, `ctx.event.selfPoint` retains the death cell even if the holder’s `position()` now returns `nil`.
+
+Each call to `occupants()` takes a fresh snapshot of the direct members in engine order. Use `ipairs` to visit them. To inspect a transport carried inside another transport, call `occupants()` on that member. Use the container’s position for an embarked member whose `position()` returns `nil`.
+
+```lua
+for _, member in ipairs(ctx.self:occupants()) do
+    if member:type() == "E1" and member:health() < member:maxHealth() then
+        ctx:action("Heal", {Target=member, Amount=10})
+    end
+end
+```
 
 **Example. Measure a target Grizzly’s health change over 30 frames.** Set the unit-targeted skill’s `Action.Function=mark`. The scheduled callback receives the original handle and starting health. If the tank survives, `ctx.state.lastSample` contains its numeric instance ID and the signed change in hit points.
 
@@ -416,6 +324,9 @@ return {
 | Lua call | Game behavior |
 | --- | --- |
 | `unit:moveTo({x=56, y=69})` | Order a mobile unit to travel to a playable map cell using normal pathfinding. |
+| `unit:startOrder(id, area)` | Start a registered continuous order and return whether it was accepted. Pass `ctx.area` or a table with a cell `center` and a `radius` in cells. [Continuous unit orders](actsp.md#continuous-unit-orders) |
+| `unit:currentOrder()` | Return the registered ID of the running order, or nil. |
+| `unit:cancelOrder([id])` | Cancel the running order and return whether it ended. An optional ID must match. |
 | `unit:setDroneGuardCell({x=84, y=71})` | Assign a guard cell to an eligible ActSp carrier or outpost. See [guard cell orders](actsp.md#guard-cell-orders) for argument and return-value rules. |
 | `unit:attack(targetUnit)` | Order an armed unit to attack a live on-map target. Normal weapon selection, movement into range and reloading apply. |
 | `unit:attack({x=55, y=70})` | Order the unit to attack a ground cell with a suitable weapon. |
@@ -431,12 +342,34 @@ An expired handle, a passenger, an attached child, or a unit locked by EMP or fo
 | --- | --- |
 | `ctx:nearbyUnits(center, radius, filters)` | Center is a unit handle or integer point. Finite radius `0..128` cells. Returns a dense array sorted by unit ID. |
 | `ctx:action(name, args)` | Execute one native Starfall action; returns success boolean. |
+| `TauntTarget` in `GrantPassive` | Optional unit handle for a taunt passive. `Target` receives the control effect and attacks `TauntTarget`. Omit `TauntTarget` to attack the caster. Example: `ctx:action("GrantPassive", {Target=enemy, Passive="SF_Taunted", Duration=75, TauntTarget=decoy})`. |
 | `ctx:actions(list)` | Ordered array of tables containing `Action` and action fields; returns true if any succeeds. Shared action context supports consume-then-steal. |
-| `ctx:runAction(section, overrides)` | Execute an existing INI single-action section. Overrides are limited to Target, Destination, and ForceMove-specific fields for a ForceMove section. |
+| `ctx:runAction(section, overrides)` | Execute an existing INI single-action section. Overrides include Target, Destination, Origin for a FireWeapon section, and ForceMove-specific fields for a ForceMove section. |
 
 Nearby filters use exact Lua keys `houses`, `types`, `includeSelf`, `visibleOnly`. Houses defaults to `All`; types defaults to `*`; both accept a comma-separated string or array of strings. Types accepts research-style `@Category` selectors. A unit center is excluded unless `includeSelf=true`; for a point center there is no center unit to exclude. Relationships are relative to the executing owner. `visibleOnly=true` excludes hostile undetected cloak/disguise using synchronized owner detection; default false preserves simulation queries. It does not test local UI visibility or fog of war.
 
-Action argument keys are case-insensitive. Prefer `Amount`, `Target`, `Passive`, etc. without the `Action.` prefix. Lua boolean fields map to yes/no. `Target` can be a unit handle, a valid symbolic name for the context, or a point for positional actions. `Destination` can be an integer point for ChronoTeleport. ForceMove accepts shorthand `Offset,Mode,Center,Distance,Height,AirborneHeight,Duration,Tilt,Easing,IgnoreCollision,BlowWeight,AffectsIronCurtain`.
+Action argument keys are case-insensitive. Prefer `Amount`, `Target`, `Passive`, etc. without the `Action.` prefix. Lua boolean fields map to yes/no. `Target` can be a unit handle, a valid symbolic name for the context, or a point for positional actions. `Destination` can be an integer point for ChronoTeleport or JumpTo. A vehicle jump action returns true when the vehicle takes off. A scripted active skill records a successful cast when a callback action changes game state.
+
+```lua
+return ctx:action("JumpTo", {Target=ctx.self, Destination=ctx.point, Range=6, Height=3, Duration=15})
+```
+
+To launch the infantry currently aboard a transport in sequence, call `ctx:action("EjectPassengers", {Target=ctx.self, Destination=ctx.point, Range=8, Interval=9, HorizontalSpeed=1, OpenHeight=3})`. It returns true when the first passenger launches. Each rider opens its own parachute. Interval uses simulation frames. HorizontalSpeed is measured in cells per game second and defaults to 1.
+
+To launch one unit already on the map, pass its handle to `EjectUnit`. A grounded infantryman or ground vehicle of any house launches from its own current position. The destination is a map cell, and range is measured from the launched unit. The optional `Range`, `HorizontalSpeed` and `OpenHeight` fields have the same units and defaults as for `EjectPassengers` (8 cells, 1 cell per game second and 3 cells). The call returns true on takeoff and false for an unavailable unit, an out-of-range destination or no legal landing site. Each call launches one unit; call it once per handle to launch a group. Buildings, aircraft, passengers inside transports and units already in forced motion or parachuting are ineligible.
+
+```lua
+local units = ctx:nearbyUnits(ctx.point, 3, {houses={"Enemies"}})
+for _, unit in ipairs(units) do
+    if unit:kind() == "vehicle" then
+        ctx:action("EjectUnit", {Target=unit, Destination=ctx.point, Range=8})
+    end
+end
+```
+
+JumpTo also accepts `TakeoffAnim`, `TakeoffSound`, `LandAnim` and `LandSound` in the action table. The engine plays them at the vehicle's actual launch and landing positions.
+
+ForceMove accepts shorthand `Offset,Mode,Center,Distance,Height,AirborneHeight,Duration,Tilt,Easing,IgnoreCollision,BlowWeight,AffectsIronCurtain`.
 
 Do not supply aliases for the same field twice, including capitalization variants or `Duration` together with `ForceMove.Duration`. Such conflicts are rejected to prevent Lua table iteration order from deciding the result. Unknown action keys are errors. `runAction` cannot override arbitrary amounts or switch the action type.
 
@@ -530,7 +463,7 @@ Syntax/runtime errors include script location in `Starfall.log`. An error ends t
 | --- | --- |
 | The callback does not run | Confirm passive registration or the weapon, warhead, or map binding. Verify the Lua file is in the game root and returns a table containing the requested function. Check `Starfall.log`. |
 | An active button is missing | Confirm the unit owns the registered `Trigger=Active` skill and that its active configuration and script function are valid. |
-| A saved counter resets | Write persistent values to `ctx.state` or scheduled task data. Each callback uses a fresh Lua state. |
+| A saved counter resets | Write persistent values to `ctx.state` or scheduled task data. Each callback starts with fresh script variables. |
 | A delayed callback loses its original target or values | Store the required handle, event values, or point in task data. Check `:alive()` before accessing a stored unit. |
 | A script reports an unavailable function or library | Check the available libraries and native callback restrictions above. Simulation random choices use `ctx:randomInt` or `ctx:randomPoint`. |
 

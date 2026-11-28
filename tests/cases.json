@@ -22,6 +22,8 @@
       "action-sequence"
     ],
     "passives": [
+      "taunt",
+      "taunt-team",
       "unit-mount",
       "ground-pickups",
       "building-transform",
@@ -56,6 +58,7 @@
       "lua-anim",
       "active-skills",
       "area-barrage",
+      "unit-orders",
       "map-lua",
       "action-sequence"
     ],
@@ -72,6 +75,7 @@
     ],
     "research": [
       "research-grant",
+      "research-counter",
       "research-hud",
       "research-cost",
       "building-reward",
@@ -87,6 +91,8 @@
     "movement": [
       "actsp",
       "force-move",
+      "vehicle-jump",
+      "passenger-ejection",
       "chrono-teleport",
       "tornado"
     ],
@@ -94,10 +100,20 @@
       "multiplayer"
     ],
     "full": [
+      "taunt",
+      "taunt-team",
       "actsp",
+      "build-nodes",
+      "entity-walls",
+      "projectile-blocker",
+      "piercing",
+      "projectile-script",
+      "spawn-docks",
+      "ground-docks",
       "example-starters",
       "unit-mount",
       "research-grant",
+      "research-counter",
       "ground-pickups",
       "unit",
       "building-transform",
@@ -118,6 +134,8 @@
       "deployed-state",
       "fire-rate",
       "force-move",
+      "vehicle-jump",
+      "passenger-ejection",
       "health-formula",
       "immune",
       "lua-anim",
@@ -147,6 +165,30 @@
   },
   "Cases": [
     {
+      "Name": "landing-transform", "Kind": "game", "Map": "maps/Starfall_TestRange.map",
+      "Save": "Landing.sav", "Log": "landing.log", "Standalone": false,
+      "Phases": ["fresh","load"],
+      "Expected": {"fresh":["PASS queued without reward","PASS saved","PASS converted then rewarded","PASS blocked landing cancels remaining actions"],"load":["PASS converted then rewarded","PASS blocked landing cancels remaining actions"]}
+    },
+    {
+      "Name": "jumpjet-transform",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Log": "jumpjet-transform.log",
+      "Phases": ["fresh"],
+      "Standalone": false,
+      "Expected": {"fresh": ["PASS passive switched locomotor", "PASS airborne rejected", "PASS landed at destination", "PASS reverse and drive"]}
+    },
+    {
+      "Name": "reward-text-map",
+      "Kind": "game",
+      "Map": "maps/Starfall_RewardText.map",
+      "Log": "reward-text-map.log",
+      "Phases": ["fresh"],
+      "Standalone": false,
+      "Expected": {"fresh": ["PASS configured Chinese label rendered above the tank", "PASS cash phase", "PASS research phase", "PASS silent phase", "PASS cycle repeats"]}
+    },
+    {
       "Name":"example-starters","Kind":"game","Map":"maps/Starfall_TestRange.map",
       "Save":"","Log":"examples.log","Phases":["fresh"],"Standalone":true,
       "Expected":{"fresh":["PASS repair on kill","PASS three choices and cash award","PASS two scripted shots six frames apart"]}
@@ -154,7 +196,7 @@
     {
       "Name":"weapon-script","Kind":"game","Map":"maps/Starfall_TestRange.map",
       "Save":"WeaponScript.sav","Log":"weapon-script.log","Phases":["fresh","load"],"Standalone":false,
-      "Expected":{"fresh":["PASS live target and snapshot","PASS one volley and full rearm","PASS ground and lost targets","PASS saved pending volley","PASS repeated attack orders","PASS direct-only warhead uses map parameters and suppresses synchronous self-recursion"],
+      "Expected":{"fresh":["PASS live target and snapshot","PASS one volley and full rearm","PASS Lua origin overrides weapon rules per shot for direct list and preset calls","PASS casterless Lua laser renders at its explicit origin","PASS ground and lost targets","PASS saved pending volley","PASS repeated attack orders","PASS direct-only warhead uses map parameters and suppresses synchronous self-recursion"],
                   "load":["PASS restored callbacks and positions","PASS repeated attack orders"]}
     },
     {
@@ -195,6 +237,19 @@
           "PASS power and price research survive load",
           "PASS all five projects persist through save"
         ]
+      }
+    },
+    {
+      "Name": "research-counter",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "ResearchCounter.sav",
+      "Log": "research-counter.log",
+      "Phases": ["fresh", "load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS stage converts current infantry and vehicles and grants category discount and replacement", "PASS later trucks keep original type", "PASS overlapping bonds grant distinct members and owner-only rewards", "PASS atomic replacement preserves one bond while dropping the other", "PASS stage-only grant checks initial formula", "PASS crossed stages grant cash price license and chained research in order", "PASS stage passive reaches reinforcements and free choice is issued", "PASS preview reads zero before acquisition", "PASS detail reads the displayed player", "PASS legacy placeholders and fixed precision coexist", "PASS bad detail formulas affect only their own text", "PASS counter references validated", "PASS unowned counter ignores writes", "PASS friendly kills excluded", "PASS first contributor below threshold", "PASS second contributor enables shared bonus", "PASS saved", "PASS signed formula withdraws bonus"],
+        "load": ["PASS restored bond reactivates without a second payout", "PASS loaded active bond loses its permanent grants below threshold", "PASS persistent stage grants survive save", "PASS threshold reentry does not duplicate credits or tickets", "PASS retirement removes entitlements and keeps issued rewards", "PASS tooltips refresh from restored and changed progress", "PASS progress preserved per project variable and player", "PASS signed formula withdraws bonus", "PASS positive overflow saturates", "PASS negative change clamps at zero"]
       }
     },
     {
@@ -403,6 +458,8 @@
           "PASS airborne query target",
           "PASS new aircraft in next snapshot",
           "PASS benchmark counts",
+          "PASS default damage uses Super",
+          "PASS default warhead damages selected enemy",
           "PASS 50 percent verses on one target",
           "PASS allies excluded",
           "PASS neutral and enemy flags",
@@ -444,6 +501,8 @@
           "PASS airborne query target",
           "PASS new aircraft in next snapshot",
           "PASS benchmark counts",
+          "PASS default damage uses Super",
+          "PASS default warhead damages selected enemy",
           "PASS 50 percent verses on one target",
           "PASS allies excluded",
           "PASS neutral and enemy flags",
@@ -493,6 +552,19 @@
           "PASS cooldown after load",
           "PASS resumed barrage"
         ]
+      }
+    },
+    {
+      "Name": "unit-orders",
+      "Kind": "game",
+      "Map": "maps/Starfall_AreaBarrage.map",
+      "Save": "UnitOrders.sav",
+      "Log": "orders.log",
+      "Phases": ["fresh", "load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS auto enter uses native enter cursor", "PASS native button and stop hotkey suppressed while aiming", "PASS right click outside map cancels without native dispatch", "PASS escape cancels auto enter", "PASS confirm sends one order and restores cursor", "PASS confirm double click cannot issue native order", "PASS auto enter native building range", "PASS area attack native nuke rings span configured radius", "PASS area attack ability cursor and escape", "PASS area attack button uses native attack cursor", "PASS area attack captures deploy and stop", "PASS one area attack per selected unit after double click", "PASS same-name SHP visible", "PASS explicit MIX SHP overrides same-name file", "PASS explicit missing image logged once", "PASS solo ButtonList sets exact slot", "PASS native buttons flank AreaAttack", "PASS omitted multiplayer button stays hidden", "PASS multiplayer list controls its own order", "PASS right click cancels targeting", "PASS command bar orders ordinary units and groups", "PASS empty area", "PASS real missile salvo", "PASS acquired another target", "PASS transport seats reserved up to capacity", "PASS shared garrison reserved", "PASS matched garrison and bunker", "PASS saved"],
+        "load": ["PASS restored area", "PASS player move cancels", "PASS Lua entry points", "PASS partially occupied hosts accept reinforcements", "PASS both transports full, three garrisoned and tank bunkered after load"]
       }
     },
     {
@@ -711,6 +783,11 @@
           "PASS blocker and passengers intact",
           "PASS config validation",
           "PASS exact destination",
+          "PASS teleport near incoming attacker",
+          "PASS vehicle jumps toward event target",
+          "PASS unit ejects toward event target",
+          "PASS passengers eject toward event target",
+          "PASS missing target skips action despite impact",
           "PASS distinct fallback",
           "PASS Lua moves target",
           "PASS saved in transit"
@@ -941,6 +1018,32 @@
           "PASS state exit",
           "PASS lower limit"
         ]
+      }
+    },
+    {
+      "Name": "passenger-ejection",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Ejection.sav",
+      "Log": "ejection.log",
+      "Phases": ["fresh","load"],
+      "Standalone": true,
+      "Expected": {
+        "fresh": ["PASS empty carrier keeps cooldown","PASS sequential launch","PASS ballistic crawl before opening","PASS midair save","PASS three separate parachute landings","PASS infantry follows move order after landing"],
+        "load": ["PASS queue flight and parachute restored","PASS three separate parachute landings","PASS infantry follows move order after landing"]
+      }
+    },
+    {
+      "Name": "vehicle-jump",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "VehicleJump.sav",
+      "Log": "jump.log",
+      "Phases": ["fresh","load"],
+      "Standalone": true,
+      "Expected": {
+        "fresh": ["PASS takeoff effects only on accepted jumps","PASS landing effects once at final positions","PASS low arc blocked by cliff","PASS vehicle crush after crossing water","PASS distinct reservations","PASS full landing zone preserves cooldown","PASS landed and crushed","PASS diverted around friendly"],
+        "load": ["PASS restored flight","PASS landed and crushed","PASS diverted around friendly","PASS landing effects once at final positions"]
       }
     },
     {
@@ -1304,6 +1407,28 @@
       }
     },
     {
+      "Name": "taunt-team",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Log": "taunt-team.log",
+      "Phases": ["fresh"],
+      "Standalone": false,
+      "Expected": {"fresh":["PASS taunted during native waypoint move","PASS control completed both waypoints","PASS team resumed original waypoint and completed next step"]}
+    },
+    {
+      "Name": "taunt",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Taunt.sav",
+      "Log": "taunt.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS warhead locks to firer","PASS equal priority keeps target","PASS remove clears every source","PASS source lock","PASS player commands discarded","PASS AI and skill orders blocked","PASS Lua decoy","PASS save"],
+        "load": ["PASS restored decoy","PASS priority expires to original caster","PASS pursued out of range target","PASS deployed unit holds position","PASS attack dealt damage","PASS loss releases commands"]
+      }
+    },
+    {
       "Name": "immune",
       "Kind": "game",
       "Map": "maps/Starfall_TestRange.map",
@@ -1543,6 +1668,23 @@
           "PASS ground primary prefers ground",
           "PASS air primary falls back to ground",
           "PASS two distinct extras",
+          "PASS nearer enemy does not steal split locks",
+          "PASS survivor keeps its branch",
+          "PASS replacement fills original vacancy",
+          "PASS three persistent beam endpoints",
+          "PASS split beams have no native duplicates",
+          "PASS losing one beam leaves the others connected",
+          "PASS next volley restores the split beam",
+          "PASS tracer resolves art section",
+          "PASS rifle tracer cadence on primary and secondary targets",
+          "PASS tracer expires",
+          "PASS beam persists and animates during reload",
+          "PASS no duplicate native beam",
+          "PASS beam endpoint follows moving target",
+          "PASS lost target removes continuous beam",
+          "PASS default tracer has an opaque solid tail",
+          "PASS explicit solid ignores unused tail color",
+          "PASS gradient tracer fades into the background",
           "PASS AAHeatSeeker2",
           "PASS Ballistic",
           "PASS laser reaches intended target",
@@ -1565,6 +1707,7 @@
         ],
         "load": [
           "PASS restored layered shot",
+          "PASS restored split target order",
           "PASS one round consumed",
           "PASS removed passive",
           "PASS both extra targets took damage"
@@ -1724,10 +1867,13 @@
           "PASS stack retained",
           "PASS queued stack snapshot retained",
           "PASS last source expired",
-          "PASS reacquire starts zero",
+          "PASS reacquire starts one",
           "PASS reacquire can gain",
+          "PASS exact reduction removes passive and modifier",
+          "PASS stack gain cannot recreate a removed passive",
+          "PASS excess reduction removes ordinary base layer",
           "PASS explicit removal clears",
-          "PASS explicit reacquire starts zero",
+          "PASS explicit reacquire starts one",
           "PASS transferred ownership retained",
           "PASS batch remove skips absent and clears all matches",
           "PASS stack formula namespace",
@@ -1739,18 +1885,18 @@
           "PASS native hover retained",
           "PASS native hover expired",
           "PASS configuration validation",
-          "PASS initial zero",
+          "PASS initial one",
           "PASS cap and unit isolation",
           "PASS absent target skipped",
           "PASS modify another unit",
           "PASS death stack snapshot",
           "PASS decrement and formula",
-          "PASS minimum zero",
+          "PASS research layer survives excess reduction",
           "PASS lost research clears stack",
           "PASS event stack snapshot",
           "PASS overlapping source retained",
           "PASS steal list validation",
-          "PASS partial and zero stack theft",
+          "PASS partial and single stack theft",
           "PASS acquisition sees stolen stacks",
           "PASS steal respects capacity",
           "PASS last stack removes only matching passive",
@@ -1762,10 +1908,13 @@
           "PASS native hover expired",
           "PASS queued stack snapshot retained",
           "PASS last source expired",
-          "PASS reacquire starts zero",
+          "PASS reacquire starts one",
           "PASS reacquire can gain",
+          "PASS exact reduction removes passive and modifier",
+          "PASS stack gain cannot recreate a removed passive",
+          "PASS excess reduction removes ordinary base layer",
           "PASS explicit removal clears",
-          "PASS explicit reacquire starts zero",
+          "PASS explicit reacquire starts one",
           "PASS transferred ownership retained",
           "PASS batch remove skips absent and clears all matches"
         ]
@@ -1846,6 +1995,9 @@
           "PASS veteran",
           "PASS elite",
           "PASS direct elite",
+            "PASS stacked kill experience preserves score",
+            "PASS zero experience preserves score",
+            "PASS experience restored after removal",
           "PASS specific only",
           "PASS saved"
         ],
@@ -1880,7 +2032,7 @@
           "PASS restored stacks and duration",
           "PASS expiry preserves other sources",
           "PASS aura refresh is not an application",
-          "PASS reacquired at zero"
+          "PASS reacquired at one"
         ]
       }
     },
@@ -1959,6 +2111,10 @@
           "PASS purchase",
           "PASS purchase animation closes panel",
           "PASS no alternative preserves allowance",
+          "PASS stationary diplomacy tooltip repaints changed count",
+          "PASS diplomacy tooltip uses selected player's count",
+          "PASS main research tooltip plus two vertical bond panels painted",
+          "PASS compact bond panels paginate inside the viewport",
           "PASS native diplomacy dialog opens and returns",
           "PASS switching players is read-only",
           "PASS scenario reset releases voices and cached audio",
@@ -1999,6 +2155,10 @@
           "PASS purchase",
           "PASS purchase animation closes panel",
           "PASS no alternative preserves allowance",
+          "PASS stationary diplomacy tooltip repaints changed count",
+          "PASS diplomacy tooltip uses selected player's count",
+          "PASS main research tooltip plus two vertical bond panels painted",
+          "PASS compact bond panels paginate inside the viewport",
           "PASS native diplomacy dialog opens and returns",
           "PASS switching players is read-only",
           "PASS scenario reset releases voices and cached audio"
@@ -2072,8 +2232,96 @@
       "Phases": ["fresh","load"],
       "Standalone": false,
       "Expected": {
-        "fresh": ["PASS patrol modes", "PASS saved", "PASS attack and rearm", "PASS Grizzly flew low and landed on guard cell", "PASS Grizzly fired and rearmed", "PASS ground guard waits for a free exit", "PASS ground guard lifecycle", "PASS better garrison lifecycle", "PASS building type damage override applied to garrison shot", "PASS building type fire-rate override applied to garrison reload"],
-        "load": ["PASS patrol modes", "PASS attack and rearm", "PASS Grizzly flew low and landed on guard cell", "PASS Grizzly fired and rearmed", "PASS same ground guard after save", "PASS ground guard lifecycle", "PASS better garrison lifecycle", "PASS building type damage override applied to garrison shot", "PASS building type fire-rate override applied to garrison reload"]
+        "fresh": ["PASS patrol modes", "PASS saved", "PASS attack and rearm", "PASS Grizzly flew low and landed on guard cell", "PASS Grizzly fired and rearmed", "PASS ground guard waits for a free exit", "PASS ground guard lifecycle", "PASS better garrison lifecycle", "PASS building type damage override applied to garrison shot", "PASS building type fire-rate override applied to garrison reload", "PASS infantry guard lifecycle"],
+        "load": ["PASS patrol modes", "PASS attack and rearm", "PASS Grizzly flew low and landed on guard cell", "PASS Grizzly fired and rearmed", "PASS same ground guard after save", "PASS ground guard lifecycle", "PASS better garrison lifecycle", "PASS building type damage override applied to garrison shot", "PASS building type fire-rate override applied to garrison reload", "PASS same infantry guard reached its rally after save", "PASS infantry guard lifecycle"]
+      }
+    },
+    {
+      "Name": "ground-docks",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "GroundDocks.sav",
+      "Log": "ground-docks.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS reserved bay waits", "PASS full-health tank parked", "PASS drove out", "PASS manual recall without healing", "PASS occupied return waits", "PASS saved while reloading"],
+        "load": ["PASS parked vehicle restored", "PASS same tank drove out with ammo and unchanged health", "PASS destroyed vehicle replaced at bay"]
+      }
+    },
+    {
+      "Name": "spawn-docks",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "SpawnDocks.sav",
+      "Log": "spawn-docks.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS new spawns use free docks", "PASS returning spawn waits for a free berth", "PASS both returned to separate docks", "PASS saved parked spawns"],
+        "load": ["PASS parked spawns restored", "PASS both took off after native reload", "PASS destroyed parked child replaced"]
+      }
+    },
+    {
+      "Name": "projectile-script",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Flight.sav",
+      "Log": "flight.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS independent climb and hover from weapon Speed","PASS native smoke trailer on climbing missile","PASS scripted wave pierces past aim with falloff before save","PASS slow line accumulates partial cells before save","PASS groundPoint uses raised terrain and bridge deck","PASS queried enemy and launched child from parent with firer credit","PASS saved mid-flight"],
+        "load": ["PASS return after reload skips old hits and expires at Lua endpoint","PASS target hit and Life expiry after reload","PASS shield and wall clip four-cell movement at contact","PASS native Fire uses projectile controller","PASS moveTo and explicit detonation use the requested position","PASS combined wall and shield hits stop before rear targets","PASS ground blast spacing resumes across load","PASS fast line emits multiple ground blasts only up to shield after firer removal"]
+      }
+    },
+    {
+      "Name": "piercing",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Piercing.sav",
+      "Log": "piercing.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS one hit each and falloff floor beyond aim","PASS out of lifetime range","PASS saved overlapping first target"],
+        "load": ["PASS restored direction lifetime hit history and falloff","PASS restored expiry detonates end warhead once at last step","PASS shield detonates end warhead once at contact","PASS shield takes attenuated hit and protects rear","PASS native weapon launches piercing projectile","PASS continues past destroyed aim","PASS expires at configured lifetime","PASS wall detonates at its face without duplicate damage","PASS full shield plays end animation without damage"]
+      }
+    },
+    {
+      "Name": "projectile-blocker",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "Blocker.sav",
+      "Log": "blocker.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS legal shot hit front face", "PASS real arc cleared low wall", "PASS vertical shot hit roof", "PASS ally filter", "PASS instant shot passed", "PASS explicit wall gates", "PASS original warhead splashed beside contact", "PASS shield 0.3 deals 30 once and splashes at entry", "PASS opt-in Inviso deals 30 to guard", "PASS Inviso passes default shield", "PASS default multiplier deals 100 once", "PASS zero absorbs direct hit splash and detonation", "PASS zero absorbs Inviso", "PASS absorbed physical shot plays one warhead animation", "PASS absorbed Inviso shot plays one warhead animation", "PASS zero shield absorbs laser damage", "PASS electric bolt drawn", "PASS radiation beam drawn", "PASS beam ends on incoming shield face", "PASS beam damages guard once at configured multiplier", "PASS unblocked beam damages original target", "PASS beam travels from overhead to the top of the shield", "PASS overhead damage matches the shield contact", "PASS homing missile keeps original target and firer at slanted launch", "PASS stock arcing shot reaches original aim", "PASS saved homing missile"],
+        "load": ["PASS restored missile hit ordinary building"]
+      }
+    },
+    {
+      "Name": "build-nodes",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Log": "build-nodes.log",
+      "Save": "",
+      "Phases": ["fresh"],
+      "Standalone": false,
+      "Expected": {"fresh": ["PASS grounded node", "PASS airborne Kirov node", "PASS paid placement", "PASS stale placement rejected"]}
+    },
+    {
+      "Name": "entity-walls",
+      "Kind": "game",
+      "Map": "maps/Starfall_TestRange.map",
+      "Save": "EntityWalls.sav",
+      "Log": "entity-walls.log",
+      "Phases": ["fresh","load"],
+      "Standalone": false,
+      "Expected": {
+        "fresh": ["PASS node with construction art plays its buildup", "PASS correct visible body on the placement frame", "PASS node and segment lines", "PASS projectile hit wall", "PASS saved entity walls"],
+        "load": ["PASS saved gap and walls restored"]
       }
     },
     {
@@ -2086,6 +2334,17 @@
       "Standalone": false,
       "Expected": {
         "fresh": [
+          "PASS mixed interior fails placement and preview",
+          "PASS ordinary land building rejects the water",
+          "PASS land-only platform rejects the water",
+          "PASS mixed perimeter rejects the platform",
+          "PASS land placement follows AllowLand independently of AllowWater",
+          "PASS sea-only platform accepts water and both flags off reject it",
+          "PASS pure sea accepts platform placement",
+          "PASS sea platform preview accepts water within build radius",
+          "PASS sea deck supports land construction",
+          "PASS tank drives across the sea deck",
+          "PASS removing sea platform restores original water tiles and clears deck buildings",
           "PASS placement preview rejects an occupied deck",
           "PASS platform raises the native terrain by four levels",
           "PASS platform uses the native building SHP",
@@ -2098,6 +2357,11 @@
           "PASS outer ring blocks building placement",
           "PASS outer ring is impassable to ground vehicles",
           "PASS outer ring is impassable to infantry",
+          "PASS loaded rectangular 8x5 foundation from art",
+          "PASS rectangle raises its full 6x3 deck and leaves its outer rim blocked",
+          "PASS rectangular platform draws over rear units and behind foreground units",
+          "PASS infantry boards a deck cell beyond the old platform size",
+          "PASS deployment reaches the rectangle's far ground edge",
           "PASS native rifle hits the platform cliff",
           "PASS lower rifle and cannon cannot target deck occupants",
           "PASS direct firing and force-fire cannot bypass the high platform cliff",
@@ -2124,8 +2388,13 @@
           "PASS destroyed platform collapses and kills the occupant"
         ],
         "load": [
+          "PASS sea deck and land building survive load",
+          "PASS removing sea platform restores original water tiles and clears deck buildings",
           "PASS platform, terrain and both occupants survive save phase",
           "PASS pending platform entry completes after loading",
+          "PASS rectangular deck and rim survive save",
+          "PASS saved infantry remains on the rectangle's far deck edge",
+          "PASS collapse restores terrain and pathing across the rectangular footprint",
           "PASS standing platform does not hide the deck tank",
           "PASS outer ring remains blocked while the saved platform stands",
           "PASS collapse releases the outer ring for walking and building",

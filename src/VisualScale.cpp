@@ -1,5 +1,6 @@
 #include "VisualScale.h"
 #include "ForceMove.h"
+#include "../modules/ActSp/HighPlatforms.h"
 #include <FootClass.h>
 #include <UnitClass.h>
 #include <AnimClass.h>
@@ -263,6 +264,18 @@ DEFINE_HOOK(0x73D361,SF_LiftedSpriteVehicleDraw,6) {
     return 0x73D395;
 }
 DEFINE_HOOK(0x4AED70,SF_PlacementShapeScale,6) {
+    const auto caller=R->Stack<DWORD>(0);
+    if(caller==0x70645D || caller==0x706532) {
+        const auto object=R->ESI<TechnoClass*>();
+        if(HighPlatforms::drawsPlatformBody(object)) {
+            // Use the body silhouette as the depth mask for rear units.
+            constexpr auto depthFlags=static_cast<unsigned>(BlitterFlags::ZRead|BlitterFlags::ZReadWrite);
+            R->Stack(0x14,(R->Stack<unsigned>(0x14)&~depthFlags)|static_cast<unsigned>(BlitterFlags::ZReadWrite));
+            R->Stack<SHPStruct*>(0x2C,nullptr);
+        } else if(const int offset=HighPlatforms::deckDepthOffset(object)) {
+            R->Stack(0x1C,R->Stack<int>(0x1C)-offset);
+        }
+    }
     if(liftedSprite && R->ECX<Surface*>()==liftedSprite->scene &&
        (R->Stack<DWORD>(0x14)&static_cast<DWORD>(BlitterFlags::Darken))) {
         auto shape=R->Stack<SHPStruct*>(4);
@@ -427,7 +440,9 @@ DEFINE_HOOK(0x73B5DB, SF_ShrinkUnitVoxel, 9) {
 DEFINE_HOOK(0x4373B0, SF_UnitScaleBlit, 7) {
     auto caller=R->Stack<DWORD>(0);
     if(caller!=0x73B37C && caller!=0x73B3EA && caller!=0x73B44B) return 0;
-    int scale=VisualScale::percent(R->ESI<TechnoClass*>()->UniqueID);
+    const auto unit=R->ESI<TechnoClass*>();
+    if(const int offset=HighPlatforms::deckDepthOffset(unit)) R->Stack(0x18,R->Stack<int>(0x18)-offset);
+    int scale=VisualScale::percent(unit->UniqueID);
     // All three blits have ten stack arguments. Beyond them and DrawObject's
     // saved registers/locals is its caller: DrawAsVXL or the SHP compositor.
     if(scale<100 && R->Stack<DWORD>(0x74)==0x73C1AB) return 0;
@@ -518,4 +533,3 @@ DEFINE_HOOK(0x705E00, SF_SpriteDrawScale, 7) {
     }
     return 0;
 }
-

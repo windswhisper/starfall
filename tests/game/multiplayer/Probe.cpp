@@ -227,14 +227,20 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
     if(testDroneGuard && frame>=20 && frame<=685) {
         static DWORD originalGuard=0;
         CellStruct site{73,76},rally{70,74},groundSite{80,84},groundRally{84,84};
+        CellStruct infantrySite{53,81},infantryRally{55,81};
         auto cell=MapClass::Instance.GetCellAt(site);
         auto groundCell=MapClass::Instance.GetCellAt(groundSite);
+        auto infantryCell=MapClass::Instance.GetCellAt(infantrySite);
         if(frame==20) {
             auto b=static_cast<BuildingClass*>(BuildingTypeClass::Find("GAPILL")->CreateObject(players[0]));
             check(b && b->Unlimbo(cell->GetCoords(),DirType::North),"placed network guard outpost");
             auto type=BuildingTypeClass::Find("ASGNDPOST");
             auto post=type?static_cast<BuildingClass*>(type->CreateObject(players[0])):nullptr;
             check(post && post->Unlimbo(groundCell->GetCoords(),DirType::North),"placed network ground outpost");
+            auto infantryType=BuildingTypeClass::Find("ASINFPOST");
+            auto infantryPost=infantryType?static_cast<BuildingClass*>(infantryType->CreateObject(players[0])):nullptr;
+            check(infantryPost && infantryPost->Unlimbo(infantryCell->GetCoords(),DirType::North),
+                  "placed network infantry outpost");
         }
         auto b=cell->GetBuilding();
         auto post=groundCell->GetBuilding();
@@ -244,6 +250,10 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
             auto groundAction=post->MouseOverCell(&groundRally);
             check(groundAction==Action::Move && post->CellClickedAction(groundAction,&groundRally,&groundRally,false),
                   "owner clicked ground rally");
+            auto infantryPost=infantryCell->GetBuilding();
+            const auto infantryAction=infantryPost->MouseOverCell(&infantryRally);
+            check(infantryAction==Action::Move &&
+                  infantryPost->CellClickedAction(infantryAction,&infantryRally,&infantryRally,false),"owner clicked infantry rally");
         }
         if(frame==180 || frame==300) {
             auto child=b->SpawnManager->SpawnedNodes[0]->Unit;
@@ -262,6 +272,17 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiplayer,5) {
             }
             check(guards==1,frame==180?"remote ground rally reached by tank":"network Lua ground rally reached by tank");
             if(frame==180) check(grantToUnit(post,PassiveGrant{{"mp_droneguard"},-1}),"grant network Lua ground order");
+            if(frame==180) {
+                InfantryClass* infantry=nullptr;
+                for(auto unit:InfantryClass::Array) if(unit->Owner==players[0] && !_stricmp(unit->Type->ID,"E1") &&
+                    unit->GetMapCoords()==infantryRally && unit->GetHeight()==0) {
+                    check(!infantry,"one infantry guard per network outpost");
+                    infantry=unit;
+                }
+                check(infantry,"remote ground rally reached by infantry");
+                infantry->UnInit();
+                infantryCell->GetBuilding()->UnInit();
+            }
             if(frame==300) {
                 check(post->SetOwningHouse(players[1],false),"human player captured guard outpost");
                 post->IronCurtain(450,players[1],false);

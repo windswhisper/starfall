@@ -47,6 +47,8 @@ void fire(UnitClass* shooter,TechnoClass* primary,std::set<DWORD> expected,const
           triggerTotals[shooter->UniqueID]["countshots"]==before+1,label);
 }
 }
+#include "TracerCheck.inc"
+#include "ContinuousBeamCheck.inc"
 DEFINE_HOOK(0x55B4EB,SF_TestMultiShot,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
     auto f=Unsorted::CurrentFrame;
@@ -62,6 +64,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiShot,5) {
         grantToUnit(u,PassiveGrant{{"splitfire","countshots"},-1});
         u->FirepowerMultiplier=1.5;
         fire(u,p,{p->UniqueID},"zero stacks");
+        testContinuousBeams(u,p);
         changeStacks(u->UniqueID,"splitfire",1,6);
         fire(u,p,{p->UniqueID},"lone target");
         auto n=place(foe,{46,73}),q=place(foe,{45,76});
@@ -95,6 +98,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiShot,5) {
         }
         changeStacks(u->UniqueID,"splitfire",1,6);
         fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"two distinct extras");
+        auto challenger=place(foe,{45,74});
+        fire(u,p,{p->UniqueID,n->UniqueID,q->UniqueID},"nearer enemy does not steal split locks");
+        n->CloakState=CloakState::Cloaked;
+        challenger->CloakState=CloakState::Cloaked;
+        fire(u,p,{p->UniqueID,q->UniqueID},"one split remains");
+        check(splitTargets.at(u->UniqueID).branches==vector<DWORD>{0,q->UniqueID},"survivor keeps its branch");
+        challenger->CloakState=CloakState::Uncloaked;
+        fire(u,p,{p->UniqueID,q->UniqueID,challenger->UniqueID},"vacant split reacquires");
+        check(splitTargets.at(u->UniqueID).branches==vector<DWORD>{challenger->UniqueID,q->UniqueID},"replacement fills original vacancy");
+        challenger->Limbo();
+        n->CloakState=CloakState::Uncloaked;
+        testSplitBeams(u,p,n,q);
+        testTracers(p,n,q);
         auto weapon=u->GetWeapon(0)->WeaponType;
         auto originalProjectile=weapon->Projectile;
         for(auto type:{"AAHeatSeeker2","Ballistic"}) {
@@ -215,6 +231,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestMultiShot,5) {
             if(unit->UniqueID==pid) p=unit;
         }
         check(u && p && stackCount(uid,"splitfire")==6,"restored units and stacks");
+        check(splitTargets.contains(uid) && splitTargets.at(uid).branches==vector<DWORD>{nid,qid},"restored split target order");
         u->Type->Ammo=1;
         u->Ammo=1;
         fire(u,p,{pid,nid,qid},"restored layered shot");

@@ -30,6 +30,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveGained,5) {
     int h=house->ArrayIndex,v=foe->ArrayIndex,base=u->Type->Strength;
     if(f==20) {
         std::ofstream("gained.ids")<<u->UniqueID<<" "<<other->UniqueID;
+        check(skills.contains("sharedamage") && !skills.contains("removeddamagepercent"),"damage formula accepted and removed percentage field rejected");
         check(!skills.contains("expiredkey") && !skills.contains("badrange") && !skills.contains("badgrant") && !skills.contains("badduration"),"invalid rules");
         check(UnitHealth::read(u).maximum==base+10,"native gain");
         auto flashCount=[&] {int n=0;for(auto a:AnimClass::Array) if(a->Type==AnimTypeClass::Find("PIFF") && a->OwnerObject==u) ++n;return n;};

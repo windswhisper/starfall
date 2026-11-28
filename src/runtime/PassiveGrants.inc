@@ -263,7 +263,7 @@ void expireWarheadGrants() {
         if(!unit || entries.empty()) group=warheadGrants.erase(group); else ++group;
     }
 }
-bool grantToUnit(TechnoClass* target,const PassiveGrant& rule,bool notifyGains=true,TechnoClass* source=nullptr) {
+bool grantToUnit(TechnoClass* target,const PassiveGrant& rule,bool notifyGains=true,TechnoClass* source=nullptr,TechnoClass* tauntTarget=nullptr) {
     if(!Mount::permits(target,source)) return false;
     bool changed=false;
     unsigned frame=Unsorted::CurrentFrame;
@@ -275,9 +275,15 @@ bool grantToUnit(TechnoClass* target,const PassiveGrant& rule,bool notifyGains=t
     auto& group=warheadGrants[target->UniqueID];
     group.unit=target;
     for(const auto& id:rule.ids) {
+        auto definition=skills.find(id);
+        if(definition!=skills.end() && definition->second.taunt) {
+            auto aim=tauntTarget?tauntTarget:source;
+            if(!Taunt::present(target) || !Taunt::canAttack(target,aim)) continue;
+            changed|=Taunt::grant(target,id,source,aim,rule.duration);
+        }
         if(rule.stackOnReapply && includes(held,id) && !suppressed(target->UniqueID,id)) {
             auto skill=skills.find(id);
-            if(skill!=skills.end() && changeStacks(target->UniqueID,id,1,skill->second.stackMax)) changed=true;
+            if(skill!=skills.end() && changeUnitStacks(target,id,1,skill->second.stackMax)) changed=true;
         }
         if(!group.skills.contains(id)) clearGrantProgress(target,id);
         auto [entry,fresh]=group.skills.try_emplace(id,GrantTime{frame,rule.duration});
@@ -293,7 +299,9 @@ bool grantToUnit(TechnoClass* target,const PassiveGrant& rule,bool notifyGains=t
         changed=true;
         scheduleExpiry(frame,rule.duration);
     }
+    if(group.skills.empty()) warheadGrants.erase(target->UniqueID);
     if(changed) refreshLinkedPassives(target);
+    if(auto it=Taunt::controls.find(target->UniqueID);changed && it!=Taunt::controls.end()) Taunt::update(it->second);
     if(changed && notifyGains && anyGainSkills) observeGains(target);
     return changed;
 }

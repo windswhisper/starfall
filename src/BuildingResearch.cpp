@@ -7,6 +7,7 @@
 #include <HouseClass.h>
 #include <InfantryClass.h>
 #include <SessionClass.h>
+#include <TargetClass.h>
 #include <Unsorted.h>
 
 using std::string;
@@ -28,11 +29,16 @@ using PassiveRules::read;
 namespace {
 struct Income { int amount,interval; };
 std::map<BuildingTypeClass*,Income> incomeTypes;
+struct ProducerSite { BuildingClass* building; Income income; };
+std::map<DWORD,ProducerSite> sites;
+bool indexed=false;
 std::map<BuildingTypeClass*,RewardRule> rewardTypes;
 }
 
 void clearTypeCaches() {
     incomeTypes.clear();
+    sites.clear();
+    indexed=false;
     rewardTypes.clear();
 }
 const RewardRule& rewardRule(BuildingTypeClass* type) {
@@ -70,25 +76,51 @@ void tickGlobalResearch() {
         state.lastFrame=frame;
     }
 }
+void trackBuilding(BuildingClass* building) {
+    if(incomeTypes.empty() || !building) return;
+    auto rule=incomeTypes.find(building->Type);
+    if(rule!=incomeTypes.end()) {
+        sites.insert_or_assign(building->UniqueID,ProducerSite{building,rule->second});
+    } else if(sites.erase(building->UniqueID)) {
+        // A converted building keeps its ID, but may stop producing points.
+        Research::producers.erase(building->UniqueID);
+    }
+}
+void forget(unsigned long id) {
+    sites.erase(id);
+    Research::producers.erase(id);
+    Research::buildingRewards.erase(id);
+}
+void ownerChanged(BuildingClass* building) {
+    if(!building->Owner) return;
+    const auto id=building->UniqueID;
+    const int owner=building->Owner->ArrayIndex;
+    auto timer=Research::producers.find(id);
+    if(timer!=Research::producers.end() && timer->second.owner!=owner) Research::producers.erase(timer);
+    auto reward=Research::buildingRewards.find(id);
+    if(reward!=Research::buildingRewards.end() && reward->second.owner!=owner) {
+        if(reward->second.claimed) reward->second.owner=owner;
+        else Research::buildingRewards.erase(reward);
+    }
+}
+static void indexProducers() {
+    for(auto type:BuildingTypeClass::Array) {
+        int amount=number(read(type->ID,"Starfall.ResearchPoints","0"));
+        if(amount<=0) continue;
+        int interval=number(read(type->ID,"Starfall.ResearchInterval","150"));
+        if(interval>0) incomeTypes.emplace(type,Income{amount,interval});
+    }
+    if(!incomeTypes.empty()) for(auto building:BuildingClass::Array) trackBuilding(building);
+    std::erase_if(Research::producers,[](const auto& entry){return !sites.contains(entry.first);});
+    indexed=true;
+}
 void tickBuildings() {
     if(!Research::isEnabled()) return;
+    if(!indexed) indexProducers();
     tickGlobalResearch();
-    for(auto* b:BuildingClass::Array) {
-        if(!b || !b->Type) continue;
-        if(!rewardOptions(b->Type).empty() && b->Owner && alive(b)) {
-            auto [reward,added]=Research::buildingRewards.try_emplace(b->UniqueID,Research::BuildingReward{b->Owner->ArrayIndex,-1,false});
-            if(!added && reward->second.owner!=b->Owner->ArrayIndex) {
-                reward->second.owner=b->Owner->ArrayIndex;
-                reward->second.authorized=-1;
-                reward->second.source=Research::BuildingRewardSource::None;
-            }
-        }
-        auto [it,fresh]=incomeTypes.try_emplace(b->Type);
-        if(fresh) it->second={number(read(b->Type->ID,"Starfall.ResearchPoints","0")),
-                              number(read(b->Type->ID,"Starfall.ResearchInterval","150"))};
-        auto income=it->second;
-        if(income.amount<=0 || income.interval<=0) continue;
-        auto id=b->UniqueID;
+    for(const auto& [id,site]:sites) {
+        auto b=site.building;
+        const auto& income=site.income;
         if(!eligibleHouse(b->Owner) || !alive(b) || !b->IsOnMap || b->InLimbo ||
             b->CurrentMission==Mission::Selling || b->CurrentMission==Mission::Construction) {
             Research::producers.erase(id); continue;
@@ -136,13 +168,19 @@ void authorizeBuildingReward(InfantryClass* infantry,BuildingClass* building,Res
 }
 } // namespace BuildingResearch
 
+static BuildingClass* rewardBuilding(unsigned long id) {
+    TargetClass target;
+    target.m_ID=id;
+    target.m_RTTI=static_cast<unsigned char>(AbstractType::Abstract);
+    return target.As_Building();
+}
+
 std::vector<int> Research::buildingOptions(unsigned long id,int house) {
     std::vector<int> result;
     if(!isEnabled()) return result;
     auto state=buildingRewards.find(id);
     if(state==buildingRewards.end() || state->second.claimed || state->second.authorized!=house) return result;
-    BuildingClass* building=nullptr;
-    for(auto* b:BuildingClass::Array) if(b && b->UniqueID==id) {building=b;break;}
+    auto building=rewardBuilding(id);
     if(!building || !building->Type || !alive(building) || !building->IsOnMap || building->InLimbo || !building->Owner || building->Owner->ArrayIndex!=state->second.owner) return result;
     const auto& rule=BuildingResearch::rewardRule(building->Type);
     if((state->second.source==BuildingRewardSource::Engineer && !rule.engineer) ||
@@ -180,8 +218,9 @@ bool Research::claimFree(RewardId id,int house,int option) {
     const auto serial=static_cast<unsigned long>(id);
     if(id&ticketFlag) freeTickets.erase(serial);
     else {
-        auto& reward=buildingRewards.at(serial);
-        reward.claimed=true;reward.authorized=-1;reward.source=BuildingRewardSource::None;
+        if(auto building=rewardBuilding(serial); building && building->Owner) {
+            buildingRewards[serial]={building->Owner->ArrayIndex,-1,true,BuildingRewardSource::None};
+        }
         refreshedSlots.erase(house);
     }
     Detail::recordAcquisition(house,option);

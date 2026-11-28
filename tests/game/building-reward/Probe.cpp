@@ -95,7 +95,34 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
               BuildingResearch::rewardRule(real->Type).engineer && BuildingResearch::rewardRule(real->Type).spy,"configuration");
         auto engineer=infantry("ENGINEER",house);auto spy=infantry("E1",house);
         BuildingResearch::tickBuildings();
+        check(!Research::buildingRewards.contains(closed->UniqueID) && !Research::buildingRewards.contains(real->UniqueID),
+              "ordinary placement does not allocate free rewards");
+        closed->CurrentMission=Mission::Guard;
+        closed->GoOnline();
+        BuildingResearch::tickBuildings();
+        auto producerId=closed->UniqueID;
+        check(Research::producers.contains(producerId),"newly placed producer indexed");
+        auto& timer=Research::producers.at(producerId);
+        timer.elapsed=49999;
+        const int balance=Research::balance(foe->ArrayIndex);
+        closed->EMPLockRemaining=2;
+        BuildingResearch::tickBuildings();
+        check(timer.elapsed==49999 && Research::balance(foe->ArrayIndex)==balance,"EMP pauses producer");
+        closed->EMPLockRemaining=0;
+        closed->GoOffline();
+        BuildingResearch::tickBuildings();
+        check(timer.elapsed==49999 && Research::balance(foe->ArrayIndex)==balance,"offline producer keeps elapsed frames");
+        closed->GoOnline();
+        BuildingResearch::tickBuildings();
+        check(timer.elapsed==0 && Research::balance(foe->ArrayIndex)==balance+7,"online producer resumes and pays once");
+        timer.elapsed=250;
         check(closed->SetOwningHouse(house,false),"transfer closed");BuildingResearch::tickBuildings();
+        check(!Research::producers.contains(producerId) || Research::producers.at(producerId).elapsed<=1,"capture resets producer progress");
+        closed->CurrentMission=Mission::Guard;
+        closed->GoOnline();
+        BuildingResearch::tickBuildings();
+        Research::producers.at(producerId).elapsed=900;
+        std::ofstream("producer.id")<<producerId;
         BuildingResearch::authorizeBuildingReward(engineer,closed,Research::BuildingRewardSource::Engineer);
         BuildingResearch::authorizeBuildingReward(spy,closed,Research::BuildingRewardSource::Spy);
         check(Research::buildingOptions(closed->UniqueID,house->ArrayIndex).empty(),"defaults closed");
@@ -178,6 +205,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
             std::ofstream expected("building-reward.board");
             for(int index:Research::buildingOptions(spy,house->ArrayIndex)) expected<<Research::options[index].id<<'\n';
             expected.close();
+            DWORD producer=0;std::ifstream("producer.id")>>producer;
+            std::ofstream("producer.elapsed")<<Research::producers.at(producer).elapsed;
             check(ScenarioClass::SaveGame("Saved Games\\BuildingReward.sav",L"Building Reward"),"saved");
             TerminateProcess(GetCurrentProcess(),0);
         }
@@ -197,6 +226,10 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingReward,5) {
             check(!Research::expanded,"free selection animation completes");
             TerminateProcess(GetCurrentProcess(),0);return 0;
         }
+        DWORD producer=0;int elapsed=0;
+        std::ifstream("producer.id")>>producer;std::ifstream("producer.elapsed")>>elapsed;
+        check(elapsed>=900 && Research::producers.contains(producer) && Research::producers.at(producer).elapsed>elapsed,
+              "restored producer resumes saved progress");
         DWORD eng=0,spy=0,claimed=0,real=0;std::ifstream("building-reward.ids")>>eng>>spy>>claimed>>real;
         check(Research::buildingRewards.contains(eng) && Research::buildingRewards.at(eng).source==Research::BuildingRewardSource::Engineer &&
               Research::buildingRewards.contains(spy) && Research::buildingRewards.at(spy).source==Research::BuildingRewardSource::Spy &&

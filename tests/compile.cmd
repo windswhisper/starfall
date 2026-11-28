@@ -47,7 +47,7 @@ exit /b %errorlevel%
 :unit
 set "out=build\tests\unit"
 set "extra="
-if /i "%~2"=="ResearchModelTest" set "extra=src\Research.cpp src\ConfigText.cpp"
+if /i "%~2"=="ResearchModelTest" set "extra=src\Research.cpp src\ResearchStages.cpp src\ResearchBonds.cpp src\ConfigText.cpp"
 if /i "%~2"=="ActionArgumentsTest" set "extra=%shared%\ResearchUI.obj %shared%\modules.lib"
 cl /nologo /std:c++20 /EHsc /O2 /MT /utf-8 /DSYR_VER=2 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /Isrc /Ireferences\Phobos\YRpp /Fo%out%\ /Fe%out%\%~2.exe tests\unit\%~2.cpp %extra% "%shared%\lua\lua.lib" "%shared%\research.res" /link /INCREMENTAL:NO /OPT:REF /OPT:NOICF
 exit /b %errorlevel%

@@ -22,7 +22,8 @@ inline bool send(Point2D point,UINT message) {
     for(int i=count;i<orders.Count;++i) {
         auto& order=orders[i];
         if(order.Type!=EventType::SpecialPlace &&
-            !(order.Type==EventType::Place && (static_cast<unsigned>(order.Place.RTTIType)>>16)==0x5346)) return false;
+            !(order.Type==EventType::Place && ((static_cast<unsigned>(order.Place.RTTIType)>>16)==0x5346 ||
+              (static_cast<unsigned>(order.Place.RTTIType)>>16)==0x534F))) return false;
     }
     return true;
 }

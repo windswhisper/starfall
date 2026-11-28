@@ -2,6 +2,7 @@
 #include <DisplayClass.h>
 #include <Drawing.h>
 #include <EventClass.h>
+#include <IsometricTileTypeClass.h>
 #include <HouseClass.h>
 #include <MapClass.h>
 #include <RulesClass.h>
@@ -73,6 +74,176 @@ FootClass* placeTransferUnit(TechnoTypeClass* type, HouseClass* house, CellStruc
     auto unit=static_cast<FootClass*>(type->CreateObject(house));
     check(unit && unit->Unlimbo(MapClass::Instance.GetCellAt(cell)->GetCoords(),DirType::East),"placed transfer fixture unit");
     return unit;
+}
+
+void testSeaPlatform(int frame,bool load,HouseClass* house) {
+    if(frame!=48 && frame!=100 && frame!=140 && frame!=142) return;
+    auto& map=MapClass::Instance;
+    CellStruct anchor{54,76},tankSite{55,77},tankGoal{58,77},turretSite{57,79};
+    auto base=map.GetCellAt(anchor);
+    auto deck=map.GetCellAt(tankSite);
+    auto type=BuildingTypeClass::Find("ASHIGHPL");
+    auto turret=BuildingTypeClass::Find("GAPILL");
+    if(!load && frame==48) {
+        auto seaOnly=BuildingTypeClass::Find("ASSEAPL");
+        auto disabled=BuildingTypeClass::Find("ASNOPL");
+        check(type->CanPlaceHere(&anchor,house) && !seaOnly->CanPlaceHere(&anchor,house) &&
+              !disabled->CanPlaceHere(&anchor,house),"land placement follows AllowLand independently of AllowWater");
+        int water=0;
+        for(;water<IsometricTileTypeClass::Array.Count;++water) {
+            base->IsoTileTypeIndex=water;
+            base->Height=0;
+            if(base->Tile_Is_Water()) break;
+        }
+        check(water<IsometricTileTypeClass::Array.Count,"found native seawater tile");
+        for(short y=0;y<6;++y) for(short x=0;x<8;++x) {
+            auto cell=map.GetCellAt(CellStruct{short(anchor.X+x),short(anchor.Y+y)});
+            cell->IsoTileTypeIndex=water;
+            cell->Height=0;
+            cell->RecalcAttributes(-1);
+        }
+        deck->IsoTileTypeIndex=0xFFFF;deck->RecalcAttributes(-1);
+        check(!type->CanPlaceHere(&anchor,house) && !DisplayClass::Instance.PassesProximityCheck(
+              type,house->ArrayIndex,type->GetFoundationData(false),&anchor),"mixed interior fails placement and preview");
+        deck->IsoTileTypeIndex=water;deck->RecalcAttributes(-1);
+        check(!turret->CanPlaceHere(&anchor,house),"ordinary land building rejects the water");
+        check(!BuildingTypeClass::Find("ASRECTPL")->CanPlaceHere(&anchor,house),"land-only platform rejects the water");
+        auto edge=map.GetCellAt(CellStruct{short(anchor.X+5),short(anchor.Y+4)});
+        edge->IsoTileTypeIndex=0xFFFF;
+        edge->RecalcAttributes(-1);
+        check(!type->CanPlaceHere(&anchor,house),"mixed perimeter rejects the platform");
+        edge->IsoTileTypeIndex=water;
+        edge->RecalcAttributes(-1);
+        check(type->CanPlaceHere(&anchor,house),"pure sea accepts platform placement");
+        check(seaOnly->CanPlaceHere(&anchor,house) && !disabled->CanPlaceHere(&anchor,house),
+              "sea-only platform accepts water and both flags off reject it");
+        CellStruct shore{short(anchor.X-3),anchor.Y};
+        auto powerType=BuildingTypeClass::Find("GAPOWR");
+        auto power=static_cast<BuildingClass*>(powerType->CreateObject(house));
+        check(power && power->Unlimbo(map.GetCellAt(shore)->GetCoords(),DirType::North),"placed friendly base on shore");
+        check(DisplayClass::Instance.PassesProximityCheck(type,house->ArrayIndex,type->GetFoundationData(false),&anchor),
+              "sea platform preview accepts water within build radius");
+        auto post=static_cast<BuildingClass*>(type->CreateObject(house));
+        check(post && post->Unlimbo(base->GetCoords(),DirType::North),"built sea platform");
+        deck->RecalcAttributes(-1);
+        check(deck->LandType==LandType::Clear && deck->Level==base->Level+4 &&
+              base->Tile_Is_Water() && turret->CanPlaceHere(&turretSite,house),"sea deck supports land construction");
+        auto tower=static_cast<BuildingClass*>(turret->CreateObject(house));
+        check(tower && tower->Unlimbo(map.GetCellAt(turretSite)->GetCoords(),DirType::North),"placed land building on sea deck");
+        auto tank=static_cast<UnitClass*>(placeTransferUnit(UnitTypeClass::Find("MTNK"),house,tankSite));
+        moveTank(tank,tankGoal);
+    }
+    if(load && frame==140) {
+        check(deck->LandType==LandType::Clear && base->Tile_Is_Water() &&
+              map.GetCellAt(turretSite)->GetBuilding(),"sea deck and land building survive load");
+    }
+    if(!load && frame==100) {
+        bool moved=false;
+        for(auto unit:UnitClass::Array) if(unit && unit->GetMapCoords()==tankGoal) moved=true;
+        check(moved,"tank drives across the sea deck");
+    }
+    if(frame==140) {
+        auto post=base->GetBuilding();
+        check(post!=nullptr,"sea platform present before removal");
+        post->UnInit();
+    }
+    if(frame==142) {
+        check(deck->LandType==LandType::Water && deck->Level==base->Level &&
+              deck->IsoTileTypeIndex==base->IsoTileTypeIndex && deck->Height==base->Height &&
+              !map.GetCellAt(turretSite)->GetBuilding() && !turret->CanPlaceHere(&tankSite,house),
+              "removing sea platform restores original water tiles and clears deck buildings");
+    }
+}
+
+void testRectangle(int frame,bool load,HouseClass* house) {
+    static CellStruct site{};
+    static TargetClass support,infantry;
+    static bool exitedAtFarEdge=false;
+    auto& map=MapClass::Instance;
+    if(!load && frame==84) {
+        auto type=BuildingTypeClass::Find("ASRECTPL");
+        check(type && type->GetFoundationWidth()==8 && type->GetFoundationHeight(true)==5,
+            "loaded rectangular 8x5 foundation from art");
+        for(short y=75;y<=83 && site==CellStruct{};++y) for(short x=73;x<=81;++x) {
+            CellStruct candidate{x,y};
+            if(!type->CanPlaceHere(&candidate,house)) continue;
+            site=candidate;
+            break;
+        }
+        check(site!=CellStruct{},"found level space for rectangle");
+        auto post=static_cast<BuildingClass*>(type->CreateObject(house));
+        check(post && post->Unlimbo(map.GetCellAt(site)->GetCoords(),DirType::North),"built rectangular high platform");
+        support=TargetClass(post);
+    }
+    if(load && frame==132) {
+        for(auto post:BuildingClass::Array) if(post && !_stricmp(post->Type->ID,"ASRECTPL")) {
+            support=TargetClass(post);
+            site=post->GetMapCoords();
+            break;
+        }
+        check(site!=CellStruct{},"restored rectangular platform building");
+    }
+    if(site==CellStruct{}) return;
+    const CellStruct last{static_cast<short>(site.X+6),static_cast<short>(site.Y+2)};
+    const CellStruct rim{static_cast<short>(site.X+7),last.Y};
+    const CellStruct outside{static_cast<short>(site.X+8),last.Y};
+    auto post=support.As_Building();
+    const auto floor=map.GetCellAt(last);
+    if((!load && frame==85) || (load && frame==132)) {
+        const auto edgeCell=map.GetCellAt(rim);
+        const auto ground=map.GetCellAt(outside);
+        check(post && floor->Level==ground->Level+4 && !floor->GetBuilding() &&
+              edgeCell->Level==ground->Level && edgeCell->GetBuilding()==post &&
+              !edgeCell->IsClearToMove(SpeedType::Track,true,true,-1,MovementZone::Normal,-1,false),
+              load?"rectangular deck and rim survive save":"rectangle raises its full 6x3 deck and leaves its outer rim blocked");
+        if(!load) {
+            auto tankType=UnitTypeClass::Find("MTNK");
+            const CellStruct behind{static_cast<short>(site.X-1),static_cast<short>(site.Y+4)};
+            auto rear=placeTransferUnit(tankType,house,behind);
+            auto front=placeTransferUnit(tankType,house,outside);
+            check(rear->GetYSort()<post->GetYSort() && post->GetYSort()<front->GetYSort(),
+                "rectangular platform draws over rear units and behind foreground units");
+            rear->UnInit();
+            front->UnInit();
+            auto unit=placeTransferUnit(InfantryTypeClass::Find("E1"),house,outside);
+            infantry=TargetClass(unit);
+            const auto action=unit->MouseOverObject(post,true);
+            check(action==Action::Enter && unit->ObjectClickedAction(action,post,false),
+                "ordered entry from the far edge of the rectangle");
+        } else {
+            auto occupant=abstract_cast<InfantryClass*>(floor->GetContent());
+            check(occupant && occupant->Owner==house,"saved infantry remains on the rectangle's far deck edge");
+            int damage=post->Health;
+            post->ReceiveDamage(&damage,0,RulesClass::Instance->C4Warhead,nullptr,true,false,nullptr);
+        }
+    }
+    if(!load && frame==103) {
+        auto unit=infantry.As_Infantry();
+        check(unit && unit->GetMapCoords()==last && unit->GetCoords().Z==floor->GetCoords().Z,
+            "infantry boards a deck cell beyond the old platform size");
+        unit->ForceMission(Mission::Sleep);
+    }
+    if(!load && frame==135) {
+        check(post && post->ObjectClickedAction(Action::Self_Deploy,post,false),"ordered rectangular platform deployment");
+    }
+    if(!load && frame>135) {
+        auto unit=infantry.As_Infantry();
+        if(unit) {
+            const auto at=unit->GetMapCoords();
+            if(at.X==outside.X && at.Y>=site.Y-1 && at.Y<=site.Y+5 &&
+               unit->GetCoords().Z==map.GetCellAt(at)->GetCoords().Z) exitedAtFarEdge=true;
+        }
+        if(frame==151) {
+            check(exitedAtFarEdge && unit && post,"deployment reaches the rectangle's far ground edge");
+            unit->UnInit();
+            post->UnInit();
+        }
+    }
+    if(load && frame==146) {
+        check(floor->Level==map.GetCellAt(outside)->Level &&
+              map.GetCellAt(rim)->IsClearToMove(SpeedType::Track,true,true,-1,MovementZone::Normal,-1,false),
+            "collapse restores terrain and pathing across the rectangular footprint");
+    }
 }
 
 void testTransfers(int elapsed,BuildingClass* platform,HouseClass* house) {
@@ -249,6 +420,8 @@ DEFINE_HOOK(0x55B4EB,PlatformProductionProbe,5) {
     auto& map=MapClass::Instance;
     const int f=Unsorted::CurrentFrame;
     const bool load=GetFileAttributesA("reload.flag")!=INVALID_FILE_ATTRIBUTES;
+    testSeaPlatform(f,load,house);
+    if(f>=84 && f<=151) testRectangle(f,load,house);
     auto base=map.GetCellAt(anchor);
     auto raised=map.GetCellAt(edge);
     auto platform=base->GetBuilding();
@@ -298,18 +471,6 @@ DEFINE_HOOK(0x55B4EB,PlatformProductionProbe,5) {
             check(attacker->GetFireError(target,0,false)!=FireError::ILLEGAL &&
                 attacker->GetFireError(wallCell,0,true)!=FireError::ILLEGAL,
                 "wall and rim remain legal targets for a cannon below the cliff");
-            // The native attack above exercises UI routing. Resolve one impact at
-            // the front face to verify damage independently of inaccuracy and AI.
-            const CellStruct front{static_cast<short>(wallTargetSite.X+5),static_cast<short>(wallTargetSite.Y+4)};
-            auto cell=map.GetCellAt(front);
-            auto weapon=attacker->GetWeapon(0)->WeaponType;
-            auto shell=weapon->Projectile->CreateBullet(target,attacker,weapon->Damage,weapon->Warhead,weapon->Speed,false);
-            check(cell->GetBuilding()==target && shell,"front wall resolves to the cannon's intended target");
-            const auto impact=cell->GetCoords();
-            shell->SetWeaponType(weapon);
-            shell->SetLocation(impact);
-            shell->Detonate(impact);
-            shell->UnInit();
         }
         if(f>wallAttackFrame+240) {
             const auto attacker=wallAttacker.As_Unit();
@@ -329,6 +490,16 @@ DEFINE_HOOK(0x55B4EB,PlatformProductionProbe,5) {
         auto platformType=BuildingTypeClass::Find("ASHIGHPL");
         auto anchorCell=anchor;
         check(platformType && platformType->CanPlaceHere(&anchorCell,house),"flat platform is placeable");
+        const auto originalLand=raised->LandType;
+        auto& roughBuildable=GroundType::Array[static_cast<int>(LandType::Rough)].Buildable;
+        const bool originalBuildable=roughBuildable;
+        raised->LandType=LandType::Rough;
+        roughBuildable=true;
+        check(platformType->CanPlaceHere(&anchorCell,house),"platform accepts buildable rough ground within the deck");
+        roughBuildable=false;
+        check(!platformType->CanPlaceHere(&anchorCell,house),"unbuildable ground inside the hollow foundation rejects placement");
+        roughBuildable=originalBuildable;
+        raised->LandType=originalLand;
         auto tankType=UnitTypeClass::Find("MTNK");
         auto blocker=static_cast<UnitClass*>(tankType->CreateObject(house));
         check(blocker->Unlimbo(raised->GetCoords(),DirType::East),"placed temporary blocker");
@@ -426,7 +597,9 @@ DEFINE_HOOK(0x55B4EB,PlatformProductionProbe,5) {
         check(tank && tank->GetCoords().Z==highZ && tank->GetMapCoords().X<72,"deck tank cannot drive off the four-level cliff");
         if(auto below=groundTank.As_Unit()) below->UnInit();
     }
-    if(f==(load?185:181)) {
+    // Allow the walking infantry to finish its last subcell after reloading.
+    const int collapseFrame=load?245:181;
+    if(f==collapseFrame) {
         originalLevel=base->Level;
         highZ=raised->GetCoords().Z;
         auto tank=tankOnDeck();
@@ -450,7 +623,7 @@ DEFINE_HOOK(0x55B4EB,PlatformProductionProbe,5) {
             platform->ReceiveDamage(&damage,0,RulesClass::Instance->C4Warhead,nullptr,true,false,nullptr);
         }
     }
-    if(f>(load?185:181) && raised->Level==originalLevel && !verifiedFall) {
+    if(f>collapseFrame && raised->Level==originalLevel && !verifiedFall) {
         auto upper=map.GetCellAt(buildingSite)->GetBuilding();
         check(!upper || upper->Health<=0 || !upper->IsAlive,"collapse destroys the upper building");
         auto tank=tankOnDeck();

@@ -113,10 +113,10 @@ bool parseForceMove(Spec& spec,Field field) {
 } // namespace
 
 bool passengerCombatMultiplier(size_t index) {
-    return index==1 || index==3 || index==4;
+    return index==1 || index==3 || index==4 || index==experienceMultiplierIndex;
 }
 bool validStateMultiplier(size_t index,double value) {
-    return value<=100 && (value>0 || (index==powerMultiplierIndex && value==0));
+    return value<=100 && (value>0 || ((index==powerMultiplierIndex || index==experienceMultiplierIndex) && value==0));
 }
 bool beforeHealthLoss(const string& trigger) {
     return trigger=="onbeforedealdamage" || trigger=="onbeforetakedamage";
@@ -181,9 +181,11 @@ bool mountOffset(const string& text,CoordStruct& result) {
     return true;
 }
 bool actionField(const string& key) {
-    static const std::set<string> fields={"action","action.amount","action.maxhealthpercent","action.percentofdamage","action.target","action.weapon",
-        "action.anim","action.sound","action.shakex","action.shakey","action.shakelocal","action.particlesystem","action.rarity","action.researchoptions","action.research",
+    static const std::set<string> fields={"action","action.order","action.counter","action.amount","action.maxhealthpercent","action.target","action.weapon",
+        "action.anim","action.sound","action.shakex","action.shakey","action.shakelocal","action.showtext","action.landfirst","action.particlesystem","action.rarity","action.researchoptions","action.research",
         "action.warhead","action.passive","action.duration","action.stackonreapply","action.cratetype","action.pickuptype","action.pickuptypes","action.range","action.owner","action.unittype","action.unittypes","action.weights","action.randomcount","action.buildingtype","action.percent",
+        "action.eject.range","action.eject.openheight","action.eject.horizontalspeed","action.eject.interval",
+        "action.jump.height","action.jump.duration","action.jump.range","action.jump.takeoffanim","action.jump.takeoffsound","action.jump.landanim","action.jump.landsound",
         "action.forcemove.mode","action.forcemove.center","action.forcemove.offset","action.forcemove.distance","action.forcemove.height","action.forcemove.airborneheight","action.forcemove.duration","action.forcemove.tilt","action.forcemove.easing","action.forcemove.ignorecollision","action.forcemove.blowweight","action.forcemove.affectsironcurtain",
         "action.node","action.slot","action.count","action.anchor","action.flh","action.transportfire","action.excludeparentpassives","action.destination","action.searchradius","action.instant","action.script","action.function","action.levels","action.signal","action.signal.target","action.signal.range","action.signal.houses","action.signal.includeself","action.signal.value"};
     return fields.contains(key);
@@ -203,14 +205,8 @@ static bool readTooltipText(Skill& skill) {
         auto& part=skill.tooltipText.emplace_back();
         part.literal=ConfigText::displayText(text.substr(pos,start-pos));
         if(start==string::npos) break;
-        size_t end=start+2;
-        int depth=1;
-        while(end<text.size() && depth) {
-            const auto c=text[end++];
-            if(c=='(') ++depth;
-            if(c==')') --depth;
-        }
-        if(depth || !part.number.compile(skill.id,"Modifier.TooltipText",lower(text.substr(start,end-start))) ||
+        const auto end=ConfigText::formulaEnd(text,start);
+        if(end==string::npos || !part.number.compile(skill.id,"Modifier.TooltipText",lower(text.substr(start,end-start))) ||
            part.number.expression.usesDamage() || part.number.expression.usesSignal()) return false;
         pos=end;
     }
@@ -266,6 +262,30 @@ bool parseState(Skill& s,const std::set<string>& keys) {
             scale=scalePercent(read(s.id,key.c_str()),key=="modifier.visualscale"?0.01:0.5);
             if(!continuous || scale<0) return invalidField(s.id,key);
             modifier=true;
+        } else if(key.starts_with("modifier.projectileshield.")) {
+            // sectionKeys normalizes names for validation. YR's rules lookup needs their INI spelling.
+            static constexpr std::array fields={"Modifier.ProjectileShield.Radius","Modifier.ProjectileShield.HeightOffset",
+                "Modifier.ProjectileShield.DamageMultiplier","Modifier.ProjectileShield.BlockInviso"};
+            auto field=std::find_if(fields.begin(),fields.end(),[&](const char* name){return !_stricmp(name,key.c_str());});
+            if(field==fields.end()) return invalidField(s.id,key);
+            const string name=*field;
+            if(!continuous || !keys.contains("modifier.projectileshield.radius"))
+                return invalidField(s.id,name+" requires WhileState and Modifier.ProjectileShield.Radius");
+            const auto raw=read(s.id,name.c_str());
+            if(key=="modifier.projectileshield.blockinviso") {
+                if(raw!="yes" && raw!="no") return invalidField(s.id,name+"="+raw);
+                s.shield.blockInviso=raw=="yes";
+            } else {
+                double value{};
+                const auto result=std::from_chars(raw.data(),raw.data()+raw.size(),value);
+                if(result.ec!=std::errc{} || result.ptr!=raw.data()+raw.size() || !std::isfinite(value))
+                    return invalidField(s.id,name+"="+raw);
+                if(key=="modifier.projectileshield.radius" && value>0 && value<=512) s.shield.radius=value;
+                else if(key=="modifier.projectileshield.heightoffset" && std::abs(value)<=512) s.shield.heightOffset=value;
+                else if(key=="modifier.projectileshield.damagemultiplier" && value>=0) s.shield.damageMultiplier=value;
+                else return invalidField(s.id,name+"="+raw);
+            }
+            modifier=true;
         } else if(key.starts_with("modifier.aura.")) {
             if(!continuous || !includes({"modifier.aura.range","modifier.aura.houses","modifier.aura.targettypes",
                 "modifier.aura.passives","modifier.aura.includeself"},key)) return invalidField(s.id,key);
@@ -311,6 +331,14 @@ bool parseState(Skill& s,const std::set<string>& keys) {
             const auto value=read(s.id,key.c_str());
             if(value!="yes" && value!="no") return invalidField(s.id,key+"="+value);
             s.multiShotPreferSameLayer=value=="yes";
+        } else if(key=="modifier.taunt.target") {
+            if(!continuous || read(s.id,key.c_str())!="source") return invalidField(s.id,key+" requires WhileState and Source");
+            s.taunt=true;
+            modifier=true;
+        } else if(key=="modifier.taunt.priority") {
+            s.tauntPriority=number(read(s.id,key.c_str()));
+            if(!continuous || !keys.contains("modifier.taunt.target") || s.tauntPriority<0)
+                return invalidField(s.id,key+" requires Modifier.Taunt.Target and a nonnegative integer");
         } else if(key=="modifier.emp") {
             auto value=read(s.id,key.c_str());
             if(!continuous || (value!="yes" && value!="no")) return invalidField(s.id,key);
@@ -435,8 +463,15 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         return invalidField(skill.id,section==skill.id ? field : "Actions -> ["+section+"] "+field);
     };
     a.action=field("Action");
-    if(a.action!="chronoteleport" && !field("Action.Destination").empty())
-        return invalid("Action.Destination requires ChronoTeleport");
+    a.order=field("Action.Order");
+    if(!a.order.empty() && a.action!="startunitorder" && a.action!="cancelunitorder") return invalid("Action.Order requires StartUnitOrder or CancelUnitOrder");
+    const bool ejection=a.action=="ejectpassengers" || a.action=="ejectunit";
+    if(auto value=field("Action.LandFirst");!value.empty()) {
+        if(a.action!="transform" || (value!="yes" && value!="no")) return invalid("Action.LandFirst requires Transform and yes/no");
+        a.landFirst=value=="yes";
+    }
+    if(a.action!="chronoteleport" && a.action!="jumpto" && !ejection && !field("Action.Destination").empty())
+        return invalid("Action.Destination requires ChronoTeleport, JumpTo, EjectPassengers or EjectUnit");
     if(auto instant=field("Action.Instant");!instant.empty()) {
         if(a.action!="chronoteleport" || (instant!="yes" && instant!="no")) return invalid("Action.Instant requires ChronoTeleport and yes/no");
         a.teleportInstant=instant=="yes";
@@ -450,6 +485,12 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         return invalid("Action.Script and Action.Function require RunScript");
     bool hasPickupTypes=false,hasPickupRange=false;
     auto validKey=[&](const string& key) {
+        if(key=="action.showtext") {
+            auto value=field("Action.ShowText");
+            if((a.action!="givecredits" && a.action!="giveresearchpoints") || (value!="yes" && value!="no"))
+                return invalid("Action.ShowText requires GiveCredits or GiveResearchPoints and yes/no");
+            a.showText=value=="yes";
+        }
         if(a.action=="removeattachedunit" && key.starts_with("action.") &&
            !includes({"action.target","action.slot","action.unittype","action.count"},key)) return invalid("unsupported RemoveAttachedUnit field "+key);
         if(key=="action.count" && a.action!="removeattachedunit") return invalid("Action.Count requires RemoveAttachedUnit");
@@ -471,6 +512,9 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
             {"action.shakex","shakescreen"},{"action.shakey","shakescreen"},{"action.shakelocal","shakescreen"}};
         if(auto it=presentationFields.find(key);it!=presentationFields.end() && a.action!=it->second)
             return invalid(key+" requires "+it->second);
+        if(key=="action.eject.interval") return a.action=="ejectpassengers" || invalid(key+" requires EjectPassengers");
+        if(key.starts_with("action.eject.")) return ejection || invalid(key+" requires EjectPassengers or EjectUnit");
+        if(key.starts_with("action.jump.")) return a.action=="jumpto" || invalid(key+" requires JumpTo");
         if(key.starts_with("action.forcemove."))
             return (a.action=="forcemove" && actionField(key)) || invalid(key+" requires a valid ForceMove field");
         if(a.action!="sendsignal" && (key=="action.signal" || key.starts_with("action.signal.")))
@@ -501,22 +545,31 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         else a.target="victim";
     }
     bool positional=positionalAction(a.action);
-    if(a.target!="self" && a.target!="attacker" && a.target!="victim" && !(a.target=="sender" && skill.trigger=="onsignal") && !(positional && a.target=="victimlocation"))
+    if(a.target!="self" && a.target!="self.occupants" && a.target!="attacker" && a.target!="victim" && !(a.target=="sender" && skill.trigger=="onsignal") && !(positional && a.target=="victimlocation"))
         return invalid("Action.Target="+a.target);
+    if(a.target=="self.occupants" && (a.landFirst || a.action=="runscript"))
+        return invalid("Self.Occupants requires a result applied to individual units");
     if(a.action=="setdamage" || a.action=="blockdamage") {
         if(!beforeHealthLoss(skill.trigger)) return invalid(a.action+" requires OnBeforeDealDamage or OnBeforeTakeDamage");
         if(a.target!=(outgoing?"victim":"self")) return invalid(a.action+" requires "+(outgoing?"Target or Victim":"Self"));
     }
     if(a.action=="damage" || a.action=="detonatewarhead") {
         auto id=field("Action.Warhead");
+        if(id.empty() && a.action=="damage") id="Super";
         if(!id.empty()) a.warhead=WarheadTypeClass::Find(id.c_str());
-        if(!a.warhead && (!id.empty() || a.action=="detonatewarhead")) return invalid("Action.Warhead="+id);
+        if(!a.warhead) return invalid("Action.Warhead="+id);
     }
+    bool changeCounter=a.action=="changeresearchcounter";
+    if(changeCounter) {
+        a.counter=field("Action.Counter");
+        if(!Research::counterProjects.contains(a.counter)) return invalid("Action.Counter="+a.counter);
+        if(a.target!="self") return invalid("ChangeResearchCounter requires Action.Target=Self");
+    } else if(!field("Action.Counter").empty()) return invalid("Action.Counter requires ChangeResearchCounter");
     bool setDamage=a.action=="setdamage";
     bool numeric=a.action=="heal" || a.action=="damage" || a.action=="givecredits" || a.action=="giveresearchpoints" || setDamage;
     auto amount=field("Action.Amount",a.action=="stealpassive"?"1":"0");
     bool formulaAmount=amount.starts_with("$(");
-    if(formulaAmount && (!numeric || !a.amountFormula.compile(section,"Action.Amount",amount)))
+    if(formulaAmount && ((!numeric && !changeCounter) || !a.amountFormula.compile(section,"Action.Amount",amount)))
         return invalid("Action.Amount="+amount);
     if(formulaAmount) amount="0";
     auto healthPercent=field("Action.MaxHealthPercent");
@@ -525,7 +578,7 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         if(a.action!="changemaxhealth" || a.maxHealthPercent<=0 || a.maxHealthPercent>10000 || amount!="0")
             return invalid("Action.MaxHealthPercent="+healthPercent);
     }
-    if(a.action=="changeammo" || a.action=="changemaxhealth" || a.action=="changepassivestack") {
+    if((changeCounter && !formulaAmount) || a.action=="changeammo" || a.action=="changemaxhealth" || a.action=="changepassivestack") {
         if(a.maxHealthPercent) amount="1"; // Reuse fixed-amount validation; percent takes precedence when applied.
         auto first=amount.data(),last=first+amount.size();
         if(first!=last && *first=='+') {
@@ -539,13 +592,11 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         a.amount=number(amount);
         if(a.amount<0) return invalid("Action.Amount="+amount);
     }
-    a.damagePercent=number(field("Action.PercentOfDamage","0"),true);
-    if(a.damagePercent<0 || (!numeric && a.damagePercent)) return invalid("Action.PercentOfDamage");
     if(numeric) {
         if(setDamage) {
             auto raw=field("Action.Amount");
-            if(raw.empty() || a.damagePercent)
-                return invalid("SetDamage requires Action.Amount and does not use Action.PercentOfDamage");
+            if(raw.empty())
+                return invalid("SetDamage requires Action.Amount");
             if(!formulaAmount) {
                 auto first=raw.data(),last=first+raw.size();
                 if(first!=last && *first=='+') ++first;
@@ -553,8 +604,8 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
                 if(first==last || parsed.ec!=std::errc{} || parsed.ptr!=last || value<0) return invalid("Action.Amount="+raw);
                 a.amount=value;
             }
-        } else if(static_cast<int>(a.amount>0)+static_cast<int>(a.damagePercent>0)+static_cast<int>(formulaAmount)!=1)
-            return invalid("Action.Amount / Action.PercentOfDamage");
+        } else if(!formulaAmount && a.amount<=0)
+            return invalid("Action.Amount requires a positive integer or formula");
     } else if(a.action=="spawnunit" || a.action=="spawnbuilding" || a.action=="changeowner" || a.action=="transform") {
         if(a.action!="transform") {
             a.owner=field("Action.Owner","Self");
@@ -610,16 +661,48 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         }
     } else if(a.action=="forcemove") {
         if(!parseForceMove(a.forceMove,field)) return invalid("Action.ForceMove mode/offset, center, distance, height, AirborneHeight (0..512 cells), duration, BlowWeight (finite number), Tilt/IgnoreCollision/AffectsIronCurtain (yes/no) or Easing (Linear/EaseIn/EaseOut/EaseInOut)");
-    } else if(a.action=="chronoteleport") {
+    } else if(a.action=="jumpto" || ejection || a.action=="chronoteleport") {
+        if(ejection) {
+            a.eject.range=number(field("Action.Eject.Range","8"));
+            a.eject.openHeight=number(field("Action.Eject.OpenHeight","3"));
+            auto speed=field("Action.Eject.HorizontalSpeed");
+            if(!speed.empty()) {
+                const auto end=speed.data()+speed.size();
+                auto parsed=std::from_chars(speed.data(),end,a.eject.horizontalSpeed);
+                if(parsed.ec!=std::errc{} || parsed.ptr!=end || !ForceMove::EjectSpec::validSpeed(a.eject.horizontalSpeed))
+                    return invalid("Action.Eject.HorizontalSpeed (at least 1/256 cell per game second)");
+            }
+            a.eject.interval=number(field("Action.Eject.Interval","9"));
+            if(!a.eject.valid()) return invalid("Action.Eject.Range/OpenHeight (1..128 cells) or Interval (1..3600 frames)");
+        }
+        if(a.action=="jumpto") {
+            auto readEffect=[&](ForceMove::JumpEffect& effect,const char* animKey,const char* soundKey) {
+                effect.anim=field(animKey);
+                effect.sound=field(soundKey);
+                if(!effect.anim.empty() && !AnimTypeClass::Find(effect.anim.c_str())) return invalid(string(animKey)+"="+effect.anim);
+                return effect.sound.size()<=2047 || invalid(soundKey);
+            };
+            if(!readEffect(a.jump.takeoff,"Action.Jump.TakeoffAnim","Action.Jump.TakeoffSound") ||
+               !readEffect(a.jump.land,"Action.Jump.LandAnim","Action.Jump.LandSound")) return false;
+            a.jump.range=number(field("Action.Jump.Range","6"));
+            a.jump.height=number(field("Action.Jump.Height","3"));
+            a.jump.duration=number(field("Action.Jump.Duration","15"));
+            if(a.jump.range<1 || a.jump.range>128 || a.jump.height<1 || a.jump.height>128 ||
+               a.jump.duration<1 || a.jump.duration>3600) return invalid("Action.Jump.Range/Height (1..128 cells) or Duration (1..3600 frames)");
+        }
         auto dest=field("Action.Destination");
-        auto comma=dest.find(',');
-        if(comma==string::npos) return invalid("Action.Destination="+dest+" (expected X,Y)");
-        int x=number(trim(dest.substr(0,comma))),y=number(trim(dest.substr(comma+1)));
-        if(x<0 || x>=512 || y<0 || y>=512) return invalid("Action.Destination="+dest+" (expected X,Y in 0..511)");
-        a.teleportCell={static_cast<short>(x),static_cast<short>(y)};
+        a.destinationIsEventTarget=dest=="target";
+        if(!a.destinationIsEventTarget && (a.action=="chronoteleport" || !dest.empty())) {
+            auto comma=dest.find(',');
+            if(comma==string::npos) return invalid("Action.Destination="+dest+" (expected X,Y or Target)");
+            int x=number(trim(dest.substr(0,comma))),y=number(trim(dest.substr(comma+1)));
+            if(x<0 || x>=512 || y<0 || y>=512) return invalid("Action.Destination="+dest+" (expected X,Y in 0..511)");
+            a.teleportCell={static_cast<short>(x),static_cast<short>(y)};
+        }
     } else if(a.action=="removepickup") {
         auto range=hasPickupRange?field("Action.Range"):"0";
         a.pickupRange=number(range);
+        if(a.pickupRange==-1 && a.target=="self.occupants") return invalid("Global RemovePickup has no occupant target");
         if(a.pickupRange<0 && range!="-1") return invalid("Action.Range="+range+" (expected -1 or a nonnegative integer)");
         auto types=hasPickupTypes?field("Action.PickupTypes"):"*";
         if(types!="*") {
@@ -660,6 +743,9 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
             if(parsedValue.ec!=std::errc{} || parsedValue.ptr!=value.data()+value.size() || !std::isfinite(a.signalValue)) return invalid("Action.Signal.Value="+value);
         }
         if(a.signalFormula.expression.usesDamage() && !damageEvent(skill.trigger)) return invalid("Event.Damage requires a damage trigger");
+    } else if(a.action=="startunitorder" || a.action=="cancelunitorder") {
+        if(a.action=="startunitorder" && (a.order.empty() || skill.trigger!="oncast"))
+            return invalid("StartUnitOrder requires Trigger=Active and Action.Order");
     } else if(a.action=="runscript") {
         a.script=field("Action.Script");
         if(!a.script.ends_with(".lua")) a.script+=".lua";
@@ -673,11 +759,11 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         if(a.function.empty()) return invalid("Action.Function="+name);
         a.skillId=skill.id;
     } else if(a.action=="grantresearch") {
-        if(!field("Action.Amount").empty() || !field("Action.PercentOfDamage").empty()) return invalid("GrantResearch takes no amount");
+        if(!field("Action.Amount").empty()) return invalid("GrantResearch takes no amount");
         a.researchOptions=split(field("Action.Research"));
         if(a.researchOptions.size()!=1) return invalid("GrantResearch requires a single Action.Research ID");
     } else if(a.action=="grantrandomresearch" || a.action=="grantfreeresearch") {
-        if(!field("Action.Amount").empty() || !field("Action.PercentOfDamage").empty())
+        if(!field("Action.Amount").empty())
             return invalid(a.action+" grants one reward and does not use an amount");
         if(a.action=="grantfreeresearch") {
             const auto raw=field("Action.ResearchOptions");
@@ -762,7 +848,7 @@ bool readAction(Skill& skill,const string& section,const ScriptFields* fields) {
         a.weapon=field("Action.Weapon");
         if(a.weapon.empty() || !WeaponTypeClass::Find(a.weapon.c_str())) return invalid("Action.Weapon="+a.weapon);
         if(a.action=="replaceweapon" && (skill.trigger!="onbeforefire" || a.target!="self")) return invalid("ReplaceWeapon requires OnBeforeFire and Self");
-    } else if(a.action!="detonatewarhead" && a.action!="changeammo" && a.action!="changemaxhealth" && a.action!="applyironcurtain") return invalid("Action="+a.action);
+    } else if(!changeCounter && a.action!="detonatewarhead" && a.action!="changeammo" && a.action!="changemaxhealth" && a.action!="applyironcurtain") return invalid("Action="+a.action);
     if(a.formula.expression.usesLiveState() || a.amountFormula.expression.usesLiveState() || a.signalFormula.expression.usesLiveState())
         return invalid("Live state formula variables require WhileState");
     if((a.formula.expression.usesDamage() || a.amountFormula.expression.usesDamage()) &&
@@ -819,17 +905,10 @@ bool readAnimations(Skill& s,const std::set<string>& keys) {
         const int strength=number(strengthText,true);
         if(strength<0 || strength>100) return invalidField(s.id,"Tint.Strength="+strengthText+" (expected 0..100%)");
         auto value=read(s.id,"Tint.Color");
-        int rgb[3]{};
-        size_t start=0;
-        for(int i=0;i<3;++i) {
-            auto comma=value.find(',',start);
-            rgb[i]=number(trim(value.substr(start,comma-start)));
-            if(rgb[i]<0 || rgb[i]>255 || (i<2)!=(comma!=string::npos))
-                return invalidField(s.id,"Tint.Color="+value+" (expected R,G,B; each 0..255)");
-            if(i<2) start=comma+1;
-        }
+        const auto rgb=ConfigText::rgb(value);
+        if(!rgb) return invalidField(s.id,"Tint.Color="+value+" (expected R,G,B; each 0..255)");
         s.tintStrength=strength;
-        s.tint=ColorStruct{static_cast<BYTE>(rgb[0]),static_cast<BYTE>(rgb[1]),static_cast<BYTE>(rgb[2])};
+        s.tint=ColorStruct{static_cast<BYTE>((*rgb)[0]),static_cast<BYTE>((*rgb)[1]),static_cast<BYTE>((*rgb)[2])};
     }
     for(auto key:{"Anim","TriggerAnim","GainAnim"}) {
         if(!keys.contains(lower(key))) continue;

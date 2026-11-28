@@ -3,6 +3,16 @@
 namespace {
 DWORD shooterId=0;
 int nativeShots=0;
+LaserDrawClass* lastLaser=nullptr;
+CoordStruct sourceAt(CellStruct cell,int dx,int dy,int height) {
+    auto& map=MapClass::Instance;
+    auto p=map.GetCellAt(cell)->GetCoords();
+    p.X+=dx;p.Y+=dy;
+    p.Z=map.GetCellFloorHeight(p);
+    p=map.GetCellAt(p)->FixHeight(p);
+    p.Z+=height;
+    return p;
+}
 void checkVolley(bool ok,const char* label) {
     std::ofstream("weapon-script.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<label<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
@@ -11,6 +21,10 @@ int state(DWORD id,const char* key) {
     auto it=scriptTimers.state.find({id,"@weapon:105mm",key});
     return it==scriptTimers.state.end()?-1:static_cast<int>(it->second.integer);
 }
+}
+DEFINE_HOOK(0x54FE60,SF_TestLuaOriginLaser,6) {
+    lastLaser=R->ECX<LaserDrawClass*>();
+    return 0;
 }
 DEFINE_HOOK(0x6FF66C,SF_TestNativeVolley,6) {
     if(shooterId==R->ESI<TechnoClass*>()->UniqueID) ++nativeShots;
@@ -37,6 +51,11 @@ DEFINE_HOOK(0x55B4EB,SF_TestWeaponScriptFrame,5) {
         return dummy;
     };
     if(f==22 && !loading) {
+        // Exercise precedence against a real weapon setting as well as the unmodified Lua call.
+        auto ini=CCINIClass::INI_Rules;
+        ini->WriteString(weapon->ID,"FireOrigin","Target");
+        ini->WriteString(weapon->ID,"FireOrigin.Offset","0,0,512");
+        FireOrigin::readRules();
         auto dummy=spawnTarget();
         auto point=dummy->GetMapCoords();
         grantToUnit(tank,PassiveGrant{{"shotcounter"},-1});
@@ -55,6 +74,13 @@ DEFINE_HOOK(0x55B4EB,SF_TestWeaponScriptFrame,5) {
         checkVolley(state(shooterId,"count")==1 && tank->Ammo==9 && fullDelay>=20 && tank->CurrentBurstIndex==0 &&
             Research::balance(player->ArrayIndex)==1 && nativeShots==0 && dummy->Health==30000,"one volley and full rearm");
 
+        bool direct=false,preset=false,self=false;
+        for(auto shot:BulletClass::Array) if(shot->Owner==tank && shot->WeaponType==weapon) {
+            if(shot->Target==dummy && shot->SourceCoords==sourceAt(point,64,-64,1152)) direct=true;
+            if(shot->Target==dummy && shot->SourceCoords==tank->GetCoords()) preset=true;
+            if(shot->Target==tank && shot->SourceCoords==sourceAt(point,0,0,512)) self=true;
+        }
+        checkVolley(direct && preset && self,"Lua origin overrides weapon rules per shot for direct list and preset calls");
         tank->RearmTimer.Stop();tank->Ammo=0;
         tank->Fire(dummy,0);dispatch();
         checkVolley(state(shooterId,"count")==1 && !tank->RearmTimer.GetTimeLeft(),"empty ammo skips volley");
@@ -85,9 +111,12 @@ DEFINE_HOOK(0x55B4EB,SF_TestWeaponScriptFrame,5) {
         auto balance=Research::balance(player->ArrayIndex);
         auto last=ActionSequence::lastCast;
         PassiveAction hit{};hit.action="detonatewarhead";hit.warhead=wh;hit.amount=17;
+        lastLaser=nullptr;
         checkVolley(weaponEffect(hit,tank,tank,at,at,player),"direct scripted warhead fired");
         checkVolley(ActionSequence::lastCast==last+1 && Research::balance(player->ArrayIndex)==balance+7,
                     "direct-only warhead uses map parameters and suppresses synchronous self-recursion");
+        checkVolley(lastLaser && lastLaser->Source==sourceAt(tank->GetMapCoords(),64,0,768),
+                    "casterless Lua laser renders at its explicit origin");
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

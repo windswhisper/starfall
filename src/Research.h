@@ -1,9 +1,11 @@
 #pragma once
+#include "HealthFormula.h"
 #include <algorithm>
 #include <array>
 #include <map>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <climits>
 #include <cstdint>
 #include <string>
@@ -54,6 +56,16 @@ struct EffectSpec {
     CostChange cost;
     ProjectReward reward;
 };
+struct StageEffect : EffectSpec {std::string id;};
+struct Stage {
+    std::string id;
+    HealthFormula condition;
+    std::vector<StageEffect> effects;
+};
+struct DetailFormula {
+    size_t start,end;
+    HealthFormula expression;
+};
 struct Option {
     std::string id, passive, icon;
     std::vector<std::string> types;
@@ -71,7 +83,70 @@ struct Option {
     std::wstring targetLabel;
     bool grantOnly=false;
     std::vector<std::string> unlockWithTech,techProviders;
+    std::vector<DetailFormula> detailFormulas;
+    int detailDecimals=-1;
+    bool stagesOnly=false;
+    std::vector<Stage> stages;
+    bool repeatable=false;
 };
+struct BondTier {
+    std::string id;
+    int required=0;
+    std::wstring summary;
+    std::vector<StageEffect> effects;
+};
+struct Bond {
+    std::string id;
+    std::wstring name;
+    std::vector<std::string> members;
+    std::vector<BondTier> tiers;
+};
+struct BondTierState {bool active=false;std::set<std::string> grants;};
+using StageKey=std::tuple<int,std::string,std::string>;
+using StageProgress=std::map<StageKey,std::set<std::string>>;
+extern StageProgress stageProgress;
+extern std::vector<Bond> bonds;
+extern std::map<std::string,int> bondIndex;
+extern std::map<std::string,std::vector<int>> memberBonds;
+using BondProgress=std::map<StageKey,BondTierState>;
+extern BondProgress bondProgress;
+extern unsigned bondRevision;
+std::wstring bondRewardText(const StageEffect& effect);
+int bondCount(int house,const Bond& bond,int source=-1);
+bool knownResearchVariable(const std::string& key);
+template<class Visitor>
+void forBondEffects(int house,Visitor visit,int source=-1) {
+    for(auto it=bondProgress.lower_bound({house,"",""});it!=bondProgress.end() && std::get<0>(it->first)==house;++it) {
+        if(!it->second.active || it->second.grants.empty()) continue;
+        auto index=bondIndex.find(std::get<1>(it->first));
+        if(index==bondIndex.end()) continue;
+        const auto& bond=bonds[index->second];
+        for(const auto& tier:bond.tiers) if(tier.id==std::get<2>(it->first)) {
+            if(source>=0 && bondCount(house,bond,source)<tier.required) break;
+            for(const auto& e:tier.effects) if(it->second.grants.contains(e.id)) visit(e);
+            break;
+        }
+    }
+}
+// Stage completion and successful persistent effects are tracked separately.
+template<class Visitor>
+void forStageEffects(int house,const Option& project,Visitor visit) {
+    for(const auto& stage:project.stages) {
+        auto it=stageProgress.find({house,project.id,stage.id});
+        if(it!=stageProgress.end()) for(const auto& effect:stage.effects)
+            if(it->second.contains(effect.id)) visit(effect);
+    }
+}
+template<class Visitor>
+void forBaseEffects(const Option& project,Visitor visit) {
+    if(project.effectList) {for(const auto& effect:project.effects) visit(effect);}
+    else if(!project.stagesOnly) visit(project);
+}
+template<class Visitor>
+void forActiveEffects(int house,const Option& project,Visitor visit) {
+    forBaseEffects(project,visit);
+    forStageEffects(house,project,visit);
+}
 extern std::vector<Option> options;
 enum class SoundCue { Button, Cards, Refresh, Select, Available };
 extern std::array<std::string,5> soundFiles;
@@ -88,6 +163,7 @@ extern bool allowCardRefresh;
 extern bool allowAIResearch;
 extern bool showAvailableAnimation;
 extern bool sharedRaritySequence;
+extern bool mixedRarityPool;
 extern bool announceSelection;
 extern std::map<int,unsigned> refreshedSlots;
 bool slotUsed(int house,int slot);
@@ -132,6 +208,10 @@ bool claimBuilding(unsigned long id,int house,int option);
 int balance(int house);
 void award(int house,int amount);
 bool owns(int house,const std::string& id);
+// Stored only for projects acquired at least twice, including retired projects.
+extern std::map<std::pair<int,std::string>,int> repeatCounts;
+int acquisitionCount(int house,const std::string& id);
+bool ownershipAllows(int house,const Option& option);
 extern std::map<int,std::vector<std::string>> savedOffers;
 extern std::map<int,std::set<std::string>> seenOffers;
 const std::vector<int>& offers(int house,const char* country);
@@ -142,7 +222,13 @@ extern bool expanded;
 extern int pressed,pressedOption;
 extern int badgePageIndex;
 // Configuration is loaded after passive registration; state storage lives in Research.cpp.
-void readConfiguration(const char* configPath);
+// Fully qualified INI counter name -> owning research project.
+extern std::map<std::string,std::string> counterProjects;
+using CounterValues=std::map<int,std::map<std::string,int>>;
+extern CounterValues counterValues;
+int counter(int house,const std::string& key);
+bool changeCounter(int house,const std::string& key,int delta);
+void readConfiguration(const char* configPath,void (*loadPassives)()=nullptr);
 void ensureReady();
 bool available(int option);
 bool executeEffect(int house,int option);
@@ -159,5 +245,5 @@ int grantRandom(int house,const char* country,std::optional<Rarity> rarity=std::
 void grantProjectRewards(int house,int option,const char* country);
 bool canGrantRandom(int house,int source,const char* country,std::optional<Rarity> rarity);
 void reset();
-std::wstring describe(int option,wchar_t (&conditions)[96]);
+std::wstring describe(int option,int house);
 }

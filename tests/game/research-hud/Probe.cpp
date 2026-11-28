@@ -3,6 +3,7 @@
 #include <WWKeyboardClass.h>
 #include <VocClass.h>
 #include "ResearchAudio.h"
+#include "ResearchImages.h"
 #include <Drawing.h>
 #include <OwnerDraw.h>
 
@@ -88,6 +89,12 @@ bool paintedDiplomacyImage(HWND window) {
         if(surface->GetPixel(&dst)==expected) {++match;colors.insert(expected);}
         ++total;
     }
+    if(match!=total || colors.size()<=3) {
+        std::ofstream("hud.log",std::ios::app)<<"dialog pixels "<<match<<"/"<<total<<" colors "<<colors.size()
+            <<" at "<<bounds.left<<","<<bounds.top<<" size "<<image->Width<<"x"<<image->Height<<"\n";
+        captureHud("dialog-actual.ppm",bounds.left,bounds.top,image->Width,image->Height,surface);
+        captureHud("dialog-expected.ppm",0,0,image->Width,image->Height,image);
+    }
     return total && match==total && colors.size()>3;
 }
 void checkDiplomacy(HWND dialog) {
@@ -125,6 +132,31 @@ void checkDiplomacy(HWND dialog) {
     const auto tip=GetDlgItem(dialog,0x534C);
     verify(IsWindowVisible(tip) && OwnerDraw::WinData[tip].ControlImage,"hover displays project details");
     verify(paintedDiplomacyImage(tip),"diplomacy tooltip pixels reach the dialog surface");
+    const int local=HouseClass::CurrentPlayer->ArrayIndex;
+    const auto project=Research::options[Research::completedProjects(local).front()].id;
+    const auto counter=project+".progress";
+    auto tipPixels=[&]() {
+        auto bitmap=OwnerDraw::WinData[tip].ControlImage;
+        vector<int> pixels;
+        for(int y=30;y<std::min(60,bitmap->Height);++y) for(int x=0;x<bitmap->Width;++x) {
+            Point2D pt{x,y};pixels.push_back(bitmap->GetPixel(&pt));
+        }
+        return pixels;
+    };
+    const int hoveredProject=Research::completedProjects(local).front();
+    const auto description=Research::describe(hoveredProject,local);
+    auto firstPage=ResearchImages::tooltip(hoveredProject,local,description,328,64,0);
+    auto secondPage=ResearchImages::tooltip(hoveredProject,local,description,328,64,1);
+    bool distinct=false;
+    for(int y=4;y<30 && !distinct;++y) for(int x=10;x<230;++x) {
+        Point2D pt{x,y};
+        if(firstPage->GetPixel(&pt)!=secondPage->GetPixel(&pt)) {distinct=true;break;}
+    }
+    verify(firstPage->Height<=64 && secondPage->Height<=64 && distinct,"compact bond panels paginate inside the viewport");
+    const auto zero=tipPixels();
+    verify(Research::changeCounter(local,counter,17),"set local tooltip count");
+    SendMessageA(dialog,WM_TIMER,0,0);
+    verify(tipPixels()!=zero,"stationary diplomacy tooltip repaints changed count");
     RECT menu{};
     OwnerDraw::GetRectangle(dialog,&menu);
     auto surface=DSurface::Alternate;
@@ -139,6 +171,12 @@ void checkDiplomacy(HWND dialog) {
     select(other);
     verify(!IsWindowVisible(projects) && !IsWindowVisible(tip) &&
         IsWindowVisible(GetDlgItem(dialog,0x5348)),"empty house clears icons and tooltip");
+    auto opponent=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
+    Research::unlocked[opponent->ArrayIndex].insert(project);
+    select(other);
+    SendMessageA(projects,WM_MOUSEMOVE,0,MAKELPARAM(size/2,image->Height/2));
+    verify(IsWindowVisible(tip) && tipPixels()==zero,"diplomacy tooltip uses selected player's count");
+    Research::unlocked=owned;
     select(mine);
     verify(IsWindowVisible(projects) && Research::points==points &&
         Research::unlocked==owned,"switching players is read-only");
@@ -273,6 +311,39 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         WritePrivateProfileStringA("Starfall.Research","RarityWeight.Insane","0",configPath);
         Research::readConfiguration(configPath);Research::clearOfferCache();
         verify(Research::offers(house,country).empty(),"zero excludes saved insane offers");
+        {
+            std::ofstream ini(configPath);
+            ini<<"[Starfall.Research]\nMixedRarityPool=yes\nSharedRaritySequence=yes\n"
+                "RarityColor.Common=0,224,32\nRarityColor.Rare=240,0,32\nRarityColor.Epic=256,0,0\n"
+                "[Starfall.ResearchTypes]\n0=MixCommon\n1=MixRare\n2=MixEpic\n3=MixInsane\n";
+            for(const char* tier:{"Common","Rare","Epic","Insane"})
+                ini<<"[Mix"<<tier<<"]\nRarity="<<tier<<"\nName=Test\nEffect=GiveCredits\nCredits=5\n";
+        }
+        Research::readConfiguration(configPath);
+        const auto mixed=Research::offers(house,country);
+        verify(std::set<int>(mixed.begin(),mixed.end())==std::set<int>{0,1,2},"INI mixed pool offers three tiers together");
+        auto countInk=[](Surface* surface,int ink) {
+            int total=0;
+            for(int y=5;y<30;++y) for(int x=10;x<200;++x) {
+                Point2D at{x,y};
+                if(surface->GetPixel(&at)==ink) ++total;
+            }
+            return total;
+        };
+        for(int i=0;i<3;++i) {
+            const int ink=i==0?Drawing::RGB_To_Int(0,224,32):i==1?Drawing::RGB_To_Int(240,0,32):Drawing::RGB_To_Int(255,213,112);
+            auto tip=ResearchImages::tooltip(i,house,L"Test",220,64,0);
+            verify(countInk(tip.get(),ink)>4,"custom rarity title color or per-tier fallback");
+        }
+        ResearchImages::Bitmap badges(GameCreate<BSurface>(80,40));
+        ResearchImages::drawBadge(badges.get(),0,{0,0,40,40});
+        ResearchImages::drawBadge(badges.get(),1,{40,0,40,40});
+        int tinted=0;
+        for(int py=2;py<38;++py) for(int px=2;px<38;++px) {
+            Point2D a{px,py},b{px+40,py};
+            if(badges->GetPixel(&a)!=badges->GetPixel(&b)) ++tinted;
+        }
+        verify(tinted>40,"same badge art uses different configured rarity colors");
         Research::refreshedSlots.erase(house);
         Research::savedOffers[house]=savedBoard;
         Research::clearOfferCache();
@@ -417,6 +488,27 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchHUD,5) {
         WWMouseClass::Instance->XY1=badge;
         SF_ResearchDraw(nullptr);
         verify(pixel(left,top)==Drawing::RGB_To_Int(182,159,255),"left badge hover");
+        const int tipX=std::clamp(left+20-164,view.X,view.X+view.Width-328);
+        const int tipY=top+44;
+        std::vector<int> borders;
+        for(int py=tipY;py<std::min(view.Y+view.Height,tipY+600);++py)
+            if(pixel(tipX+3,py)==Drawing::RGB_To_Int(117,125,178)) borders.push_back(py);
+        verify(borders.size()>=6,"main research tooltip plus two vertical bond panels painted");
+        for(int group=0;group<2;++group) {
+            const auto& bond=Research::bonds[group];
+            const int panelY=borders[2+2*group];
+            for(size_t n=0;n<bond.members.size();++n) {
+                const int rim=Research::owns(house,bond.members[n])?
+                    Drawing::RGB_To_Int(105,176,178):Drawing::RGB_To_Int(51,61,76);
+                verify(pixel(tipX+14+36*static_cast<int>(n),panelY+33)==rim,"member icon matches ownership in configured order");
+            }
+            const int ink=group==0?Drawing::RGB_To_Int(233,237,250):Drawing::RGB_To_Int(132,138,151);
+            int strokes=0;
+            for(int py=panelY+69;py<borders[3+2*group];++py)
+                for(int px=tipX+14;px<tipX+310;++px) if(pixel(px,py)==ink) ++strokes;
+            verify(strokes>8,"reward text brightness reflects met threshold");
+        }
+        captureHud("research-bond-hover.ppm",tipX-4,top-4,336,borders[5]-top+10);
         input({left+38,top+20},1);input({left+38,top+20},4);
         WWMouseClass::Instance->XY1=tab;
         SF_ResearchDraw(nullptr);

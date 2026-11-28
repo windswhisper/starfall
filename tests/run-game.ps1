@@ -61,9 +61,27 @@ if ($PhobosPackageDirectory) {
     if (Test-Path -LiteralPath $symbols -PathType Leaf) { Copy-Item -LiteralPath $symbols -Destination $run }
 }
 Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/Starfall.dll") -Destination $run
-if ($Case -eq 'conversion') {
+if ($Case -eq 'multi-shot') {
+    foreach ($kind in 'rules','art') {
+        Copy-Item -LiteralPath (Join-Path $fixture "Tracer.$kind.ini") -Destination $run
+        [IO.File]::WriteAllText((Join-Path $run "${kind}_include.ini"),"[#include]`r`n1=${kind}_triumph.ini`r`n2=Tracer.$kind.ini`r`n")
+    }
+}
+if ($Case -in 'conversion','spawn-docks','ground-docks','projectile-blocker','piercing','projectile-script','build-nodes') {
     Copy-Item -LiteralPath (Join-Path $fixture 'SpawnRules.ini') -Destination $run
     [IO.File]::WriteAllText((Join-Path $run 'rules_include.ini'),"[#include]`r`n1=rules_triumph.ini`r`n2=SpawnRules.ini`r`n")
+}
+if ($Case -eq 'projectile-script') {
+    Copy-Item -LiteralPath (Join-Path $fixture 'TestFlight.lua') -Destination $run
+    Copy-Item -LiteralPath (Join-Path $root 'examples/ProjectileScript/ReturnWave.lua') -Destination $run
+    Copy-Item -LiteralPath (Join-Path $root 'examples/ProjectileScript/GroundBlastLine.lua') -Destination $run
+    Copy-Item -LiteralPath (Join-Path $fixture 'Trail.ini') -Destination $run
+    [IO.File]::WriteAllLines((Join-Path $run 'art_include.ini'),@('[#include]','1=art_triumph.ini','2=Trail.ini'))
+}
+if ($Case -eq 'entity-walls') {
+    Copy-Item -LiteralPath (Join-Path $root 'examples/EntityWalls/EntityWalls.rules.ini') -Destination $run
+    Copy-Item -LiteralPath (Join-Path $fixture 'WallProbe.rules.ini') -Destination $run
+    [IO.File]::WriteAllText((Join-Path $run 'rules_include.ini'),"[#include]`r`n1=rules_triumph.ini`r`n2=EntityWalls.rules.ini`r`n3=WallProbe.rules.ini`r`n")
 }
 if ($Case -eq 'actsp') {
     Copy-Item -LiteralPath (Join-Path $fixture 'Guard.lua') -Destination $run
@@ -79,11 +97,15 @@ if ($Case -eq 'actsp') {
 }
 if ($Case -eq 'high-platform') {
     Copy-Item -LiteralPath (Join-Path $fixture 'rules_include.ini') -Destination $run
-    [IO.File]::WriteAllText((Join-Path $run 'art_include.ini'),"[#include]`r`n1=art_triumph.ini`r`n2=HighPlatform.art.ini`r`n")
+    [IO.File]::WriteAllText((Join-Path $run 'art_include.ini'),"[#include]`r`n1=art_triumph.ini`r`n2=HighPlatform.art.ini`r`n3=Rectangle.art.ini`r`n")
     $platform=Join-Path $root 'examples/HighPlatform'
     foreach ($name in 'HighPlatform.rules.ini','HighPlatform.art.ini','ashighpl.shp','ashplmk.shp','aspltem.pal','asplsno.pal','asplurb.pal','aspldes.pal','asplubn.pal','aspllun.pal') {
         Copy-Item -LiteralPath (Join-Path $platform $name) -Destination $run
     }
+    Copy-Item -LiteralPath (Join-Path $platform 'ashighpl.shp') -Destination (Join-Path $run 'asrectpl.shp')
+    $rectangle=@('[ASRECTPL]')+@(& (Join-Path $root 'tools/art/Write-HighPlatformFoundation.ps1') -Width 8 -Height 5)+
+        @('Height=4','CanHideThings=no','NewTheater=no','Palette=aspl')
+    [IO.File]::WriteAllLines((Join-Path $run 'Rectangle.art.ini'),[string[]]$rectangle)
 }
 if ($Case -eq 'research-grant') {
     Copy-Item -LiteralPath (Join-Path $root "build/tests/$Case/ResearchApiClient.dll") -Destination $run
@@ -126,6 +148,19 @@ if ($Case -eq 'hex-icons') {
         $text += [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'Starfall.ini'))
         [IO.File]::WriteAllText($path,$text)
     }
+} elseif ($Case -eq 'unit-orders') {
+    Copy-Item -LiteralPath (Join-Path $fixture 'uimd.ini') -Destination (Join-Path $run 'uimd.ini') -Force
+    Copy-Item -LiteralPath (Join-Path $root 'examples/AreaAttack/AreaAttack.shp') -Destination (Join-Path $run 'AreaAttack.shp')
+    Copy-Item -LiteralPath (Join-Path $root 'examples/AutoEnter/AutoBoard.shp') -Destination (Join-Path $run 'TestBoard.shp')
+    foreach($buttonFile in 'IconProbe.shp','MissingProbe.shp') {
+        Copy-Item -LiteralPath (Join-Path $fixture 'TestButton.shp') -Destination (Join-Path $run $buttonFile)
+    }
+    $example=[IO.File]::ReadAllText((Join-Path $root 'examples/AreaAttack/Starfall.ini'))
+    [IO.File]::WriteAllText((Join-Path $run 'AreaAttack.rules.ini'),$example)
+    [IO.File]::WriteAllText((Join-Path $run 'rules_include.ini'),"[#include]`r`n1=rules_triumph.ini`r`n2=AreaAttack.rules.ini`r`n")
+    $extra=[IO.File]::ReadAllText((Join-Path $fixture 'Probe.ini'))
+    [IO.File]::WriteAllText((Join-Path $run 'Starfall.ini'),$extra)
+    Copy-Item -LiteralPath (Join-Path $fixture 'OrderProbe.lua') -Destination $run
 } elseif ($Case -eq 'example-starters') {
     $configs=foreach ($exampleName in 'Passive','Research','WeaponScript') {
         [IO.File]::ReadAllText((Join-Path $root "examples/$exampleName/Starfall.ini"))
@@ -177,7 +212,7 @@ if ($Case -eq 'hex-icons') {
 } else {
     Copy-Item -LiteralPath (Join-Path $fixture 'Starfall.ini') -Destination $run
 }
-if ($Case -in 'chrono-teleport','force-move','building-upgrade','spawn-building','building-transform','unit-mount','weapon-script','map-lua','research-grant','ground-pickups','passenger-consume') {
+if ($Case -in 'taunt','chrono-teleport','force-move','vehicle-jump','passenger-ejection','building-upgrade','spawn-building','building-transform','unit-mount','weapon-script','map-lua','reward-text-map','research-grant','ground-pickups','passenger-consume') {
     $scripts=Get-Item -LiteralPath $run
     Get-ChildItem -LiteralPath $fixture -Filter '*.lua' | Copy-Item -Destination $scripts.FullName
 }
@@ -185,6 +220,17 @@ if ($Case -eq 'research-hud') {
     Copy-Item -LiteralPath (Join-Path $fixture 'ui-test.wav') -Destination $run
 }
 Copy-Item -LiteralPath $map -Destination (Join-Path $run 'spawnmap.ini')
+if ($Case -eq 'unit-orders') {
+    $scenarioFile=Join-Path $run 'spawnmap.ini'
+    $scenarioText=[IO.File]::ReadAllText($scenarioFile).Replace('0=Neutral,V3,','0=Neutral,DRED,')
+    $scenarioText += "`r`n[FV]`r`nPassengers=2`r`n"
+    [IO.File]::WriteAllText($scenarioFile,$scenarioText)
+}
+if ($Case -eq 'taunt-team') {
+    $scenarioFile=Join-Path $run 'spawnmap.ini'
+    $scenarioText=[IO.File]::ReadAllText($scenarioFile).Replace('[Waypoints]',"[Waypoints]`r`n20=89067`r`n21=78071")
+    [IO.File]::WriteAllText($scenarioFile,$scenarioText)
+}
 if ($Case -eq 'hex-gameplay') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), [Environment]::NewLine+[IO.File]::ReadAllText((Join-Path $fixture 'EnemyTeam.ini')))
 }
@@ -203,7 +249,7 @@ if ($Case -eq 'weapon-script') {
 if ($Case -eq 'before-fire') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n[120mm]`r`nBurst=3`r`n")
 }
-if ($Case -in 'spawn-passives','cloakable','actsp') {
+if ($Case -in 'spawn-passives','cloakable','actsp','taunt-team') {
     [IO.File]::AppendAllText((Join-Path $run 'spawnmap.ini'), "`r`n"+[IO.File]::ReadAllText((Join-Path $fixture 'SpawnRules.ini')))
 }
 New-Item -ItemType Directory (Join-Path $run 'Saved Games') | Out-Null

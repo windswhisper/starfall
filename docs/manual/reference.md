@@ -1,7 +1,7 @@
 # Starfall Lab: Configuration Reference
 
 Document language: English. Audience: mod authors, AI assistants, and maintainers.
-Applies to: Starfall Lab 0.39, as implemented in this repository on 2026-11-25.
+Applies to: Starfall Lab 0.40, as implemented in this repository on 2026-11-28.
 Runtime: a 32-bit DLL extension for Command & Conquer: Yuri's Revenge.
 
 This is a reference for the implemented interfaces, not a proposal for future features. Field names in code font are literal configuration keys. `required` means that omission makes the described configuration invalid. Defaults apply when a field is omitted, subject to configuration inheritance. Native game fields such as `Spawns`, `Locomotor`, and `SuperWeapon` belong to the game or another extension; Starfall does not redefine them.
@@ -67,7 +67,7 @@ See [Triggers, targets, and event execution](passives.md#triggers-targets-and-ev
 [Action catalog](passives.md#action-catalog)
 
 <a id="custom-ground-pickups"></a>
-[Custom ground pickups](passives.md#custom-ground-pickups)
+[Custom ground pickups](miscellaneous.md#custom-ground-pickups)
 
 <a id="attached-units"></a>
 [Attached units](passives.md#attached-units)
@@ -141,6 +141,10 @@ See the [Map Lua preset](lua.md#map-lua-preset) in the Lua guide.
 See the [Active skills](lua.md#active-skills) in the Lua guide.
 
 See the [Lua API](lua.md#lua-api) in the Lua guide.
+
+## Visual effects submodule
+
+See [weapon tracers](artsp.md#weapon-tracers) and [continuous beams](artsp.md#continuous-beams) in the ArtSp guide.
 
 ## Special behavior submodule
 

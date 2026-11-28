@@ -4,6 +4,32 @@ void check(bool ok,const char* name) {
     std::ofstream("promotion.log",std::ios::app)<<(ok?"PASS ":"FAIL ")<<name<<"\n";
     if(!ok) TerminateProcess(GetCurrentProcess(),2);
 }
+void checkKillTraining(UnitClass* unit) {
+    auto foe=HouseClass::FindByPlayerAt(HouseClass::PlayerAtB);
+    check(foe && !unit->Owner->IsAlliedWith(foe),"enemy for training");
+    auto victim=static_cast<UnitClass*>(unit->Type->CreateObject(foe));
+    check(victim!=nullptr,"training victim");
+    auto recordKill=[&] {
+        const auto score=unit->Owner->PointTotal;
+        unit->Veterancy.Reset();
+        victim->RegisterDestruction(unit);
+        return std::pair{unit->Veterancy.Veterancy,unit->Owner->PointTotal-score};
+    };
+    const auto [base,score]=recordKill();
+    check(base>0 && score>0,"native experience and score");
+    grantToUnit(unit,PassiveGrant{{"killtraining","trainingformula"},-1});
+    tickStates();
+    const auto [boosted,boostedScore]=recordKill();
+    check(std::abs(boosted-base*3)<0.0001 && boostedScore==score,"stacked kill experience preserves score");
+    grantToUnit(unit,PassiveGrant{{"notraining"},-1});
+    tickStates();
+    const auto [zero,zeroScore]=recordKill();
+    check(zero==0 && zeroScore==score,"zero experience preserves score");
+    warheadGrants.erase(unit->UniqueID);
+    tickStates();
+    check(recordKill().first==base,"experience restored after removal");
+    victim->UnInit();
+}
 }
 DEFINE_HOOK(0x55B4EB,SF_TestPromotion,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
@@ -20,6 +46,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestPromotion,5) {
     }
     check(unit && other,"units");
     if(!loading) {
+        checkKillTraining(unit);
         check(skills.contains("anypromotion") && skills.contains("veteranpromotion") && skills.contains("elitepromotion") && observePromotions,"configuration");
         grantToUnit(unit,PassiveGrant{{"anypromotion","veteranpromotion","elitepromotion"},-1});
         unit->Veterancy.Veterancy=0;previousState.erase(unit->UniqueID);observeTransitions();dispatch();

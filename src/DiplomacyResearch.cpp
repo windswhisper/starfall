@@ -20,6 +20,10 @@ struct DiplomacyPage {
     std::vector<int> projects;
     int first=0,capacity=1,iconSize=0,hovered=-1;
     ResearchImages::Bitmap strip,tip;
+    std::wstring hoverText;
+    POINT hoverPoint{};
+    unsigned bondRevision=0,turn=0;
+    ULONGLONG hoverSince=0;
 };
 DiplomacyPage page;
 
@@ -118,8 +122,15 @@ void updateHover(POINT p) {
     const bool inside=p.x>=0 && p.x%pitch<page.iconSize && p.y>=y && p.y<y+page.iconSize &&
         slot<page.capacity && index<static_cast<int>(page.projects.size());
     const int project=inside?page.projects[index]:-1;
-    if(page.hovered==project) return;
-    if(project<0) {hideTip();return;}
+    if(project<0) {if(page.hovered>=0) hideTip();return;}
+    const bool bonds=Research::memberBonds.contains(Research::options[project].id);
+    const auto now=GetTickCount64();
+    if(page.hovered!=project) page.hoverSince=now;
+    const unsigned turn=bonds?static_cast<unsigned>((now-page.hoverSince)/5000):0;
+    bool unchanged=page.hovered==project && (!bonds || (page.bondRevision==Research::bondRevision && page.turn==turn));
+    if(unchanged && Research::options[project].detailFormulas.empty()) return;
+    auto text=Research::describe(project,page.selected);
+    if(unchanged && page.hoverText==text) return;
     RECT bounds{};
     GetClientRect(page.dialog,&bounds);
     POINT anchor{slot*pitch,y};
@@ -130,11 +141,23 @@ void updateHover(POINT p) {
     const int bottom=std::min<LONG>(heading.top,anchor.y)-4;
     const int width=std::min(328L,bounds.right);
     if(width<40 || bottom<64) return;
-    auto image=ResearchImages::tooltip(project,width,bottom);
+    // Native player flags paint directly onto Alternate, over child controls in their rows.
+    int top=0;
+    for(int row=0;row<playerRows;++row) if(page.rows[row]!=noHouse) {
+        RECT button{};
+        GetWindowRect(GetDlgItem(page.dialog,firstButton+row),&button);
+        MapWindowPoints(HWND_DESKTOP,page.dialog,reinterpret_cast<POINT*>(&button),2);
+        top=std::max(top,static_cast<int>(button.bottom)+4);
+    }
+    const int available=bottom-top;
+    if(available<60) return;
+    auto image=ResearchImages::tooltip(project,page.selected,text,width,available,turn);
     const auto tip=GetDlgItem(page.dialog,tooltipId);
     setImage(tip,image.get());
     page.tip=std::move(image);
     page.hovered=project;
+    page.hoverText=std::move(text);
+    page.hoverPoint=p;page.bondRevision=Research::bondRevision;page.turn=turn;
     const int left=std::clamp<int>(anchor.x,0,bounds.right-width);
     SetWindowPos(tip,HWND_TOP,left,bottom-page.tip->Height,width,page.tip->Height,SWP_NOACTIVATE|SWP_SHOWWINDOW);
 }
@@ -198,6 +221,7 @@ INT_PTR CALLBACK diplomacyProc(HWND dialog,UINT message,WPARAM param,LPARAM data
         if(page.selected!=noHouse) {
             if(std::find(page.rows.begin(),page.rows.end(),page.selected)!=page.rows.end()) {
                 refreshProjects(page.selected);
+                if(page.hovered>=0) updateHover(page.hoverPoint);
             } else {
                 page.selected=noHouse;
                 for(int id=headingId;id<=tooltipId;++id) ShowWindow(GetDlgItem(dialog,id),SW_HIDE);

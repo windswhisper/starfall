@@ -62,6 +62,33 @@ void buildingWeightsTest() {
     unlocked[0].insert("rare");clearOfferCache();
     check(Detail::buildingOfferRows(12,0,pool).empty(),"exhausted weighted building has no choices");
 }
+void repeatResearchTests() {
+    using namespace Research;
+    fixture();options.resize(1);
+    options[0].repeatable=true;
+    award(0,200);
+    check(purchase(0,0,"america") && purchase(0,0,"america") && completedRounds[0]==2 && balance(0)==0 &&
+        acquisitionCount(0,"common0")==2 && acquisitionCount(1,"common0")==0,"each repeat charges and advances only the purchaser");
+    check(completedProjects(0)==std::vector<int>{0} && unlockOrder[0].size()==1 &&
+        !canRefresh(0,"america",0),"repeat purchases share one owned project");
+    check(grantNamed(0,"america","common0")==0 && grantRandom(0,"america")==0 &&
+        grantFree(0,"america",{"common0"},{}) && ticketOptions(lastTicket,0,"america")==std::vector<int>{0} &&
+        Detail::buildingOfferRows(1,0,{"common0"})==std::vector<int>{0} && acquisitionCount(0,"common0")==4,
+        "owned repeatable project is eligible through named random free and building paths");
+    check(grantNamed(0,"japan","common0")==-1 && acquisitionCount(0,"common0")==4,"repeats retain country requirements");
+    options[0].repeatable=false;clearOfferCache();
+    check(offers(0,"america").empty() && grantNamed(0,"america","common0")==-1 && acquisitionCount(0,"common0")==4,
+        "disabling repeats retains earned copies and prevents further acquisition");
+    fixture();options.resize(2);
+    for(auto& o:options) {
+        o.repeatable=true;o.effectList=true;
+        EffectSpec cash;cash.effect=Effect::Credits;cash.credits=1;
+        EffectSpec random;random.effect=Effect::RandomResearch;
+        o.effects={cash,random};
+    }
+    check(grantNamed(0,"america","common0")==0 && acquisitionCount(0,"common0")==1 && acquisitionCount(0,"common1")==1 &&
+        grantNamed(0,"america","common0")==0 && acquisitionCount(0,"common1")==2,"repeatable random chain stops and a later independent grant runs again");
+}
 void replacementTests() {
     using namespace Research;
     fixture();
@@ -82,6 +109,49 @@ void replacementTests() {
     check(offers(0,"america").empty() && !canOfferFree(0,"america",{"common0"},{},-1) &&
         !offers(1,"america").empty() && balance(0)==100 && completedRounds[0]==3,
         "old tiers stay out of rewards for the upgraded house only");
+}
+void mixedPoolTests() {
+    using namespace Research;
+    fixture();
+    mixedRarityPool=true;
+    sharedRaritySequence=true;
+    options.resize(6);
+    options[4].rarity=Rarity::Rare;
+    options[5].rarity=Rarity::Insane;
+    rarityWeights={1,3,0,0};
+    const std::vector<std::string> scope={"common0","common1","common2","common3","common4","common5"};
+    std::array<int,3> firstRare{};
+    const unsigned originalSeed=seed;
+    const int drawsBefore=randomDraws;
+    for(unsigned run=1;run<=512;++run) {
+        seed=run;
+        savedOffers.clear();seenOffers.clear();clearOfferCache();
+        check(grantFree(0,"america",scope,{}),"create mixed research ticket");
+        auto sample=[&](int kind,const std::vector<int>& board) {
+            check(board.size()==3 && std::set<int>(board.begin(),board.end()).size()==3 &&
+                std::all_of(board.begin(),board.end(),[](int i){return i>=0 && i<5;}),"distinct mixed cards exclude zero weight");
+            firstRare[kind]+=board.front()==4;
+        };
+        sample(0,offers(0,"america"));
+        sample(1,Detail::buildingOfferRows(run,0,scope));
+        sample(2,ticketOptions(lastTicket,0,"america"));
+    }
+    for(int count:firstRare) check(count>175 && count<270,"each project contributes its tier weight (rare probability 3/7)");
+    award(0,100);
+    auto board=offers(0,"america");
+    auto seen=seenOffers.at(0);
+    check(refresh(0,"america",0,board.front()) && !seen.contains(savedOffers.at(0).front()),"mixed refresh picks unseen project");
+    board=offers(0,"america");
+    raritySequenceSeed=seed;
+    seed=originalSeed;
+    clearOfferCache();
+    check(offers(0,"america")==board && slotUsed(0,0) && randomDraws==drawsBefore,"saved mixed board retains order and refresh state");
+    rarityWeights={INT_MAX,INT_MAX,0,0};clearOfferCache();
+    check(offers(0,"america").size()==3,"mixed weight totals can exceed 32 bits");
+    rarityWeights={0,0,0,0};clearOfferCache();
+    check(offers(0,"america").empty() && !canRefresh(0,"america",1),"empty mixed pool");
+    check(grantFree(0,"america",scope,Rarity::Insane) && ticketOptions(lastTicket,0,"america")==std::vector<int>{5},
+        "explicit free rarity retains zero-weight exception");
 }
 void freeChoiceTests() {
     using namespace Research;
@@ -278,6 +348,9 @@ bool Research::canApply(int house,int option) {
 }
 void Research::clearPresentationCaches(bool stopAudio) { ++presentationClears;stoppedAudio=stopAudio; }
 namespace Research::Detail {
+bool Runtime::eligibleHouse(HouseClass*) {return false;}
+bool applyResearchEffect(HouseClass*,const EffectSpec&,int) {return false;}
+bool hasReplacement(const HouseClass*,const EffectSpec&) {return false;}
 void clearEffectCaches() { ++effectClears; }
 unsigned matchSeed() { return seed; }
 int randomIndex(int count) { ++randomDraws;lastPoolSize=count;return randomPick%count; }
@@ -378,6 +451,8 @@ int main() {
         randomPick=0;
     }
     sharedSequenceTests();
+    mixedPoolTests();
+    repeatResearchTests();
     randomResearchTests();
     rewardChainTests();
     replacementTests();

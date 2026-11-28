@@ -7,6 +7,8 @@
 | `src/ConfigText.h` / `ConfigText.cpp` | 共用的字符串规范化、列表和非负整数解析、显示文字解码、配置诊断。不保存配置或游戏状态 |
 | `src/Research.h` / `Research.cpp` | 科研配置与运行状态的唯一定义位置；点数、所有权、抽卡、刷新、购买提交与场景重置。候选缓存仅在实现文件中可见 |
 | `src/ResearchConfig.cpp` | 从显式传入的配置文件及引擎合并规则读取项目，保留文本原字节，检查未知字段、效果及前置链，重读时清理展示和效果缓存 |
+| `src/ResearchBonds.cpp` | 按所属方结算成员科技变化，记录羁绊即时奖励和当前生效的档位权益 |
+| `src/ResearchStages.cpp` | 按计数索引检查阶段公式，依序发放阶段奖励并记录各所属方获得的持续权益 |
 | `src/ResearchEffects.cpp` | 科研效果校验、资金和转换执行、科技生产权限、生产价格与退款 Hook。生产权限和价格缓存由本模块清理 |
 | `src/ResearchInternal.h` | 科研内部接口，以及查询被动注册、所属方资格和调用单位转换的运行时桥接；不暴露技能容器或转换实现 |
 | `src/ResearchUI.cpp` | 科研展示、输入、图标解码与卡片缩放缓存；保留主动技能界面片段 |
@@ -16,6 +18,8 @@
 | `src/BuildingTransform.h` / `BuildingTransform.cpp` | 完整占地一致性、建筑转换资格、原生对象创建与身份衔接；运行时回调重绑定缓存，已有按 ID 保存的被动和 Lua 状态继续使用 |
 | `src/CarrierConversion.h` / `CarrierConversion.cpp` | 移动母体内置变形时调整子机槽位。游戏的子机管理器持有母子关联和补充计时，并负责存读档 |
 | `modules/ActSp/` | 飞行子机、地面守卫、高级驻军、可建造高台，与主运行时共用游戏循环和存读档入口 |
+| `modules/ArtSp/` | 视觉效果子模块。`TracerRules.cpp` 读取武器与美术配置、按单位和武器计数，`TracerDraw.cpp` 管理短时曳光并在战术视图绘制 |
+| `modules/ArtSp/ContinuousBeam.cpp` | 按武器规则维护主目标光束，更新枪口、瞄准点及可见线段，在场景重置与单位销毁时清理锁定 |
 | `src/Starfall.cpp` | 场景初始化与重置、每帧调用顺序、被动事件队列与分发、跨模块协调 |
 | `src/PassiveTypes.h` / `PassiveRules.cpp` | 被动与动作定义、配置读取、持续状态和动作字段校验。验证脚本函数和拾取物 ID 时只读查询场景注册表 |
 | `src/BuildingResearch.cpp` | 建筑与全局科研点收入、工程师和间谍触发的免费科研、免费选项与领取。拥有按建筑类型索引的规则缓存 |

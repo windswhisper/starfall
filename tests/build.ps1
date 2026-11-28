@@ -22,7 +22,7 @@ try {
     $control=@('tests/compile.cmd','tests/build.ps1','tools/build-lua.cmd','tools/msvc-x86.cmd','tools/module-sources.cmd') | ForEach-Object {Join-Path $script:RepoRoot $_}
     $headers=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'references/Phobos/YRpp') -Recurse -File | Where-Object Extension -in '.h','.inl' | ForEach-Object FullName)
     $source=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'src') -Recurse -File | Where-Object Extension -in '.h','.inc','.cpp' | ForEach-Object FullName)
-    $source+=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'modules/ActSp') -File | Where-Object Extension -in '.h','.cpp' | ForEach-Object FullName)
+    $source+=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'modules') -Recurse -File | Where-Object Extension -in '.h','.cpp','.inc' | ForEach-Object FullName)
     $commonSource=@($source | Where-Object {[IO.Path]::GetFileName($_) -notin 'Starfall.cpp','ResearchUI.cpp'})
     $lua=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'references/lua') -File | Where-Object Extension -in '.h','.c' | ForEach-Object FullName)
     $assets=@(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot 'assets') -Recurse -File | ForEach-Object FullName)

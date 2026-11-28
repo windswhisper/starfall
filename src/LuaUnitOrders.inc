@@ -21,6 +21,33 @@ int submitOrder(lua_State* L,EventClass* order) {
     lua_pushboolean(L,order!=nullptr);
     return 1;
 }
+int startUnitOrder(lua_State* L) {
+    auto unit=orderSource(L);
+    auto id=lower(luaL_checkstring(L,2));
+    luaL_checktype(L,3,LUA_TTABLE);
+    lua_getfield(L,3,"center");auto center=pointAt(L,-1);lua_pop(L,1);
+    lua_getfield(L,3,"radius");auto radius=luaL_checkinteger(L,-1);lua_pop(L,1);
+    if(radius<1 || radius>128) return luaL_error(L,"order radius must be 1..128 cells");
+    bool ok=UnitOrders::start(unit,id,center,static_cast<int>(radius));
+    if(ok) frame(L).changed=true;
+    lua_pushboolean(L,ok);return 1;
+}
+int cancelUnitOrder(lua_State* L) {
+    auto unit=orderSource(L);
+    bool ok=UnitOrders::cancel(unit,lower(luaL_optstring(L,2,"")));
+    if(ok) frame(L).changed=true;
+    lua_pushboolean(L,ok);return 1;
+}
+int currentUnitOrder(lua_State* L) {
+    charge(L,1);
+    auto unit=live(L,handle(L,1));
+    if(UnitOrders::controlled(unit)) {
+        const auto& id=UnitOrders::orders.at(unit->UniqueID).id;
+        auto def=UnitOrders::definitions.find(id);
+        if(def!=UnitOrders::definitions.end()) lua_pushstring(L,def->second.name.c_str());else lua_pushnil(L);
+    } else lua_pushnil(L);
+    return 1;
+}
 int moveOrder(lua_State* L) {
     auto unit=orderSource(L);
     auto cell=pointAt(L,2);

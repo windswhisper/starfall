@@ -62,7 +62,7 @@ int unitProperty(lua_State* L) {
     else {
         auto passive=lower(luaL_checkstring(L,2));
         if(prop=="hasPassive") lua_pushboolean(L,ownsPassive(unit,passive));
-        else lua_pushinteger(L,ownsPassive(unit,passive)?stackCount(id,passive):0);
+        else lua_pushinteger(L,unitStacks(unit,passive));
     }
     return 1;
 }
@@ -75,15 +75,30 @@ void charge(lua_State* L,unsigned cost) {
     if(cost>4096-count) luaL_error(L,"native action/query budget exceeded");
     count+=cost;
 }
+int occupants(lua_State* L) {
+    auto container=live(L,handle(L,1));
+    lua_newtable(L);
+    charge(L,1);
+    int count=0;
+    visitDirectOccupants(container,[&](TechnoClass* member) {
+        charge(L,1);
+        if(member && live(L,member->UniqueID)==member) {
+            pushUnit(L,member->UniqueID);
+            lua_rawseti(L,-2,++count);
+        }
+    });
+    return 1;
+}
 #include "LuaUnitOrders.inc"
 void units(lua_State* L) {
-    luaL_newmetatable(L,"Starfall.Unit");
+    if(!luaL_newmetatable(L,"Starfall.Unit")) {lua_pop(L,1);return;}
     lua_pushcfunction(L,sameUnit);lua_setfield(L,-2,"__eq");
     lua_newtable(L);
     for(auto name:{"id","alive","position","health","maxHealth","cost","ammo","passengers","rank","type","kind","owner","trainable","hasPassive","stack"}) {
         lua_pushstring(L,name);lua_pushcclosure(L,unitProperty,1);lua_setfield(L,-2,name);
     }
-    static constexpr luaL_Reg orders[]={{"moveTo",moveOrder},{"attack",attackOrder},{"deploy",deployOrder},
+    static constexpr luaL_Reg orders[]={{"occupants",occupants},{"moveTo",moveOrder},{"attack",attackOrder},{"deploy",deployOrder},
+        {"startOrder",startUnitOrder},{"cancelOrder",cancelUnitOrder},{"currentOrder",currentUnitOrder},
         {"setDroneGuardCell",setDroneGuardCell},{nullptr,nullptr}};
     luaL_setfuncs(L,orders,0);
     lua_setfield(L,-2,"__index");
@@ -124,6 +139,34 @@ int houseInfo(lua_State* L) {
     set("researchPoints",Research::balance(static_cast<int>(index)));
     return 1;
 }
+struct NearbyFilter {
+    vector<string> houses{"all"},types{"*"};
+    bool includeSelf=false,visibleOnly=false;
+    void read(lua_State* L) {
+        if(!lua_isnoneornil(L,4)) {
+            luaL_checktype(L,4,LUA_TTABLE);
+            lua_getfield(L,4,"houses");if(!lua_isnil(L,-1)) houses=list(L,-1);lua_pop(L,1);
+            lua_getfield(L,4,"types");if(!lua_isnil(L,-1)) types=list(L,-1);lua_pop(L,1);
+            lua_getfield(L,4,"includeSelf");includeSelf=lua_toboolean(L,-1)!=0;lua_pop(L,1);
+            lua_getfield(L,4,"visibleOnly");visibleOnly=lua_toboolean(L,-1)!=0;lua_pop(L,1);
+            for(const auto& h:houses) if(!includes({"all","self","allies","enemies","neutral"},h))
+                luaL_error(L,"unknown house filter: %s",h.c_str());
+        }
+    }
+    bool matches(TechnoClass* unit,HouseClass* owner) const {
+        const char* house=unit->Owner==owner?"self":owner->IsAlliedWith(unit->Owner)?"allies":unit->Owner->IsNeutral()?"neutral":"enemies";
+        if(!includes(houses,"all") && !includes(houses,house)) return false;
+        if(!Research::matchesTarget(types,lower(unit->GetTechnoType()->ID),kind(unit),groundVehicle(unit))) return false;
+        if(visibleOnly && unit->Owner!=owner && !owner->IsAlliedWith(unit->Owner)) {
+            if(unit->CloakState!=CloakState::Uncloaked) {
+                const auto cell=MapClass::Instance.TryGetCellAt(unit->GetMapCoords());
+                if(!cell || owner->ArrayIndex<0 || owner->ArrayIndex>=24 || !cell->Sensors_InclHouse(owner->ArrayIndex)) return false;
+            }
+            if(unit->Disguised && !unit->IsClearlyVisibleTo(owner)) return false;
+        }
+        return true;
+    }
+};
 int nearby(lua_State* L) {
     bool point=lua_istable(L,2);
     TechnoClass* center=nullptr;
@@ -132,17 +175,7 @@ int nearby(lua_State* L) {
     else center=live(L,handle(L,2));
     auto radius=luaL_checknumber(L,3);
     if(!std::isfinite(radius) || radius<0 || radius>128) return luaL_error(L,"nearbyUnits range must be 0..128 cells");
-    vector<string> houses{"all"},types{"*"};
-    bool includeSelf=false,visibleOnly=false;
-    if(!lua_isnoneornil(L,4)) {
-        luaL_checktype(L,4,LUA_TTABLE);
-        lua_getfield(L,4,"houses");if(!lua_isnil(L,-1)) houses=list(L,-1);lua_pop(L,1);
-        lua_getfield(L,4,"types");if(!lua_isnil(L,-1)) types=list(L,-1);lua_pop(L,1);
-        lua_getfield(L,4,"includeSelf");includeSelf=lua_toboolean(L,-1)!=0;lua_pop(L,1);
-        lua_getfield(L,4,"visibleOnly");visibleOnly=lua_toboolean(L,-1)!=0;lua_pop(L,1);
-        for(const auto& h:houses) if(!includes({"all","self","allies","enemies","neutral"},h))
-            return luaL_error(L,"unknown house filter: %s",h.c_str());
-    }
+    NearbyFilter filter;filter.read(L);
     lua_newtable(L);
     auto& f=frame(L);
     auto owner=f.event.owner>=0 && f.event.owner<HouseClass::Array.Count?HouseClass::Array.Items[f.event.owner]:nullptr;
@@ -151,23 +184,51 @@ int nearby(lua_State* L) {
     int n=0;
     charge(L,1+static_cast<unsigned>(frame(L).objects.size()/16));
     LuaNearby::visit(f.objects,pos,radius,[&](DWORD id,TechnoClass* unit) {
-        if(!alive(unit) || !unit->Owner || unit->InLimbo || !unit->IsOnMap || (!includeSelf && center==unit)) return;
+        if(!alive(unit) || !unit->Owner || unit->InLimbo || !unit->IsOnMap || (!filter.includeSelf && center==unit)) return;
         if(distanceCells(pos,unit->GetCenterCoords())>radius) return;
-        const char* house=unit->Owner==owner?"self":owner->IsAlliedWith(unit->Owner)?"allies":unit->Owner->IsNeutral()?"neutral":"enemies";
-        if(!includes(houses,"all") && !includes(houses,house)) return;
-        if(!Research::matchesTarget(types,lower(unit->GetTechnoType()->ID),kind(unit),groundVehicle(unit))) return;
-        if(visibleOnly && unit->Owner!=owner && !owner->IsAlliedWith(unit->Owner)) {
-            if(unit->CloakState!=CloakState::Uncloaked) {
-                const auto cell=MapClass::Instance.TryGetCellAt(unit->GetMapCoords());
-                if(!cell || owner->ArrayIndex<0 || owner->ArrayIndex>=24 || !cell->Sensors_InclHouse(owner->ArrayIndex)) return;
-            }
-            if(unit->Disguised && !unit->IsClearlyVisibleTo(owner)) return;
-        }
+        if(!filter.matches(unit,owner)) return;
         pushUnit(L,id);lua_seti(L,-2,++n);
     });
     return 1;
 }
-void arguments(lua_State* L,int table,ScriptFields& fields,std::optional<DWORD>& selected,std::optional<CellStruct>& point,bool fromSection) {
+// Lua map points put integer x/y at cell centers. Resolve the fractional position
+// first so slopes and bridges use the surface directly underneath the muzzle.
+CoordStruct firingPoint(lua_State* L,int index) {
+    if(luaL_testudata(L,index,"Starfall.Unit")) {
+        auto unit=live(L,handle(L,index));
+        if(!unit || !unit->IsOnMap || unit->InLimbo) luaL_error(L,"Origin unit must be on the map");
+        return unit->GetCoords();
+    }
+    luaL_checktype(L,index,LUA_TTABLE);
+    index=lua_absindex(L,index);
+    auto axis=[&](const char* key) {
+        lua_getfield(L,index,key);
+        const double world=std::round((luaL_checknumber(L,-1)+0.5)*256.0);
+        lua_pop(L,1);
+        if(!std::isfinite(world) || world<0 || world>=512*256) luaL_error(L,"Origin outside playable map");
+        return static_cast<int>(world);
+    };
+    CoordStruct at{axis("x"),axis("y"),0};
+    auto& map=MapClass::Instance;
+    const auto xy=CellClass::Coord2Cell(at);
+    auto cell=map.TryGetCellAt(xy);
+    if(!cell || !map.IsWithinUsableArea(xy,false)) luaL_error(L,"Origin outside playable map");
+    lua_getfield(L,index,"height");
+    const double height=luaL_optnumber(L,-1,0);
+    lua_pop(L,1);
+    at.Z=map.GetCellFloorHeight(at);
+    const double z=cell->FixHeight(at).Z+std::round(height*256.0);
+    if(!std::isfinite(z) || z<INT_MIN || z>INT_MAX) luaL_error(L,"invalid Origin height");
+    at.Z=static_cast<int>(z);
+    return at;
+}
+
+struct ActionPositions {
+    std::optional<DWORD> selected,tauntTarget;
+    std::optional<CellStruct> point;
+    std::optional<CoordStruct> origin;
+};
+void arguments(lua_State* L,int table,ScriptFields& fields,ActionPositions& positions,bool fromSection) {
     if(lua_isnoneornil(L,table)) return;
     luaL_checktype(L,table,LUA_TTABLE);
     table=lua_absindex(L,table);
@@ -177,9 +238,24 @@ void arguments(lua_State* L,int table,ScriptFields& fields,std::optional<DWORD>&
         if(lua_type(L,-2)!=LUA_TSTRING) luaL_error(L,"expected named action fields");
         string key=lower(lua_tostring(L,-2));
         if(key!="action" && !key.starts_with("action.")) key="action."+key;
+        if(key=="action.origin") {
+            if(positions.origin) luaL_error(L,"duplicate Origin");
+            positions.origin=firingPoint(L,-1);
+            lua_pop(L,1);
+            continue;
+        }
+        if(key=="action.taunttarget") {
+            if(positions.tauntTarget) luaL_error(L,"duplicate TauntTarget");
+            positions.tauntTarget=handle(L,-1);
+            lua_pop(L,1);
+            continue;
+        }
         if(key=="action.offset" || key=="action.mode" || key=="action.center" || key=="action.distance" || key=="action.height" || key=="action.tilt" || key=="action.easing" || key=="action.ignorecollision" ||
            key=="action.blowweight" || key=="action.affectsironcurtain" || key=="action.airborneheight")
             key="action.forcemove."+key.substr(7);
+        if(key=="action.takeoffanim" || key=="action.takeoffsound" || key=="action.landanim" || key=="action.landsound")
+            key="action.jump."+key.substr(7);
+        if(key=="action.openheight" || key=="action.interval" || key=="action.horizontalspeed") key="action.eject."+key.substr(7);
         const auto canonical=key=="action.duration"?string("action.forcemove.duration"):key;
         if(!supplied.insert(canonical).second)
             luaL_error(L,"duplicate action field %s",canonical.c_str());
@@ -200,10 +276,10 @@ void arguments(lua_State* L,int table,ScriptFields& fields,std::optional<DWORD>&
         } else if(key=="action.destination" && lua_istable(L,-1)) {
             auto dest=pointAt(L,-1);value=std::to_string(dest.X)+","+std::to_string(dest.Y);
         } else if(key=="action.target" && lua_istable(L,-1)) {
-            point=pointAt(L,-1);value="victimlocation";
+            positions.point=pointAt(L,-1);value="victimlocation";
         } else if(key=="action.target" && luaL_testudata(L,-1,"Starfall.Unit")) {
-            selected=handle(L,-1);
-            value=*selected==frame(L).event.holder?"self":"target";
+            positions.selected=handle(L,-1);
+            value=*positions.selected==frame(L).event.holder?"self":"target";
         } else if(lua_type(L,-1)==LUA_TBOOLEAN) value=lua_toboolean(L,-1)?"yes":"no";
         else if(lua_type(L,-1)==LUA_TTABLE) {
             for(const auto& item:list(L,-1)) {if(!value.empty()) value+=",";value+=item;}
@@ -214,11 +290,27 @@ void arguments(lua_State* L,int table,ScriptFields& fields,std::optional<DWORD>&
         fields[key]=std::move(value);lua_pop(L,1);
     }
 }
-bool action(lua_State* L,ScriptFields& fields,const string& label,std::optional<DWORD> target,std::optional<CellStruct> point) {
+bool action(lua_State* L,ScriptFields& fields,const string& label,const ActionPositions& positions) {
+    const auto& [target,tauntTarget,point,origin]=positions;
     charge(L,1);
     auto& f=frame(L);
     Skill parsed{};parsed.id=f.skill.id;parsed.trigger=f.event.trigger;
     auto name=lower(fields["action"]);
+    if(origin && name!="fireweapon") return luaL_error(L,"Origin requires FireWeapon");
+    if((name=="ejectpassengers" || name=="ejectunit") && fields.contains("action.range")) {
+        if(fields.contains("action.eject.range")) return luaL_error(L,"duplicate field action.eject.range");
+        fields["action.eject.range"]=fields.at("action.range");
+        fields.erase("action.range");
+    }
+    if(name=="jumpto") {
+        for(auto [alias,key]:{std::pair{"action.forcemove.height","action.jump.height"},
+                {"action.duration","action.jump.duration"},{"action.range","action.jump.range"}}) {
+            if(auto it=fields.find(alias);it!=fields.end()) {
+                if(fields.contains(key)) return luaL_error(L,"duplicate field %s",key);
+                auto value=it->second;fields.erase(it);fields[key]=std::move(value);
+            }
+        }
+    }
     if(name=="forcemove" && fields.contains("action.duration")) {
         fields["action.forcemove.duration"]=fields.at("action.duration");
         fields.erase("action.duration");
@@ -230,8 +322,11 @@ bool action(lua_State* L,ScriptFields& fields,const string& label,std::optional<
         return luaL_error(L,"action %s requires a valid superweapon target",name.c_str());
     if(!readAction(parsed,label,&fields)) luaL_error(L,"invalid action %s in %s",name.c_str(),label.c_str());
     const auto& a=parsed.actions.front();
+    if(a.landFirst) return luaL_error(L,"LandFirst requires an INI passive result list; Lua calls are synchronous");
     if((name=="grantpassive" || name=="changepassivestack") && !skills.contains(a.passive))
         luaL_error(L,"unknown passive %s",a.passive.c_str());
+    if(tauntTarget && (name!="grantpassive" || !skills.at(a.passive).taunt))
+        return luaL_error(L,"TauntTarget requires GrantPassive with a taunt passive");
     for(const auto& id:a.passiveList) if(name=="stealpassive" && !skills.contains(id))
         luaL_error(L,"unknown passive %s",id.c_str());
     bool changed=false;
@@ -245,7 +340,10 @@ bool action(lua_State* L,ScriptFields& fields,const string& label,std::optional<
     } else {
         auto holder=f.event.trigger=="ondeath"?nullptr:live(L,f.event.holder);
         if(!holder && !f.event.sequenceCast && f.event.trigger!="ondeath") return false;
-        changed=apply(a,f.event,holder,f.objects,f.stacks,target,point);
+        auto aim=tauntTarget?live(L,*tauntTarget):nullptr;
+        if(tauntTarget && !aim) return false;
+        if(a.target=="self.occupants") visitDirectOccupants(holder,[&](TechnoClass*) {charge(L,1);});
+        changed=apply(a,f.event,holder,f.objects,f.stacks,target,point,aim,origin);
     }
     f.changed|=changed;
     return changed;
@@ -257,21 +355,19 @@ int result(lua_State* L,bool changed) {
 }
 int direct(lua_State* L) {
     string name=luaL_checkstring(L,2);
-    ScriptFields fields;std::optional<DWORD> target;
-    std::optional<CellStruct> point;
-    arguments(L,3,fields,target,point,false);
+    ScriptFields fields;ActionPositions positions;
+    arguments(L,3,fields,positions,false);
     fields["action"]=name;
-    return result(L,action(L,fields,frame(L).skill.id,target,point));
+    return result(L,action(L,fields,frame(L).skill.id,positions));
 }
 int sequence(lua_State* L) {
     luaL_checktype(L,2,LUA_TTABLE);
     bool changed=false;
     for(size_t i=1;i<=lua_rawlen(L,2);++i) {
         lua_geti(L,2,i);
-        ScriptFields fields;std::optional<DWORD> target;
-        std::optional<CellStruct> point;
-        arguments(L,-1,fields,target,point,false);lua_pop(L,1);
-        bool result=action(L,fields,frame(L).skill.id,target,point);
+        ScriptFields fields;ActionPositions positions;
+        arguments(L,-1,fields,positions,false);lua_pop(L,1);
+        bool result=action(L,fields,frame(L).skill.id,positions);
         changed|=result;
         if(!result && stopsSequenceOnFailure(lower(fields["action"]))) break;
     }
@@ -279,21 +375,15 @@ int sequence(lua_State* L) {
 }
 int fromIni(lua_State* L) {
     string section=lower(luaL_checkstring(L,2));
-    ScriptFields fields;std::optional<DWORD> target;
-    for(const auto& key:sectionKeys(section)) if(actionField(key)) fields[key]=read(section,key.c_str());
+    ScriptFields fields;ActionPositions positions;
+    for(const auto& key:sectionKeys(section)) if(actionField(key) || key.starts_with("action.")) fields[key]=read(section,key.c_str());
     if(frame(L).event.sequenceCast) {
         for(auto& [key,value]:ActionSequence::fields({},section))
-            if(actionField(key)) fields[key]=std::move(value);
+            if(actionField(key) || key.starts_with("action.")) fields[key]=std::move(value);
     }
     if(!fields.contains("action")) return luaL_error(L,"missing Action in [%s]",section.c_str());
-    std::optional<CellStruct> point;
-    arguments(L,3,fields,target,point,true);
-    return result(L,action(L,fields,section,target,point));
-}
-DWORD eventTarget(const Event& e) {
-    if(e.kind=="none") return 0;
-    if(e.trigger=="ontakedamage" || e.trigger=="onbeforetakedamage" || e.trigger=="ondeath") return e.attacker;
-    return e.victim;
+    arguments(L,3,fields,positions,true);
+    return result(L,action(L,fields,section,positions));
 }
 int schedule(lua_State* L) {
     auto& f=frame(L);
@@ -578,7 +668,7 @@ void tickScriptQueue(LuaTimers::Store& store,bool super) {
         }
         auto other=findLive(live,task.target);
         auto event=super?sequenceEvent(task.owner,cast->second):eventSnapshot("onscheduled",holder,other,holder,other,0);
-        ScriptActions::Frame frame{*definition,event,live,super?0:stackCount(task.owner,task.skill),nullptr};
+        ScriptActions::Frame frame{*definition,event,live,super?0:unitStacks(holder,task.skill),nullptr};
         frame.taskData=&task.data;frame.taskId=id;
         ScriptRuntime::Call call{&mod->second,nullptr,&task.callback,ScriptActions::invoke,&frame};
         string error;

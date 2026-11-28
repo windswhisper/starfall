@@ -1,6 +1,7 @@
 #include "../../../src/Starfall.cpp"
 #include <MouseClass.h>
 #include <WWKeyboardClass.h>
+#include "../../../modules/ActSp/GroundGuards.h"
 
 namespace {
 DWORD grizzlyId=0,grizzlyTargetId=0;
@@ -34,6 +35,7 @@ BuildingClass* placeBuilding(const char* id,CellStruct at,HouseClass* house) {
     return b;
 }
 #include "GroundCheck.inc"
+#include "InfantryGuardCheck.inc"
 #include "GarrisonCheck.inc"
 void captureOutpost(CoordStruct center) {
     auto surface=DSurface::Composite;
@@ -63,6 +65,9 @@ DEFINE_HOOK(0x6FF672,ActSp_TestGrizzlyCannon,10) {
         grizzlyShot=true;
     if(GroundCheck::childId && firer->UniqueID==GroundCheck::childId && firer->Target && firer->Target->UniqueID==GroundCheck::enemyId)
         GroundCheck::shot=true;
+    if(InfantryGuardCheck::childId && firer->UniqueID==InfantryGuardCheck::childId &&
+       firer->Target && firer->Target->UniqueID==InfantryGuardCheck::enemyId)
+        InfantryGuardCheck::shot=true;
     GarrisonCheck::commit(firer);
     return 0;
 }
@@ -97,6 +102,7 @@ DEFINE_HOOK(0x55B4EB,ActSp_TestFlight,5) {
         return 0;
     }
     GroundCheck::tick(f,load,house);
+    InfantryGuardCheck::tick(f,load,house);
     GarrisonCheck::tick(f,load,house);
     if(f<50) return 0;
     auto guard=fixture("BFRT"),escort=fixture("TRUCKA"),orbit=fixture("TNKD"),native=fixture("HTK");
@@ -208,6 +214,7 @@ DEFINE_HOOK(0x55B4EB,ActSp_TestFlight,5) {
     if((back && grizzlyRearmed && grizzlyArrived && GroundCheck::done && GarrisonCheck::done) || f==1400) {
         check(GarrisonCheck::done,"better garrison lifecycle");
         check(GroundCheck::done,"ground guard lifecycle");
+        check(InfantryGuardCheck::done,"infantry guard lifecycle");
         check(grizzlyAirborne && grizzlyArrived,"Grizzly flew low and landed on guard cell");
         check(grizzlyShot,"Grizzly cannon fired at designated enemy");
         check(grizzlyDocked,"Grizzly returned empty to outpost");

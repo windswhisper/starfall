@@ -29,9 +29,19 @@ bool requiresReplacement(TechnoTypeClass* type) {
             if(effect.effect==Research::Effect::ReplaceProduction)
                 if(auto to=TechnoTypeClass::Find(effect.to.c_str())) replacementTargets.insert(to);
         };
+        for(const auto& bond:Research::bonds) for(const auto& tier:bond.tiers) for(const auto& e:tier.effects)
+            if(e.effect==Research::Effect::ReplaceProduction) {
+                auto to=TechnoTypeClass::Find(e.to.c_str());
+                if(to && to->TechLevel<0) replacementTargets.insert(to);
+            }
         for(const auto& option:Research::options) {
             if(option.effectList) {for(const auto& effect:option.effects) collect(effect);}
             else collect(option);
+            for(const auto& stage:option.stages) for(const auto& effect:stage.effects)
+                if(effect.effect==Research::Effect::ReplaceProduction) {
+                    auto to=TechnoTypeClass::Find(effect.to.c_str());
+                    if(to && to->TechLevel<0) replacementTargets.insert(to);
+                }
         }
     }
     return replacementTargets.contains(type);
@@ -49,11 +59,16 @@ const ProductionReplacements& replacements(const HouseClass* house) {
             if(from && to) {entry->second.from.emplace(from,to);entry->second.to.emplace(to,from);}
         };
         for(const auto& option:Research::options) if(owned->second.contains(option.id)) {
-            if(option.effectList) {for(const auto& effect:option.effects) collect(effect);}
-            else collect(option);
+            Research::forActiveEffects(house->ArrayIndex,option,collect);
         }
+        Research::forBondEffects(house->ArrayIndex,collect);
     }
     return entry->second;
+}
+bool hasReplacement(const HouseClass* owner,const EffectSpec& spec) {
+    const auto& mappings=replacements(owner).from;
+    auto it=mappings.find(TechnoTypeClass::Find(spec.from.c_str()));
+    return it!=mappings.end() && it->second==TechnoTypeClass::Find(spec.to.c_str());
 }
 bool hasProductionLicense(const HouseClass* house,TechnoTypeClass* type) {
     if(!house || !type || Research::unlocked.empty()) return false;
@@ -67,9 +82,9 @@ bool hasProductionLicense(const HouseClass* house,TechnoTypeClass* type) {
                 if(auto* item=TechnoTypeClass::Find(effect.technology.c_str())) entry->second.insert(item);
         };
         for(const auto& option:Research::options) if(owned->second.contains(option.id)) {
-            if(option.effectList) {for(const auto& effect:option.effects) collect(effect);}
-            else collect(option);
+            Research::forActiveEffects(house->ArrayIndex,option,collect);
         }
+        Research::forBondEffects(house->ArrayIndex,collect);
     }
     return entry->second.contains(type);
 }
@@ -193,7 +208,7 @@ bool validateEffect(const Research::EffectSpec& o,const EffectWarning& warn) {
             if(!from || from->WhatAmI()!=kind) valid=fail("FromType","原类型不存在或类别不符");
             if(!to || to->WhatAmI()!=kind) valid=fail("ToType","目标类型不存在或类别不符");
             if(!valid) return false;
-            if(from==to || !IsEqualGUID(from->Locomotor,to->Locomotor)) return fail("ToType","两个类型相同或移动方式不兼容");
+            if(from==to) return fail("ToType","两个类型相同");
             if(!Runtime::conversionSupportsTypes(from,to))
                 return fail("ToType","当前转换接口不支持这组类型");
             return true;
@@ -206,6 +221,8 @@ bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o,int sour
     if(o.effect==Effect::FreeResearch) return Research::canOfferFree(h->ArrayIndex,h->Type->ID,o.reward.projects,o.reward.rarity,source);
     if(o.effect==Effect::RandomResearch) return Research::canGrantRandom(h->ArrayIndex,source,h->Type->ID,o.reward.rarity);
     if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
+    if(source>=0 && Research::options[source].repeatable && Research::owns(h->ArrayIndex,Research::options[source].id) &&
+        (o.effect==Effect::Technology || o.effect==Effect::ReplaceProduction)) return true;
     if(source>=0 && !Research::options[source].replaces.empty() &&
        (o.effect==Effect::Technology || o.effect==Effect::ReplaceProduction)) {
         const auto& removed=Research::options[source].replaces;
@@ -216,9 +233,13 @@ bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o,int sour
         };
         for(const auto& project:Research::options) {
             if(!Research::owns(h->ArrayIndex,project.id) || includes(removed,project.id)) continue;
-            if(project.effectList ? std::any_of(project.effects.begin(),project.effects.end(),conflicts) : conflicts(project)) return false;
+            bool conflict=false;
+            Research::forActiveEffects(h->ArrayIndex,project,[&](const auto& effect){if(conflicts(effect)) conflict=true;});
+            if(conflict) return false;
         }
-        return true;
+        bool bondConflict=false;
+        Research::forBondEffects(h->ArrayIndex,[&](const auto& effect){if(conflicts(effect)) bondConflict=true;},source);
+        return !bondConflict;
     }
     if(o.effect==Effect::ReplaceProduction) {
         auto from=TechnoTypeClass::Find(o.from.c_str()),to=TechnoTypeClass::Find(o.to.c_str());
@@ -240,6 +261,8 @@ bool researchEffectCanApply(HouseClass* h,const Research::EffectSpec& o,int sour
 bool applyResearchEffect(HouseClass* h,const Research::EffectSpec& o,int source) {
     using Research::Effect;
     if(!researchEffectCanApply(h,o,source)) return false;
+    if(source>=0 && Research::owns(h->ArrayIndex,Research::options[source].id) &&
+        (o.effect==Effect::Technology || o.effect==Effect::ReplaceProduction)) return true;
     if(o.effect==Effect::RandomResearch || o.effect==Effect::FreeResearch) return true; // Dispatched after ownership commits.
     if(o.effect==Effect::Passive || o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) return true;
     if(o.effect==Effect::Credits) {h->GiveMoney(o.credits);return true;}
@@ -266,6 +289,7 @@ bool Research::available(int option) {
     if(!isEnabled() || option<0 || option>=static_cast<int>(options.size())) return false;
     const auto& o=options[option];
     if(o.rarity==Rarity::Invalid) return false;
+    if(o.stagesOnly) return !o.stages.empty();
     if(!o.effectList) return validateEffect(singleEffect(o));
     std::set<string> replacementTypes;
     for(const auto& effect:o.effects) if(effect.effect==Effect::ReplaceProduction) {
@@ -277,6 +301,7 @@ bool Research::canApply(int house,int option) {
     if(!isEnabled() || option<0 || option>=static_cast<int>(options.size()) || house<0 || house>=HouseClass::Array.Count) return false;
     auto h=HouseClass::Array.Items[house];if(!Runtime::eligibleHouse(h)) return false;
     const auto& o=options[option];
+    if(o.stagesOnly) return !o.stages.empty();
     if(!o.effectList) return researchEffectCanApply(h,singleEffect(o),option);
     // Ownership enables every permanent replacement in the project. Reject the
     // whole bundle if one would conflict instead of recording a skipped mapping.
@@ -287,6 +312,7 @@ bool Research::executeEffect(int house,int option) {
     if(!canApply(house,option)) return false;
     auto h=HouseClass::Array.Items[house];const auto& o=options[option];
     if(!o.replaces.empty()) h->RecheckTechTree=true;
+    if(o.stagesOnly) return true;
     if(!o.effectList) return applyResearchEffect(h,singleEffect(o),option);
     bool applied=false;
     for(const auto& effect:o.effects) if(applyResearchEffect(h,effect,option)) applied=true;
@@ -297,7 +323,7 @@ void announceReward(int house,int option) {
     if(house>=0 && house<HouseClass::Array.Count) showResearchSelection(HouseClass::Array.Items[house],option);
 }
 struct CostAdjustment {
-    long long percent=0, credits=0;
+    double percent=0, credits=0;
     bool active=false;
 };
 using PriceKey=std::pair<int,TechnoTypeClass*>;
@@ -322,19 +348,21 @@ CostAdjustment costAdjustment(HouseClass* house,TechnoTypeClass* type) {
     if(!added) return sum;
     const auto id=lower(type->ID);
     const auto category=sidebarCategory(type);
-    auto collect=[&](const auto& e) {
+    auto collect=[&](const auto& e,int copies) {
         using Research::Effect;
         const bool byType=e.effect==Effect::TypeCost && includes(e.types,id);
         const bool byCategory=e.effect==Effect::CategoryCost && e.cost.category==category && e.cost.percent;
         if(!byType && !byCategory) return;
         if(!e.cost.delta) return;
-        (e.cost.percent?sum.percent:sum.credits)+=e.cost.delta;
+        (e.cost.percent?sum.percent:sum.credits)+=static_cast<double>(e.cost.delta)*copies;
         sum.active=true;
     };
     for(const auto& project:Research::options) if(owned->second.contains(project.id)) {
-        if(project.effectList) {for(const auto& effect:project.effects) collect(effect);}
-        else collect(project);
+        int copies=Research::acquisitionCount(house->ArrayIndex,project.id);
+        Research::forBaseEffects(project,[&](const auto& e){collect(e,copies);});
+        Research::forStageEffects(house->ArrayIndex,project,[&](const auto& e){collect(e,1);});
     }
+    Research::forBondEffects(house->ArrayIndex,[&](const auto& e){collect(e,1);});
     return sum;
 }
 }

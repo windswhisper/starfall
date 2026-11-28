@@ -35,6 +35,23 @@ bool available(BuildingTypeClass* type,HouseClass* owner,CellStruct anchor) {
     }
     return type->CanPlaceHere(&anchor,owner);
 }
+bool createAt(BuildingTypeClass* type,HouseClass* owner,CellStruct anchor) {
+    if(!supported(type) || !owner || !available(type,owner,anchor)) return false;
+    auto building=static_cast<BuildingClass*>(type->CreateObject(owner));
+    if(!building) return false;
+    building->QueueMission(Mission::Construction,false);
+    building->NextMission();
+    if(!building->Unlimbo(MapClass::Instance.GetCellAt(anchor)->GetCoords(),DirType::North)) {
+        building->UnInit();
+        return false;
+    }
+    building->BeginMode(BStateType::Idle);
+    building->QueueMission(Mission::Guard,false);
+    building->NextMission();
+    building->Place(false);
+    owner->RecheckTechTree=true;
+    return true;
+}
 bool create(BuildingTypeClass* type,HouseClass* owner,const CoordStruct& location,int radius) {
     if(!supported(type) || !owner || owner->Defeated || owner->IsObserver() || radius<0 || radius>32) return false;
     auto& map=MapClass::Instance;
@@ -51,21 +68,7 @@ bool create(BuildingTypeClass* type,HouseClass* owner,const CoordStruct& locatio
     });
     for(auto offset:offsets) {
         CellStruct anchor{static_cast<short>(center.X+offset.X),static_cast<short>(center.Y+offset.Y)};
-        if(!available(type,owner,anchor)) continue;
-        auto building=static_cast<BuildingClass*>(type->CreateObject(owner));
-        if(!building) return false;
-        building->QueueMission(Mission::Construction,false);
-        building->NextMission();
-        if(!building->Unlimbo(map.GetCellAt(anchor)->GetCoords(),DirType::North)) {
-            building->UnInit();
-            continue;
-        }
-        building->BeginMode(BStateType::Idle);
-        building->QueueMission(Mission::Guard,false);
-        building->NextMission();
-        building->Place(false);
-        owner->RecheckTechTree=true;
-        return true;
+        if(createAt(type,owner,anchor)) return true;
     }
     return false;
 }

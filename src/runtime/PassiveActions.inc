@@ -6,13 +6,30 @@ TechnoClass* findLive(const Objects& objects,DWORD id) {
     return it!=objects.end() && alive(it->second) ? it->second : nullptr;
 }
 Objects* activeObjects=nullptr;
+template<class Visit>
+void visitDirectOccupants(TechnoClass* container,Visit visit) {
+    if(!container) return;
+    auto passenger=container->Passengers.FirstPassenger;
+    for(int left=container->Passengers.NumPassengers;left>0 && passenger;--left) {
+        visit(passenger);
+        passenger=static_cast<FootClass*>(passenger->NextObject);
+    }
+    if(auto building=abstract_cast<BuildingClass*>(container)) {
+        for(auto resident:building->Occupants) visit(resident);
+        if(building->Type->Bunker && building->TankBunkerState==TankBunkerState::Bunkered) {
+            auto tank=building->BunkerLinkedItem;
+            if(tank && tank->BunkerLinkedItem==building) visit(tank);
+        }
+    }
+}
 struct EffectScope {
     bool previous=applyingDamage;
     EffectScope(){ applyingDamage=true; }
     ~EffectScope(){ applyingDamage=previous; }
 };
-BulletVelocity launchVelocity(WeaponTypeClass* weapon,int speedValue,const CoordStruct& origin,const CoordStruct& destination) {
-    double dx=destination.X-origin.X,dy=destination.Y-origin.Y,dz=destination.Z-origin.Z;
+BulletVelocity launchVelocity(WeaponTypeClass* weapon,int speedValue,const CoordStruct& origin,AbstractClass* target,CoordStruct destination) {
+    if(auto wall=HighPlatforms::arcingWallCell(target,weapon->Projectile,origin)) destination=wall->GetCoords();
+    double dx=double(destination.X)-origin.X,dy=double(destination.Y)-origin.Y,dz=double(destination.Z)-origin.Z;
     double length=std::sqrt(dx*dx+dy*dy+dz*dz);
     double speed=std::max(1,speedValue);
     BulletVelocity velocity{};
@@ -27,9 +44,12 @@ BulletVelocity launchVelocity(WeaponTypeClass* weapon,int speedValue,const Coord
     }
     return velocity;
 }
-bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* target,const CoordStruct& destination,const CoordStruct& origin,HouseClass* owner) {
+void drawExtraWeaponVisual(TechnoClass*,AbstractClass*,int,WeaponTypeClass*,const CoordStruct&,HouseClass* = nullptr);
+
+bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* target,const CoordStruct& destination,const CoordStruct& muzzle,HouseClass* owner,std::optional<CoordStruct> explicitOrigin=std::nullopt) {
     auto weapon=s.action=="fireweapon"?WeaponTypeClass::Find(s.weapon.c_str()):nullptr;
     if(s.action=="fireweapon" && !weapon) return false;
+    if(explicitOrigin && !FireOrigin::supports(weapon)) return false;
     auto warhead=weapon?weapon->Warhead:s.warhead;
     auto projectile=weapon?weapon->Projectile:BulletTypeClass::Find("Invisible");
     if(!warhead || !projectile || !target) return false;
@@ -39,8 +59,10 @@ bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* targe
     if(!bullet) return false;
     if(!firer && owner) passiveBulletOwners[bullet->UniqueID]=owner->ArrayIndex;
     bullet->SetWeaponType(weapon);
-    // A self-directed shot has no flight segment. Resolve the configured weapon at its impact point.
-    if(!weapon || target==firer || (!firer && origin==destination)) {
+    const auto origin=explicitOrigin?*explicitOrigin:FireOrigin::resolve(weapon,target,muzzle);
+    const bool customOrigin=explicitOrigin.has_value() || FireOrigin::enabled(weapon);
+    if(!weapon || (target==firer && !customOrigin) ||
+       ((!firer || target==firer || explicitOrigin) && origin==destination)) {
         const auto id=bullet->UniqueID;
         bullet->SetLocation(destination);
         bullet->Detonate(destination);
@@ -50,10 +72,23 @@ bool weaponEffect(const PassiveAction& s,TechnoClass* firer,AbstractClass* targe
     }
 
     passiveBullets.insert(bullet->UniqueID);
-    if(!bullet->MoveTo(origin,launchVelocity(weapon,bullet->Speed,origin,destination))) {
+    if(!bullet->MoveTo(origin,launchVelocity(weapon,bullet->Speed,origin,target,destination))) {
         const auto id=bullet->UniqueID;bullet->UnInit();passiveBulletOwners.erase(id);return false;
     }
+    if(customOrigin && (firer || explicitOrigin) && (weapon->IsLaser || weapon->IsElectricBolt || weapon->IsRadBeam))
+        drawExtraWeaponVisual(firer,target,0,weapon,origin,owner);
+    if(firer) if(auto tracer=ArtSp::Tracers::select(firer->UniqueID,weapon))
+        ArtSp::Tracers::launch(*tracer,origin,destination,Unsorted::CurrentFrame);
     return true;
+}
+bool particleEffect(const PassiveAction& s,TechnoClass* holder,AbstractClass* aim,const CoordStruct& origin,
+                    const CoordStruct& destination,HouseClass* owner) {
+    auto behavior=s.particleSystem->BehavesLike;
+    bool directed=behavior==BehavesLike::Fire || behavior==BehavesLike::Railgun;
+    if(directed && origin==destination) return false;
+    if(directed && !aim) aim=MapClass::Instance.TryGetCellAt(destination);
+    return GameCreate<ParticleSystemClass>(s.particleSystem,directed?origin:destination,
+        directed?aim:nullptr,directed?holder:nullptr,directed?destination:CoordStruct::Empty,owner)!=nullptr;
 }
 struct MultiShotSettings {
     int count=0;
@@ -81,18 +116,32 @@ MultiShotSettings multiShotSettings(TechnoClass* unit,AbstractClass* primary) {
     }
     return settings;
 }
-void drawExtraShot(TechnoClass* firer,TechnoClass* target,int slot,WeaponTypeClass* weapon,const CoordStruct& origin) {
-    const auto end=target->GetTargetCoords();
-    if(weapon->AttachedParticleSystem && (weapon->IsRailgun || weapon->UseFireParticles || weapon->UseSparkParticles)) {
-        auto system=GameCreate<ParticleSystemClass>(weapon->AttachedParticleSystem,origin,target,firer,end,firer->Owner);
-        // The native constructor takes its tracking target from the firer's current order.
-        if(system) system->Target=target;
-    }
+void drawDetachedBolt(TechnoClass* firer,AbstractClass* target,WeaponTypeClass* weapon,const CoordStruct& origin) {
+    using CreateBolt=EBolt*(__thiscall*)(TechnoClass*,AbstractClass*,WeaponTypeClass*,const CoordStruct&);
+    reinterpret_cast<CreateBolt>(0x6FD460)(firer,target,weapon,origin);
+}
+void drawExtraWeaponVisual(TechnoClass* firer,AbstractClass* target,int slot,WeaponTypeClass* weapon,const CoordStruct& origin,HouseClass* owner) {
+    if(firer) owner=firer->Owner;
+    const auto end=(target->AbstractFlags&AbstractFlags::Object)!=AbstractFlags::None?
+        static_cast<ObjectClass*>(target)->GetTargetCoords():target->GetCenterCoords();
     if(weapon->IsLaser) {
-        firer->CreateLaser(target,slot,weapon,origin);
+        if(firer) {
+            if(auto laser=firer->CreateLaser(reinterpret_cast<ObjectClass*>(target),slot,weapon,origin))
+                laser->Target=ProjectileShield::beamEnd(firer,weapon,laser->Source,laser->Target);
+        } else {
+            const bool houseColor=weapon->IsHouseColor && owner;
+            const auto color=houseColor?owner->LaserColor:weapon->LaserInnerColor;
+            const auto clipped=ProjectileShield::beamEnd(nullptr,weapon,origin,end,owner);
+            if(auto laser=GameCreate<LaserDrawClass>(origin,clipped,color,weapon->LaserOuterColor,
+                                                      weapon->LaserOuterSpread,weapon->LaserDuration))
+                laser->IsHouseColor=houseColor;
+        }
     } else if(weapon->IsElectricBolt) {
-        using CreateBolt=EBolt*(__thiscall*)(TechnoClass*,AbstractClass*,WeaponTypeClass*,const CoordStruct&);
-        reinterpret_cast<CreateBolt>(0x6FD460)(firer,target,weapon,origin);
+        if(firer) drawDetachedBolt(firer,target,weapon,origin);
+        else if(auto bolt=GameCreate<EBolt>()) {
+            bolt->AlternateColor=weapon->IsAlternateColor;
+            bolt->Fire(origin,ProjectileShield::beamEnd(nullptr,weapon,origin,end,owner),0);
+        }
     } else if(weapon->IsSonic) {
         SonicRipple::launch(origin,end,Unsorted::CurrentFrame);
     } else if(weapon->IsRadBeam) {
@@ -100,18 +149,27 @@ void drawExtraShot(TechnoClass* firer,TechnoClass* target,int slot,WeaponTypeCla
         auto beam=RadBeam::Allocate(temporal?RadBeamType::Temporal:RadBeamType::RadBeam);
         if(!beam) return;
         beam->SetCoordsSource(origin);
-        beam->SetCoordsTarget(end);
+        beam->SetCoordsTarget(ProjectileShield::beamEnd(firer,weapon,origin,end,owner));
         const auto rules=RulesClass::Instance;
         const auto ini=CCINIClass::INI_Rules;
         const auto color=temporal?rules->ChronoBeamColor:rules->RadColor;
-        beam->Color=ini->ReadBool(weapon->ID,"Beam.IsHouseColor",false)?firer->Owner->LaserColor:
+        beam->Color=owner && ini->ReadBool(weapon->ID,"Beam.IsHouseColor",false)?owner->LaserColor:
             ini->ReadColor(weapon->ID,"Beam.Color",color);
         beam->Period=ini->ReadInteger(weapon->ID,"Beam.Duration",15);
         beam->Amplitude=ini->ReadDouble(weapon->ID,"Beam.Amplitude",40.0);
     }
 }
-void multiShot(TechnoClass* unit,BulletClass* original,AbstractClass* primary,int slot,const CoordStruct& origin) {
+struct SplitTargets {
+    DWORD primary;
+    int slot;
+    string weapon;
+    vector<DWORD> branches;
+};
+std::map<DWORD,SplitTargets> splitTargets;
+void multiShot(unsigned shot,TechnoClass* unit,BulletClass* original,AbstractClass* primary,int slot,const CoordStruct& origin,
+               const ArtSp::Tracers::Style* tracer) {
     if(!alive(unit) || !unit->Owner || !original || !primary || slot<0 || slot>=TechnoTypeClass::MaxWeapons) return;
+    auto last=splitTargets.extract(unit->UniqueID);
     auto weapon=original->WeaponType;
     if(!weapon || !weapon->Projectile || !original->WH || !original->Type || weapon->Spawner || weapon->LimboLaunch || weapon->IsMagBeam) return;
     const auto settings=multiShotSettings(unit,primary);
@@ -122,7 +180,17 @@ void multiShot(TechnoClass* unit,BulletClass* original,AbstractClass* primary,in
     if(!mount || mount->WeaponType!=weapon) return;
     std::set<DWORD> seen;
     const bool primaryAirborne=settings.preferSameLayer && primary->WhatAmI()!=AbstractType::Cell && primary->IsInAir();
-    struct Candidate { bool otherLayer; int distance; TechnoClass* unit; };
+    DWORD aim=primary->UniqueID;
+    if(primary->WhatAmI()==AbstractType::Cell) {
+        const auto cell=static_cast<CellClass*>(primary)->MapCoords;
+        aim=0x80000000u | (static_cast<DWORD>(static_cast<WORD>(cell.X))<<16) | static_cast<WORD>(cell.Y);
+    }
+    std::unordered_map<DWORD,size_t> previousSlot;
+    if(!last.empty() && last.mapped().primary==aim && last.mapped().slot==slot && last.mapped().weapon==weapon->ID) {
+        const auto& branches=last.mapped().branches;
+        for(size_t i=0;i<branches.size();++i) if(branches[i]) previousSlot.emplace(branches[i],i);
+    }
+    struct Candidate { bool otherLayer; size_t oldSlot; int distance; TechnoClass* unit; };
     vector<Candidate> targets;
     auto visit=[&](TechnoClass* other) {
         if(!alive(other) || other==primary || other==original->Target || other==unit || !other->Owner ||
@@ -139,7 +207,8 @@ void multiShot(TechnoClass* unit,BulletClass* original,AbstractClass* primary,in
            !unit->IsCloseEnough(other,slot) || !MapClass::GetTotalDamage(10000,original->WH,other->GetTechnoType()->Armor,0)) return false;
         auto error=unit->GetFireError(other,slot,false);
         if(error!=FireError::OK && error!=FireError::FACING && error!=FireError::ROTATING) return false;
-        targets.push_back({settings.preferSameLayer && airborne!=primaryAirborne,originUnit->DistanceFrom(other),other});
+        auto prev=previousSlot.find(other->UniqueID);
+        targets.push_back({settings.preferSameLayer && airborne!=primaryAirborne,prev==previousSlot.end()?SIZE_MAX:prev->second,originUnit->DistanceFrom(other),other});
         return false;
     };
     int range=unit->GetWeaponRange(slot);
@@ -149,23 +218,49 @@ void multiShot(TechnoClass* unit,BulletClass* original,AbstractClass* primary,in
     auto count=std::min<size_t>(targets.size(),settings.count);
     std::partial_sort(targets.begin(),targets.begin()+count,targets.end(),[](const auto& a,const auto& b){
         if(a.otherLayer!=b.otherLayer) return a.otherLayer<b.otherLayer;
+        if(a.oldSlot!=b.oldSlot) return a.oldSlot<b.oldSlot;
         if(a.distance!=b.distance) return a.distance<b.distance;
         return a.unit->UniqueID<b.unit->UniqueID;
     });
-    for(size_t i=0;i<count;++i) {
-        auto target=targets[i].unit;
+    if(!count) return;
+    // Keep a surviving branch's index even when fewer enemies remain than available shots.
+    size_t slots=count;
+    for(size_t i=0;i<count;++i) if(targets[i].oldSlot<settings.count)
+        slots=std::max(slots,targets[i].oldSlot+1);
+    vector<TechnoClass*> assigned(slots);
+    for(size_t i=0;i<count;++i)
+        if(targets[i].oldSlot<slots) assigned[targets[i].oldSlot]=targets[i].unit;
+    auto vacancy=assigned.begin();
+    for(size_t i=0;i<count;++i) if(targets[i].oldSlot>=slots) {
+        vacancy=std::find(vacancy,assigned.end(),nullptr);
+        *vacancy++=targets[i].unit;
+    }
+    SplitTargets next{aim,slot,weapon->ID,vector<DWORD>(slots)};
+    for(size_t i=0;i<slots;++i) {
+        auto target=assigned[i];
+        if(!target) continue;
         auto extra=original->Type->CreateBullet(target,unit,original->Health,original->WH,original->Speed,original->Bright);
         if(!extra) continue;
         extra->SetWeaponType(weapon);
         extra->DamageMultiplier=original->DamageMultiplier;
         extra->Range=original->Range;
         extra->InheritedColor=original->InheritedColor;
-        if(!extra->MoveTo(origin,launchVelocity(weapon,extra->Speed,origin,target->GetCenterCoords()))) {
+        const auto branch=FireOrigin::resolve(weapon,target,origin);
+        if(!extra->MoveTo(branch,launchVelocity(weapon,extra->Speed,branch,target,target->GetCenterCoords()))) {
             extra->UnInit();
             continue;
         }
-        drawExtraShot(unit,target,slot,weapon,origin);
+        next.branches[i]=target->UniqueID;
+        if(weapon->AttachedParticleSystem && (weapon->IsRailgun || weapon->UseFireParticles || weapon->UseSparkParticles)) {
+            auto system=GameCreate<ParticleSystemClass>(weapon->AttachedParticleSystem,branch,target,unit,target->GetTargetCoords(),unit->Owner);
+            if(system) system->Target=target;
+        }
+        if(!ArtSp::ContinuousBeam::collectExtra(shot,unit,primary,weapon,target))
+            drawExtraWeaponVisual(unit,target,slot,weapon,branch);
+        if(tracer) ArtSp::Tracers::launch(*tracer,branch,target->GetTargetCoords(),Unsorted::CurrentFrame);
     }
+    if(std::any_of(next.branches.begin(),next.branches.end(),[](DWORD id){return id!=0;}))
+        splitTargets.insert_or_assign(unit->UniqueID,std::move(next));
 }
 HouseClass* actionOwner(const string& source,const Event& e,TechnoClass* holder,const Objects& objects) {
     if(e.trigger=="onmaptrigger" && source=="self" && e.owner>=0 && e.owner<HouseClass::Array.Count)
@@ -257,13 +352,44 @@ bool nativeConversionTypesSafe(const TechnoTypeClass* from,const TechnoTypeClass
         if(weapon && weapon->Warhead && (weapon->Warhead->MindControl || weapon->Warhead->Parasite || weapon->Warhead->Temporal)) return false;
     return true;
 }
-bool canTransformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn converter) {
+bool groundFlightPair(const TechnoTypeClass* from,const TechnoTypeClass* to,bool landFirst=false) {
+    using Id=LocomotionClass::CLSIDs;
+    if(from->WhatAmI()!=AbstractType::UnitType || to->WhatAmI()!=AbstractType::UnitType) return false;
+    const auto* flight=from->Locomotor==Id::Jumpjet?from:to;
+    const auto* ground=flight==from?to:from;
+    return flight->Locomotor==Id::Jumpjet && (!flight->BalloonHover || (landFirst && flight==from)) && ground->Locomotor==Id::Drive &&
+        !ground->Naval && !flight->Naval;
+}
+bool canSwitchGroundFlight(UnitClass* unit,const TechnoTypeClass* to) {
+    if(!unit->Locomotor || unit->GetHeight()!=0 || unit->OnBridge || unit->Transporter || unit->Absorbed ||
+        unit->IsFallingDown || unit->IsSinking || unit->IsCrashing || unit->IsBeingWarpedOut() ||
+        unit->IsAttackedByLocomotor || unit->IsImmobilized || unit->TubeIndex>=0 || unit->ParasiteEatingMe ||
+        unit->Deploying || unit->Deployed || unit->Undeploying || unit->Unloading ||
+        UnitMount::mounted(unit) || ForceMove::locked(unit) || unit->Destination ||
+        unit->Locomotor->Is_Moving() || unit->Locomotor->Is_Moving_Now()) return false;
+    const bool fromJumpjet=unit->Type->Locomotor==LocomotionClass::CLSIDs::Jumpjet;
+    if(fromJumpjet) {
+        auto loco=locomotion_cast<JumpjetLocomotionClass*>(unit->Locomotor);
+        if(!loco || loco->Is_Piggybacking() || loco->State!=JumpjetLocomotionClass::Grounded) return false;
+    } else {
+        auto loco=locomotion_cast<DriveLocomotionClass*>(unit->Locomotor);
+        if(!loco || loco->Is_Piggybacking()) return false;
+    }
+    const auto ground=fromJumpjet?to:unit->Type;
+    auto cell=unit->GetCell();
+    return cell && !cell->GetBuilding() && !cell->GetTerrain(false) && (!cell->Jumpjet || cell->Jumpjet==unit) &&
+        cell->IsClearToMove(ground->SpeedType,true,true,-1,ground->MovementZone,-1,false);
+}
+bool canTransformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn converter,bool landFirst=false) {
     if(!target || !to) return false;
     if(target->WhatAmI()==AbstractType::Building)
         return to->WhatAmI()==AbstractType::BuildingType && BuildingTransform::eligible(static_cast<BuildingClass*>(target),static_cast<BuildingTypeClass*>(to));
     auto from=target->GetTechnoType();
     if(!from || !target->IsOnMap || target->InLimbo || from==to || from->WhatAmI()!=to->WhatAmI()
-        || !target->Owner || !alive(target) || from->Strength<=0 || to->Strength<=0 || !IsEqualGUID(from->Locomotor,to->Locomotor)) return false;
+        || !target->Owner || !alive(target) || from->Strength<=0 || to->Strength<=0) return false;
+    const bool switchLoco=from->Locomotor!=to->Locomotor;
+    if(switchLoco && (!converter || !groundFlightPair(from,to,landFirst) ||
+        !canSwitchGroundFlight(static_cast<UnitClass*>(target),to))) return false;
     if(target->WhatAmI()!=AbstractType::Infantry && target->WhatAmI()!=AbstractType::Unit && target->WhatAmI()!=AbstractType::Aircraft) return false;
     if(!converter) {
         auto foot=static_cast<FootClass*>(target);
@@ -283,7 +409,7 @@ bool canTransformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn co
         for(auto* p=target->Passengers.FirstPassenger;p;p=static_cast<FootClass*>(p->NextObject))
             if(p->GetTechnoType()->Size>to->SizeLimit) return false;
     }
-    if(from->SpeedType!=to->SpeedType && !target->IsInAir()) {
+    if(!switchLoco && from->SpeedType!=to->SpeedType && !target->IsInAir()) {
         auto cell=target->GetCell();
         if(!cell || to->SpeedType<SpeedType::Foot || to->SpeedType>SpeedType::FloatBeach) return false;
         auto land=target->OnBridge?LandType::Clear:cell->LandType;
@@ -292,8 +418,8 @@ bool canTransformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn co
     }
     return true;
 }
-bool transformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn converter) {
-    if(!canTransformUnit(target,to,converter)) return false;
+bool transformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn converter,bool landFirst=false) {
+    if(!canTransformUnit(target,to,converter,landFirst)) return false;
     if(target->WhatAmI()==AbstractType::Building) {
         // Keep roof occupants out of the foundation check until placement or rollback finishes.
         vector<DWORD> lifted;
@@ -306,6 +432,8 @@ bool transformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn conve
         auto replacement=BuildingTransform::convert(static_cast<BuildingClass*>(target),static_cast<BuildingTypeClass*>(to),
             [](BuildingClass* previous,BuildingClass* current) {
                 const auto id=current->UniqueID;
+                BuildingResearch::forget(previous->UniqueID);
+                BuildingResearch::trackBuilding(current);
                 for(auto& [child,link]:UnitMount::links) {
                     if(link.parent==previous) link.parent=current;
                     if(link.ordered==previous) link.ordered=current;
@@ -317,6 +445,7 @@ bool transformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn conve
                 for(auto& [key,record]:attachedAnims) if(key.first==id)
                     if(auto anim=animations.resolve(record)) anim->SetOwnerObject(current);
                 // Native type-specific weapon mounts are rebuilt on the next query.
+                ProjectileShield::forget(previous);
                 weaponRules.erase(id);volleyWeapons.erase(id);mountCopies.erase({id,0});mountCopies.erase({id,1});
                 buildingLookups.clear();
                 LuaNearby::forget(previous->UniqueID);LuaNearby::moved(current);
@@ -329,7 +458,11 @@ bool transformUnit(TechnoClass* target,TechnoTypeClass* to,PhobosConvertFn conve
         return replacement!=nullptr;
     }
     if(converter) {
+        // A grounded jumpjet can still own the cell's separate flight reservation.
+        auto landingCell=target->GetTechnoType()->Locomotor==LocomotionClass::CLSIDs::Jumpjet &&
+            to->Locomotor==LocomotionClass::CLSIDs::Drive ? target->GetCell() : nullptr;
         const auto result=converter(static_cast<FootClass*>(target),to);
+        if(result==S_OK && landingCell && landingCell->Jumpjet==target) landingCell->Jumpjet=nullptr;
         if(result!=E_NOTIMPL && result!=E_NOINTERFACE) return SUCCEEDED(result);
         if(!canTransformUnit(target,to,nullptr)) return false;
     }
@@ -520,7 +653,7 @@ bool consumePassenger(TechnoClass* carrier,Event& actionEvent) {
     directExtraSkills(passenger,&held);
     auto remaining=std::make_shared<PassengerPassives>();
     for(const auto& id:held) if(skills.contains(id) && !directSuppressed(passengerId,id))
-        remaining->emplace(id,stackCount(passengerId,id));
+        remaining->emplace(id,heldUnitStacks(passenger,id));
     vector<string> ids;
     std::optional<Event> consumed;
     if(interested(carrier,"onpassengerconsumed",&ids)) {
@@ -586,6 +719,7 @@ bool removeHeldPassive(TechnoClass* unit,const string& id) {
         if(granted->second.skills.empty()) warheadGrants.erase(granted);
     }
     removedPassives[uid].insert(id);
+    Taunt::remove(unit,id);
     eraseStacks(uid,id);
     refreshLinkedPassives(unit);
     if(!linkedPassive(uid,id)) stopAuraSources(uid,&id);
@@ -598,30 +732,35 @@ bool stealPassives(TechnoClass* holder,TechnoClass* donor,const PassiveAction& a
     reconcileUnitStacks(holder);
     bool changed=false;
     for(const auto& id:action.passiveList) {
-        int available;
+        const int maximum=skills.at(id).stackMax;
+        const bool alreadyHeld=ownsPassive(holder,id);
+        const int room=maximum-(alreadyHeld?heldUnitStacks(holder,id):0);
+        if(room<=0) continue;
+        int available=0;
+        bool canTakeBase=false;
         if(passenger) {
             auto saved=passenger->find(id);
-            if(saved==passenger->end() || !skills.contains(id)) continue;
-            available=saved->second;
+            if(saved==passenger->end()) continue;
+            // Older snapshots used zero for a held passive with no extra layers.
+            available=std::max(1,saved->second);
         } else {
             if(!ownsDirectPassive(donor,id)) continue;
-            // Passenger support is a live contribution, not transferable inventory.
-            // Removing it here would be undone by the next transport refresh.
-            available=manualStackCount(donor->UniqueID,id);
-            if(!available && stackCount(donor->UniqueID,id)>0) continue;
+            canTakeBase=suppliedStacks(donor->UniqueID,id,researchLayers(donor,id))==0;
+            available=manualStackCount(donor->UniqueID,id)+(canTakeBase?1:0);
         }
-        int maximum=skills.at(id).stackMax;
-        int room=maximum-stackCount(holder->UniqueID,id);
-        int moved=std::min({available,action.amount,room});
-        // A zero-stack passive still conveys its base ability once.
-        if(!moved && (available>0 || ownsPassive(holder,id))) continue;
-        if(!passenger && moved && !changeStacks(donor->UniqueID,id,-moved,maximum)) continue;
+        const int moved=std::min({available,action.amount,room});
+        if(!moved) continue;
+        if(!passenger) {
+            if(canTakeBase && moved==available) removeHeldPassive(donor,id);
+            else if(!changeUnitStacks(donor,id,-moved,maximum)) continue;
+        }
         grantToUnit(holder,PassiveGrant{{id},-1},false);
-        if(moved) changeStacks(holder->UniqueID,id,moved,maximum);
+        const int addition=alreadyHeld?moved:moved-1;
+        if(addition) changeUnitStacks(holder,id,addition,maximum);
         if(passenger) {
             if(moved==available) passenger->erase(id);
-            else passenger->at(id)-=moved;
-        } else if(moved==available && stackCount(donor->UniqueID,id)==0) removeHeldPassive(donor,id);
+            else passenger->at(id)=available-moved;
+        }
         changed=true;
     }
     // Acquisition formulas see all transferred stacks, including on the first grant.
@@ -670,14 +809,25 @@ bool shakeVisibleAt(const CoordStruct& pos) {
     return visible && pt.X>=view.X && pt.Y>=view.Y && pt.X<view.X+view.Width && pt.Y<view.Y+view.Height;
 }
 #include "../GroundPickups.inc"
-bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects& objects,int stacks,std::optional<DWORD> selected=std::nullopt,std::optional<CellStruct> point=std::nullopt) {
+DWORD eventTarget(const Event& e) {
+    if(e.kind=="none") return 0;
+    if(e.trigger=="ontakedamage" || e.trigger=="onbeforetakedamage" || e.trigger=="ondeath") return e.attacker;
+    return e.victim;
+}
+DWORD resultTarget(const PassiveAction& s,const Event& e) {
+    return s.targetIsEventTarget && e.consumedTarget ? e.consumedTarget :
+        s.target=="sender" || s.target=="attacker"?e.attacker:s.target=="victim"?e.victim:e.holder;
+}
+bool applyOne(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects& objects,int stacks,std::optional<DWORD> selected,std::optional<CellStruct> point,TechnoClass* tauntTarget,std::optional<CoordStruct> fireOrigin) {
     if(s.action=="runscript") return runScript(s,e,objects,stacks);
     if(s.action=="removepickup" && s.pickupRange==-1) return removePickups(s,CellStruct::Empty);
-    DWORD targetId=s.targetIsEventTarget && e.consumedTarget ? e.consumedTarget :
-        s.target=="sender"?e.attacker:s.target=="attacker"?e.attacker:s.target=="victim"?e.victim:e.holder;
+    DWORD targetId=resultTarget(s,e);
     if(selected) targetId=*selected;
     auto target=targetId==e.holder ? holder : findLive(objects,targetId);
     if(selected && !target) return false;
+    if(s.action=="cancelunitorder") return UnitOrders::cancel(target,s.order);
+    if(s.target=="self.occupants" && (positionalAction(s.action) || (s.action=="sendsignal" && s.signalRange>0)) &&
+        (!target->IsOnMap || target->InLimbo)) return false;
     auto eventDistance=e.distance>=0?std::optional<double>{e.distance}:std::nullopt;
     HealthFormula::Values targetValues{e.targetHp,e.targetMaxHp,e.targetCost};
     std::optional<HealthFormula::Values> senderValues;
@@ -692,7 +842,7 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         if(!s.signalFormula.expression.empty()) {
             bool missing=false;
             auto result=s.signalFormula.expression.evaluate(e.hp,e.maxHp,e.damage,eventDistance,stacks,targetValues,&missing,e.selfCost,e.ammo,
-                e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,senderValues,signalValue);
+                e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,senderValues,signalValue,std::nullopt,e.owner,Research::counter);
             if(!result || !std::isfinite(*result)) {if(!missing) s.signalFormula.report();return false;}
             value=*result;
         }
@@ -800,15 +950,8 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
             }
             return true;
         }
-        if(s.action=="spawnparticlesystem") {
-            auto behavior=s.particleSystem->BehavesLike;
-            bool directed=behavior==BehavesLike::Fire || behavior==BehavesLike::Railgun;
-            if(directed && origin==destination) return false;
-            auto owner=actionOwner("self",e,holder,objects);
-            if(directed && !aim) aim=map.TryGetCellAt(destination);
-            return GameCreate<ParticleSystemClass>(s.particleSystem,directed?origin:destination,
-                directed?aim:nullptr,directed?holder:nullptr,directed?destination:CoordStruct::Empty,owner)!=nullptr;
-        }
+        if(s.action=="spawnparticlesystem")
+            return particleEffect(s,holder,aim,origin,destination,actionOwner("self",e,holder,objects));
         if(s.action=="spawnunit") {
             auto owner=actionOwner(s.owner,e,holder,objects);
             if(!owner || owner->Defeated || owner->IsObserver()) return false;
@@ -830,17 +973,18 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
             return map.IsWithinUsableArea(cell,false) && map.PlacePowerupCrate(cell,s.crateType);
         }
         if(!aim) aim=map.TryGetCellAt(destination);
-        return weaponEffect(s,holder,aim,destination,origin,actionOwner("self",e,holder,objects));
+        return weaponEffect(s,holder,aim,destination,origin,actionOwner("self",e,holder,objects),fireOrigin);
     }
     auto amountValue=[&]() -> int {
         if(!s.amountFormula.expression.empty()) {
             bool missing=false;
-            auto value=s.amountFormula.expression.evaluate(e.hp,e.maxHp,e.damage,eventDistance,stacks,targetValues,&missing,e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,senderValues,signalValue);
-            if(!value || *value<0 || *value>INT_MAX) {if(!missing) s.amountFormula.report();return 0;}
+            auto value=s.amountFormula.expression.evaluate(e.hp,e.maxHp,e.damage,eventDistance,stacks,targetValues,&missing,e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,senderValues,signalValue,std::nullopt,e.owner,Research::counter);
+            if(!value || *value<(s.action=="changeresearchcounter"?INT_MIN:0) || *value>INT_MAX) {if(!missing) s.amountFormula.report();return 0;}
             return static_cast<int>(*value);
         }
-        return s.amount?s.amount:static_cast<int>(std::min<long long>(INT_MAX,1LL*e.damage*s.damagePercent/100));
+        return s.amount;
     };
+    if(s.action=="changeresearchcounter") return Research::changeCounter(e.owner,s.counter,amountValue());
     if(s.action=="givecredits" || s.action=="giveresearchpoints" || s.action=="grantrandomresearch" || s.action=="grantfreeresearch" || s.action=="grantresearch") {
         auto house=target?target->Owner:nullptr;
         if(e.trigger=="onmaptrigger" && s.target=="self" && e.owner>=0 && e.owner<HouseClass::Array.Count)
@@ -860,25 +1004,42 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         }
         int amount=amountValue();
         if(!house || amount<=0) return false;
-        if(s.action=="giveresearchpoints") {
+        const bool research=s.action=="giveresearchpoints";
+        if(research) {
             int before=Research::balance(house->ArrayIndex);
             Research::award(house->ArrayIndex,amount);
-            return Research::balance(house->ArrayIndex)>before;
-        }
-        house->GiveMoney(amount);return true;
+            amount=Research::balance(house->ArrayIndex)-before;
+            if(amount<=0) return false;
+        } else house->GiveMoney(amount);
+        if(s.showText) RewardText::add(house,target,e,research,amount);
+        return true;
     }
     if (!target) return false;
     if(s.action=="attachunit") return Mount::create(target,s);
     if(s.action=="removeattachedunit") return Mount::removeAttached(target,s);
     if(UnitMount::mounted(target) && includes({"chronoteleport","changeowner","transform"},s.action)) return false;
     if(!Mount::permits(target,holder) && includes({"grantpassive","resetstatetimer","changepassivestack","removepassive"},s.action)) return false;
+    if(s.action=="chronoteleport" || s.action=="jumpto" || s.action=="ejectpassengers" || s.action=="ejectunit") {
+        auto dest=s.teleportCell;
+        if(s.destinationIsEventTarget) {
+            const auto id=e.consumedTarget?e.consumedTarget:eventTarget(e);
+            const auto other=findLive(objects,id);
+            if(!other || !other->IsOnMap || other->InLimbo) return false;
+            dest=other->GetMapCoords();
+        } else if(dest.X<0) {
+            if(!e.hasImpact || s.action=="chronoteleport") return false;
+            dest=CellClass::Coord2Cell(e.impact);
+        }
+        if(s.action=="chronoteleport") return !ForceMove::locked(target) && chronoTeleport(target,dest,s.searchRadius,s.teleportInstant);
+        if(s.action=="jumpto") return ForceMove::jump(target,dest,s.jump);
+        if(s.action=="ejectunit") return ForceMove::ejectUnit(target,dest,s.eject);
+        return ForceMove::eject(target,dest,s.eject);
+    }
     if(s.action=="forcemove") {
         if(s.forceMove.impact && !e.blastCenter && !e.hasImpact) return false;
         auto center=s.forceMove.impact?e.blastCenter.value_or(e.impact):holder?holder->Location:e.origin;
         return ForceMove::start(target,s.forceMove,center);
     }
-    if(s.action=="chronoteleport" && ForceMove::locked(target)) return false;
-    if(s.action=="chronoteleport") return chronoTeleport(target,s.teleportCell,s.searchRadius,s.teleportInstant);
     if(s.action=="applyironcurtain") {
         if(!target->IsOnMap || target->InLimbo) return false;
         int remaining=target->IsIronCurtained()?target->IronCurtainTimer.GetTimeLeft():0;
@@ -907,7 +1068,7 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         double delta=s.percentDelta;
         if(!s.formula.expression.empty()) {
             bool missing=false;
-            auto value=s.formula.expression.evaluate(e.hp,e.maxHp,e.damage,eventDistance,stacks,targetValues,&missing,e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,senderValues,signalValue);
+            auto value=s.formula.expression.evaluate(e.hp,e.maxHp,e.damage,eventDistance,stacks,targetValues,&missing,e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,senderValues,signalValue,std::nullopt,e.owner,Research::counter);
             if(!value) {if(!missing) s.formula.report();return false;}
             delta=*value*100.0;
             if(!std::isfinite(delta)) {s.formula.report();return false;}
@@ -970,7 +1131,7 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
         holder->ReceiveDamage(&damage,0,RulesClass::Instance->C4Warhead,nullptr,true,false,nullptr);
         return !findLive(objects,id);
     }
-    if(s.action=="grantpassive") return grantToUnit(target,PassiveGrant{{s.passive},s.duration,s.stackOnReapply},true,holder);
+    if(s.action=="grantpassive") return grantToUnit(target,PassiveGrant{{s.passive},s.duration,s.stackOnReapply},true,holder,tauntTarget);
     if(s.action=="resetstatetimer") {
         auto skill=skills.find(s.passive);
         if(skill==skills.end() || skill->second.trigger!="whilestate" || !skill->second.stateDelayFrames || !ownsPassive(target,s.passive)) return false;
@@ -983,7 +1144,19 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
     if(s.action=="changepassivestack") {
         reconcileUnitStacks(target);
         if(!ownsPassive(target,s.passive)) return false;
-        return changeStacks(target->UniqueID,s.passive,s.amount,skills.at(s.passive).stackMax);
+        const auto uid=target->UniqueID;
+        const int research=researchLayers(target,s.passive);
+        if(s.amount<0 && s.amount<=-stackCount(uid,s.passive,research)) {
+            const auto passenger=transportGrants.find(uid);
+            const bool fromPassenger=passenger!=transportGrants.end() && passenger->second.contains(s.passive);
+            if(!research && !fromPassenger && !linkedPassive(uid,s.passive)) {
+                // Single-grant research, including stages and bonds, also provides a base layer.
+                vector<string> granted;
+                researchSkills(target,&granted);
+                if(!includes(granted,s.passive)) return removeHeldPassive(target,s.passive);
+            }
+        }
+        return changeStacks(uid,s.passive,s.amount,skills.at(s.passive).stackMax,research);
     }
     if(s.action=="removepassive") {
         bool changed=false;
@@ -1001,19 +1174,36 @@ bool apply(const PassiveAction& s, Event& e, TechnoClass* holder, const Objects&
     } else {
         int before=UnitHealth::read(target).current;
         DWORD id=target->UniqueID;
-        auto source=(s.warhead || e.sequenceCast)?actionOwner("self",e,holder,objects):(holder?holder->Owner:nullptr);
-        if(s.warhead && !warheadAllows(s.warhead,source,target->Owner)) return false;
+        auto source=actionOwner("self",e,holder,objects);
+        if(!s.warhead || !warheadAllows(s.warhead,source,target->Owner)) return false;
         EffectScope scope;
         // Vanilla includes the owner in AffectsAllies. Keep the override local to this
         // damage operand so secondary damage and other units still use their own rules.
         auto previous=ownerDamageOverride;
-        ownerDamageOverride=s.warhead && !s.warhead->AffectsAllies && source==target->Owner?&amount:nullptr;
-        target->ReceiveDamage(&amount,0,s.warhead?s.warhead:RulesClass::Instance->C4Warhead,holder,false,false,source);
+        ownerDamageOverride=!s.warhead->AffectsAllies && source==target->Owner?&amount:nullptr;
+        target->ReceiveDamage(&amount,0,s.warhead,holder,false,false,source);
         ownerDamageOverride=previous;
         auto after=findLive(objects,id);
         return !after || UnitHealth::read(after).current<before;
     }
     return true;
+}
+bool apply(const PassiveAction& s,Event& e,TechnoClass* holder,const Objects& objects,int stacks,
+           std::optional<DWORD> selected=std::nullopt,std::optional<CellStruct> point=std::nullopt,
+           TechnoClass* tauntTarget=nullptr,std::optional<CoordStruct> fireOrigin=std::nullopt) {
+    if(s.target!="self.occupants") return applyOne(s,e,holder,objects,stacks,selected,point,tauntTarget,fireOrigin);
+    // A result can destroy a unit and invalidate the native passenger chain mid-action.
+    vector<DWORD> members;
+    visitDirectOccupants(holder,[&](TechnoClass* member) {
+        if(member && findLive(objects,member->UniqueID)==member) members.push_back(member->UniqueID);
+    });
+    bool changed=false;
+    for(auto id:members) {
+        holder=findLive(objects,e.holder);
+        if(!holder) break;
+        if(applyOne(s,e,holder,objects,stacks,id,point,tauntTarget,fireOrigin)) changed=true;
+    }
+    return changed;
 }
 // Both INI and Lua intercept the same pending hit after armor but before HP changes.
 std::optional<int> pendingDamageAmount(const PassiveAction& action,const Event& e,int damage,int stacks) {
@@ -1023,7 +1213,7 @@ std::optional<int> pendingDamageAmount(const PassiveAction& action,const Event& 
     HealthFormula::Values target{e.targetHp,e.targetMaxHp,e.targetCost};
     bool missing=false;
     auto value=action.amountFormula.expression.evaluate(e.hp,e.maxHp,damage,distance,stacks,target,&missing,
-        e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt);
+        e.selfCost,e.ammo,e.passengers>=0?std::optional<int>{e.passengers}:std::nullopt,std::nullopt,std::nullopt,std::nullopt,e.owner,Research::counter);
     if(!value || *value<0 || *value>INT_MAX) {
         if(!missing) action.amountFormula.report();
         return std::nullopt;

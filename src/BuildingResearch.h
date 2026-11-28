@@ -13,5 +13,8 @@ struct RewardRule {
 const RewardRule& rewardRule(BuildingTypeClass* type);
 void authorizeBuildingReward(InfantryClass* infantry,BuildingClass* building,Research::BuildingRewardSource source);
 void tickBuildings();
+void trackBuilding(BuildingClass* building);
+void ownerChanged(BuildingClass* building);
+void forget(unsigned long id);
 void clearTypeCaches();
 }

@@ -119,6 +119,7 @@ bool readActive(const string& id,ActiveSkills::Spec& spec) {
     return true;
 }
 void discoverScripts(std::set<string>& ids) {
+    ScriptRuntime::clearPool();
     namespace fs=std::filesystem;
     std::error_code ec;
     vector<fs::path> paths;
@@ -213,8 +214,7 @@ void readWeaponScripts() {
         }
     }
 }
-void readSkills() {
-    GetFullPathNameA("Starfall.ini", MAX_PATH, configPath, nullptr);
+void loadPassiveDefinitions() {
     installRangeGetter<UnitClass>();installRangeGetter<InfantryClass>();
     ForceMove::installTargeting();
     installRangeGetter<AircraftClass>();installRangeGetter<BuildingClass>();
@@ -244,6 +244,7 @@ void readSkills() {
         for(auto node=ini->Sections.First();node && node->IsValid();node=node->Next())
             if(node->Name) rulesSkillNames.try_emplace(lower(node->Name),node->Name);
     }
+    UnitOrders::readDefinitions();
     discoverScripts(ids);
     ActiveSkills::specs.clear();
     for (auto& id : ids) {
@@ -262,8 +263,9 @@ void readSkills() {
             configLog("["+id+"] Filter.TargetHouse="+value+" - 未知的所属方筛选值，不会匹配");
         for(const auto& value:s.kinds) if(!includes({"all","infantry","vehicle","aircraft","building","other","none"},value))
             configLog("["+id+"] Filter.TargetKind="+value+" - 未知的单位类别，不会匹配");
+        const bool active=s.trigger=="active";
         s.count=number(read(id,"Condition.Count","1"));
-        s.cooldown=number(read(id,"Cooldown","0"));
+        s.cooldown=number(read(id,"Cooldown",active && includes({"jumpto","ejectpassengers"},read(id,"Action"))?"120":"0"));
         s.chance=number(read(id,"Chance","100%"),true);
         s.minDamage=number(read(id,"Condition.MinDamage","0"));
         s.maxTriggers=number(read(id,"MaxTriggers","0"));
@@ -273,7 +275,6 @@ void readSkills() {
             if(s.trigger!="oninterval" || s.interval<=0) {invalidField(id,"Interval="+interval);continue;}
         }
         auto fields=sectionKeys(id);
-        bool active=s.trigger=="active";
         if(s.trigger=="oncast") {invalidField(id,"Trigger="+s.trigger+" (use Active)");continue;}
         if(active) s.trigger="oncast";
         for(const auto& key:fields) if(key.starts_with("script.param.") && key.size()>13)
@@ -289,7 +290,12 @@ void readSkills() {
         if(s.conditionFormula.expression.usesSignal() && s.trigger!="onsignal") {invalidField(id,"Sender and Event.SignalValue require OnSignal");continue;}
         needMotion|=(s.requiredMask&16)!=0;
         needUnitPower|=(s.requiredMask&2)!=0;
-        if(s.trigger=="whilestate") { skills.emplace(id,s); anyStateSkills=true; anyPassiveVisuals|=s.anim || s.tint.has_value(); continue; }
+        if(s.trigger=="whilestate") {
+            skills.emplace(id,s); anyStateSkills=true;
+            anyPassiveVisuals|=s.anim || s.tint.has_value();
+            ProjectileShield::configured|=s.shield.radius>0;
+            continue;
+        }
         if(s.count<=0 || s.cooldown<0 || s.chance<0 || s.chance>100 || s.minDamage<0 || s.maxTriggers<0) {
             for(auto [key,invalid]:{std::pair{"Condition.Count",s.count<=0},{"Chance",s.chance<0 || s.chance>100},
                  {"Cooldown",s.cooldown<0},{"MaxTriggers",s.maxTriggers<0},{"Condition.MinDamage",s.minDamage<0}})
@@ -320,12 +326,30 @@ void readSkills() {
         }
         if(active) {
             auto unsupported=std::find_if(fields.begin(),fields.end(),[](const auto& k){
-                return k!="tint.color" && k!="tint.strength" && k!="gainanim" && !activeField(k) && !k.starts_with("script.param.") && !includes({"trigger","cooldown","action","action.script","action.function"},k);
+                return k!="tint.color" && k!="tint.strength" && k!="gainanim" && !activeField(k) && !k.starts_with("script.param.") && !includes({"trigger","cooldown","action","action.order","action.script","action.function","action.jump.height","action.jump.duration","action.jump.takeoffanim","action.jump.takeoffsound","action.jump.landanim","action.jump.landsound","action.eject.openheight","action.eject.horizontalspeed","action.eject.interval"},k);
             });
             if(unsupported!=fields.end()) {invalidField(id,*unsupported+" is unavailable for Trigger=Active");continue;}
-            if(s.actions.size()!=1 || s.actions.front().action!="runscript") {invalidField(id,"Trigger=Active requires Action=RunScript");continue;}
+            if(s.actions.size()!=1 || !includes({"runscript","jumpto","ejectpassengers","startunitorder","cancelunitorder"},s.actions.front().action)) {invalidField(id,"Trigger=Active requires RunScript, JumpTo, EjectPassengers, StartUnitOrder or CancelUnitOrder");continue;}
             ActiveSkills::Spec spec;
             if(!readActive(id,spec)) continue;
+            const auto& action=s.actions.front();
+            if(!action.order.empty() && !UnitOrders::registered(action.order)) {invalidField(id,"unknown Action.Order="+action.order);continue;}
+            if(action.action=="startunitorder" && spec.kind!=ActiveSkills::Kind::Area) {invalidField(id,"StartUnitOrder requires Active.Target=Area");continue;}
+            if(action.action=="startunitorder")
+                spec.orderCursor=UnitOrders::isAutoEnter(action.order)?MouseCursorType::Enter:MouseCursorType::Attack;
+            if(action.action=="cancelunitorder" && spec.kind!=ActiveSkills::Kind::None) {invalidField(id,"CancelUnitOrder requires Active.Target=None");continue;}
+            if(s.actions.front().action=="jumpto") {
+                if(spec.kind!=ActiveSkills::Kind::Point) {invalidField(id,"JumpTo requires Active.Target=Point");continue;}
+                if(read(id,"Active.Range").empty()) spec.range=6;
+                if(spec.range<=0) {invalidField(id,"JumpTo requires Active.Range in 1..128");continue;}
+                spec.jump=s.actions.front().jump;spec.jump->range=spec.range;
+            }
+            if(s.actions.front().action=="ejectpassengers") {
+                if(spec.kind!=ActiveSkills::Kind::Point) {invalidField(id,"EjectPassengers requires Active.Target=Point");continue;}
+                if(read(id,"Active.Range").empty()) spec.range=8;
+                if(spec.range<=0) {invalidField(id,"EjectPassengers requires Active.Range in 1..128");continue;}
+                spec.eject=s.actions.front().eject;spec.eject->range=spec.range;
+            }
             if(ActiveSkills::specs.size()>=65536) {invalidField(id,"active skill limit reached");continue;}
             ActiveSkills::specs.push_back(std::move(spec));
         }
@@ -408,9 +432,16 @@ void readSkills() {
     anyBeforeDealDamage=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.trigger=="onbeforedealdamage";});
     anyBeforeTakeDamage=std::any_of(skills.begin(),skills.end(),[](const auto& entry){return entry.second.trigger=="onbeforetakedamage";});
     readWeaponScripts();
+    FireOrigin::readRules();
+    ArtSp::Tracers::readRules();
+    ArtSp::TipsLabel::readRules();
+    ArtSp::ContinuousBeam::readRules();
     readGrantRules();
     readGrantPresets();
-    Research::readConfiguration(configPath);
+}
+void readSkills() {
+    GetFullPathNameA("Starfall.ini",MAX_PATH,configPath,nullptr);
+    Research::readConfiguration(configPath,loadPassiveDefinitions);
     ActionSequence::load();
     ready=true;
 }

@@ -36,9 +36,12 @@ void testDamage(HouseClass* owner) {
         Skill skill{};skill.id=section;skill.trigger="onfire";
         auto fields=ActionSequence::fields({},section);
         check(readAction(skill,section,&fields),"INI damage parsed");
+        if(skill.id=="sfdefaultdamagetest")
+            check(skill.actions.front().warhead==WarheadTypeClass::Find("Super"),"default damage uses Super");
         auto event=eventSnapshot("onfire",self,victim,self,victim,0);
         return apply(skill.actions.front(),event,self,live,0);
     };
+    check(hit("sfdefaultdamagetest",enemy),"default warhead damages selected enemy");
     int hp=enemy->Health,ownHp=self->Health;
     check(hit("sfdamagetest",enemy) && enemy->Health==hp-20 && self->Health==ownHp,"50 percent verses on one target");
     const auto allies=owner->Allies;owner->Allies.Add(foe);
@@ -98,6 +101,30 @@ void testPresentation(TechnoClass* caster,TechnoClass* victim) {
     screen.ScreenShakeX=screen.ScreenShakeY=0;
     Event e=eventSnapshot("onfire",caster,victim,caster,victim,0);
     Objects live{{caster->UniqueID,caster}};
+    check(!RewardText::labels.empty() && RewardText::labels.back().text==L"+$500" &&
+        CellClass::Coord2Cell(RewardText::labels.back().position)==CellStruct{42,74},"superweapon credits at aimed cell");
+    Skill reward{};reward.id="rewardtext";reward.trigger="onfire";
+    ScriptFields rp{{"action","giveresearchpoints"},{"action.amount","50"}};
+    check(readAction(reward,reward.id,&rp),"reward text defaults");
+    const auto count=RewardText::labels.size();
+    check(apply(reward.actions.back(),e,caster,live,0) && RewardText::labels.size()==count+1 &&
+        RewardText::labels.back().position==caster->GetCenterCoords() &&
+        RewardText::labels.back().text==L"+ 50 RP","research text at recipient");
+    rp["action.showtext"]="no";
+    const int before=Research::balance(caster->Owner->ArrayIndex);
+    check(readAction(reward,reward.id,&rp) && apply(reward.actions.back(),e,caster,live,0) &&
+        Research::balance(caster->Owner->ArrayIndex)==before+50 && RewardText::labels.size()==count+1,"silent award still pays");
+    auto screenPoint=TacticalClass::Instance->CoordsToClient(caster->GetCenterCoords()).first;
+    RectangleStruct textArea{screenPoint.X-46,screenPoint.Y-31,92,20};
+    DSurface::Temp->FillRect(&textArea,0);
+    RewardText::draw();
+    bool painted=false;
+    for(int y=textArea.Y;y<textArea.Y+textArea.Height && !painted;++y)
+        for(int x=textArea.X;x<textArea.X+textArea.Width && !painted;++x) {
+            Point2D pixel{x,y};
+            painted=DSurface::Temp->GetPixel(&pixel)==Drawing::RGB_To_Int(105,220,255);
+        }
+    check(painted,"research text rendered in tactical view");
     check(apply(shake,e,caster,live,0,std::nullopt,p) && screen.ScreenShakeY==7,"visible local shake");
     localIni.WriteBool("Phobos","HideShakeEffects",true);
     screen.ScreenShakeX=screen.ScreenShakeY=0;shake.shakeLocal=false;
@@ -207,6 +234,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestSequence,5) {
     if(f==320) {
         DWORD id=0;std::ifstream("sequence.id")>>id;UnitClass* victim=nullptr;
         for(auto u:UnitClass::Array) if(u->UniqueID==id) victim=u;
+        std::ofstream("sequence.log",std::ios::app)<<"delayed victim hp "<<(victim?victim->Health:-1)<<"\n";
         check(victim && victim->Health==1970,"delayed damage");
         check(ActionSequence::casts.empty() && ActionSequence::timers.queue.empty(),"retired cast");
         if(!load) testNearby(h);

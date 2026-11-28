@@ -7,7 +7,7 @@ The Markdown manual is an English reference for mod authors, AI assistants, and 
 - Keep `docs/manual.md` as the main entry with task links and a directory of topic guides.
 - Organize each topic around its purpose, a usable starting example, configuration or API details, and relevant behavior and limits.
 - Document common fields together. Put fields specific to an effect or behavior in its own section.
-- Keep custom superweapons in the miscellaneous guide. Keep map triggers and team scripts in the map guide.
+- Keep custom superweapons and custom ground pickups in the miscellaneous guide. Keep active skills in their own guide. Keep map triggers and team scripts in the map guide.
 - Preserve existing links and anchors when moving material. Link to the authoritative explanation instead of duplicating detailed rules.
 
 ## INI fields

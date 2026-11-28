@@ -8,6 +8,7 @@
 #include "SonicRipple.h"
 #include "LuaTimers.h"
 #include "ActiveSkills.h"
+#include "../modules/ActSp/CommandBarOrders.h"
 #include "BuildingSpawn.h"
 #include "BuildingTransform.h"
 #include "CarrierConversion.h"
@@ -15,14 +16,24 @@
 #include "ForceMove.h"
 #include "PassiveRules.h"
 #include "../modules/ActSp/ActSp.h"
+#include "ActionSequence.h"
+#include "../modules/ArtSp/Tracers.h"
+#include "../modules/ArtSp/TipsLabel.h"
+#include "../modules/ArtSp/ContinuousBeam.h"
 #include "../modules/ActSp/BetterGarrison.h"
 #include "../modules/ActSp/GuardPoints.h"
+#include "../modules/ActSp/HighPlatforms.h"
+#include "../modules/ActSp/EntityWalls.h"
+#include "../modules/ActSp/Piercing.h"
+#include "../modules/ActSp/ProjectileScript.h"
+#include "../modules/ActSp/FireOrigin.h"
 #include <filesystem>
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
 #include <fstream>
+#include <deque>
 #include <functional>
 #include <random>
 #include <Unsorted.h>
@@ -37,6 +48,7 @@
 #include <AnimClass.h>
 #include <ParticleSystemClass.h>
 #include <EBolt.h>
+#include <LaserDrawClass.h>
 #include <VocClass.h>
 #include <GScreenClass.h>
 #include <unordered_map>
@@ -63,12 +75,15 @@
 #include <MapClass.h>
 #include <TacticalClass.h>
 #include <ToolTipManager.h>
+#include <StringTable.h>
 #include <LocomotionClass.h>
 #include <Powerups.h>
 #include <FileSystem.h>
 #include <OverlayTypeClass.h>
 #include <InfantryClass.h>
 #include <UnitClass.h>
+#include <DriveLocomotionClass.h>
+#include <JumpjetLocomotionClass.h>
 #include <TActionClass.h>
 #include <TargetClass.h>
 #include <TagClass.h>
@@ -105,6 +120,10 @@ std::map<DWORD,double> rangeBase;
 std::map<DWORD,double> rangeState;
 std::map<DWORD,double> fireRateBase;
 std::map<DWORD,double> fireRateState;
+std::map<DWORD,double> experienceState;
+// A kill can dispatch another kill during experience distribution. Key the original
+// score by the engine's call frame so each invocation restores its own points.
+std::map<DWORD,int> unscaledKillScores;
 
 double unitFactor(DWORD id,const std::map<DWORD,double>& bases,const std::map<DWORD,double>& states) {
     const auto base=bases.find(id);
@@ -146,12 +165,18 @@ template<class T> void installRangeGetter() {
     VirtualProtect(slot,sizeof(*slot),protection,&protection);
 }
 struct PercentRange {
-    int min=1,max=300;
+    int min,max;
     template<class T> T clamp(T value) const {
         return std::clamp<T>(value,min,max);
     }
 };
-std::array<PercentRange,percentActions.size()> percentLimits;
+// Same order as percentActions: speed, firepower, armor, scale, projectile scale, range, fire rate.
+constexpr std::array defaultPercentLimits={
+    PercentRange{1,300}, PercentRange{1,1000}, PercentRange{1,1000}, PercentRange{25,300},
+    PercentRange{1,300}, PercentRange{1,300}, PercentRange{1,300}
+};
+static_assert(defaultPercentLimits.size()==percentActions.size());
+auto percentLimits=defaultPercentLimits;
 constexpr int unknownState=-1;
 struct PickupType {
     Skill reward{};
@@ -225,7 +250,7 @@ std::map<DWORD,IncomingDamage> incomingDamage;
 bool anyStateSkills=false, observePromotions=false, observeDeployments=false;
 bool needUnitPower=false,needMotion=false;
 
-#include "ActionSequence.inc"
+namespace UnitOrders {void readDefinitions(); bool registered(const string&); bool isAutoEnter(const string&);}
 bool anyPassiveVisuals=false;
 #include "runtime/PassiveRegistration.inc"
 
@@ -241,14 +266,19 @@ int manualStackCount(DWORD unit,const string& skill) {
     if(owner!=passiveStacks.end()) if(auto value=owner->second.find(skill);value!=owner->second.end()) return value->second;
     return 0;
 }
-int stackCount(DWORD unit,const string& skill) {
-    int base=manualStackCount(unit,skill);
-    unsigned layers=0;
+int64_t suppliedStacks(DWORD unit,const string& skill,int research) {
+    int64_t layers=research;
     if(auto carrier=transportGrants.find(unit);carrier!=transportGrants.end())
-        if(auto grant=carrier->second.find(skill);grant!=carrier->second.end()) layers=grant->second.layers;
+        if(auto grant=carrier->second.find(skill);grant!=carrier->second.end()) layers+=grant->second.layers;
+    return layers;
+}
+// Ownership supplies the first layer. Stackable sources count their first grant once.
+// Saves only store manual additions, so existing units need no per-unit migration.
+int stackCount(DWORD unit,const string& skill,int research=0) {
+    auto supplied=suppliedStacks(unit,skill,research);
     auto def=skills.find(skill);
     int maximum=def==skills.end()?INT_MAX:def->second.stackMax;
-    return static_cast<int>(std::min<int64_t>(maximum,int64_t(base)+layers));
+    return static_cast<int>(std::min<int64_t>(maximum,manualStackCount(unit,skill)+std::max<int64_t>(1,supplied)));
 }
 void eraseStacks(DWORD unit,const string& skill) {
     auto found=passiveStacks.find(unit);
@@ -256,9 +286,9 @@ void eraseStacks(DWORD unit,const string& skill) {
     found->second.erase(skill);
     if(found->second.empty()) passiveStacks.erase(found);
 }
-bool changeStacks(DWORD unit,const string& id,int amount,int maximum) {
+bool changeStacks(DWORD unit,const string& id,int amount,int maximum,int research=0) {
     int base=manualStackCount(unit,id);
-    int before=stackCount(unit,id);
+    int before=stackCount(unit,id,research);
     int upper=amount>0?std::max(base,std::max(0,maximum-(before-base))):maximum;
     int after=static_cast<int>(std::clamp<int64_t>(int64_t(base)+amount,0,upper));
     if(after==base) return false;
@@ -269,6 +299,12 @@ bool changeStacks(DWORD unit,const string& id,int amount,int maximum) {
 using PassengerPassives=std::map<string,int>;
 struct SignalChain { DWORD id=0,remaining=1024; };
 DWORD nextSignalChain=1;
+struct LandingOrder {
+    DWORD unit,house,started;
+    CellStruct cell;
+    string from,to,skill;
+    int nextDraw;
+};
 struct Event {
     string trigger, kind, relation;
     DWORD holder, attacker, victim;
@@ -283,6 +319,10 @@ struct Event {
     vector<string> snapshot; // skill IDs for a dying or replaced deployer
     double distance=-1; // Horizontal distance in cells, -1 when no target was available.
     std::map<string,int> stackSnapshot;
+    int heldStacks(const string& id) const {
+        auto it=stackSnapshot.find(id);
+        return it==stackSnapshot.end()?1:std::max(1,it->second);
+    }
     int targetHp=0,targetMaxHp=0;
     std::optional<int> selfCost;
     std::optional<int> targetCost; // Absent for ground targets and older event snapshots.
@@ -302,6 +342,7 @@ struct Event {
     double signalValue=0;
     unsigned signalDepth=0;
     std::shared_ptr<SignalChain> signalChain;
+    std::optional<LandingOrder> landing;
 };
 vector<Event> pending;
 vector<std::pair<DWORD,CoordStruct>> impactCenters;
@@ -450,6 +491,48 @@ const vector<string>& unitSkills(TechnoClass* unit) {
     if(added) it->second=split(read(type,"Starfall.Passives"));
     return it->second;
 }
+// Research layers follow the current owner and type, including units built after purchase.
+const std::map<string,int>& researchLayers(TechnoClass* unit) {
+    static const std::map<string,int> empty;
+    if(!unit || !unit->Owner || Research::unlocked.empty() || UnitMount::mounted(unit)) return empty;
+    static std::map<std::pair<int,TechnoTypeClass*>,std::map<string,int>> cache;
+    static unsigned revision=0,generation=0;
+    if(revision!=Research::bondRevision || generation!=Research::uiGeneration) {
+        cache.clear();revision=Research::bondRevision;generation=Research::uiGeneration;
+    }
+    int house=unit->Owner->ArrayIndex;
+    auto type=unit->GetTechnoType();
+    auto [it,added]=cache.try_emplace({house,type});
+    auto& layers=it->second;
+    if(!added) return layers;
+    auto typeId=lower(type->ID);
+    for(const auto& project:Research::options) {
+        int count=Research::acquisitionCount(house,project.id);
+        if(!count || (!project.repeatable && count==1)) continue;
+        std::set<string> matched;
+        Research::forBaseEffects(project,[&](const auto& e){
+            if(e.effect==Research::Effect::Passive && Research::matchesTarget(e.types,typeId,kind(unit),groundVehicle(unit)))
+                matched.insert(e.passive);
+        });
+        for(const auto& id:matched) layers[id]+=std::min(count,INT_MAX-layers[id]);
+    }
+    return layers;
+}
+int researchLayers(TechnoClass* unit,const string& id) {
+    const auto& layers=researchLayers(unit);
+    auto it=layers.find(id);
+    return it==layers.end() || directSuppressed(unit->UniqueID,id)?0:it->second;
+}
+int heldUnitStacks(TechnoClass* unit,const string& id) {
+    return stackCount(unit->UniqueID,id,researchLayers(unit,id));
+}
+bool ownsPassive(TechnoClass* unit,const string& id);
+int unitStacks(TechnoClass* unit,const string& id) {
+    return unit && ownsPassive(unit,id)?heldUnitStacks(unit,id):0;
+}
+bool changeUnitStacks(TechnoClass* unit,const string& id,int amount,int maximum) {
+    return changeStacks(unit->UniqueID,id,amount,maximum,researchLayers(unit,id));
+}
 bool researchSkills(TechnoClass* unit,vector<string>* active=nullptr) {
     if(!unit->Owner || UnitMount::mounted(unit)) return false;
     auto unlocked=Research::unlocked.find(unit->Owner->ArrayIndex);
@@ -462,10 +545,14 @@ bool researchSkills(TechnoClass* unit,vector<string>* active=nullptr) {
             if(effect!=Research::Effect::Passive || !Research::matchesTarget(types,type,kind(unit),groundVehicle(unit))) return;
             found=true;if(active && !includes(*active,passive)) active->push_back(passive);
         };
-        if(o.effectList) for(const auto& effect:o.effects) add(effect.effect,effect.types,effect.passive);
-        else add(o.effect,o.types,o.passive);
+        Research::forActiveEffects(unit->Owner->ArrayIndex,o,[&](const auto& e){add(e.effect,e.types,e.passive);});
         if(found && !active) break;
     }
+    Research::forBondEffects(unit->Owner->ArrayIndex,[&](const auto& e){
+        if(e.effect==Research::Effect::Passive && Research::matchesTarget(e.types,type,kind(unit),groundVehicle(unit))) {
+            found=true;if(active && !includes(*active,e.passive)) active->push_back(e.passive);
+        }
+    });
     return found;
 }
 bool directExtraSkills(TechnoClass* unit,vector<string>* active) {
@@ -517,8 +604,8 @@ void reconcileUnitStacks(TechnoClass* unit) {
     auto ids=unitSkills(unit);extraSkills(unit,&ids);
     for(auto it=group->second.begin();it!=group->second.end();) {
         auto skill=skills.find(it->first);
-        if(skill==skills.end() || suppressed(unit->UniqueID,it->first) || !includes(ids,it->first)) it=group->second.erase(it);
-        else {it->second=std::min(it->second,skill->second.stackMax);++it;}
+        if(skill==skills.end() || skill->second.stackMax==1 || suppressed(unit->UniqueID,it->first) || !includes(ids,it->first)) it=group->second.erase(it);
+        else {it->second=std::min(it->second,skill->second.stackMax-1);++it;}
     }
     if(group->second.empty()) passiveStacks.erase(group);
 }
@@ -528,6 +615,8 @@ void reconcileAllStacks() {
 }
 
 #include "runtime/PassiveStates.inc"
+#include "runtime/Taunt.inc"
+#include "../modules/ActSp/UnitOrders.inc"
 #include "runtime/PassiveTooltips.inc"
 
 TechnoClass* Mount::acquire(FootClass* child) {
@@ -581,9 +670,12 @@ Event eventSnapshot(const char* name,TechnoClass* holder,TechnoClass* other,Tech
     e.selfCost=type->Cost;
     e.senderKind=kind(holder);
     e.origin=holder->GetCenterCoords();
-    if(auto stacks=passiveStacks.find(holder->UniqueID);stacks!=passiveStacks.end()) e.stackSnapshot=stacks->second;
+    if(auto stacks=passiveStacks.find(holder->UniqueID);stacks!=passiveStacks.end())
+        for(const auto& [id,extra]:stacks->second) e.stackSnapshot[id]=heldUnitStacks(holder,id);
     if(auto grants=transportGrants.find(holder->UniqueID);grants!=transportGrants.end())
-        for(const auto& [id,grant]:grants->second) e.stackSnapshot[id]=stackCount(holder->UniqueID,id);
+        for(const auto& [id,grant]:grants->second) e.stackSnapshot[id]=heldUnitStacks(holder,id);
+    for(const auto& [id,layers]:researchLayers(holder))
+        if(!directSuppressed(holder->UniqueID,id)) e.stackSnapshot[id]=stackCount(holder->UniqueID,id,layers);
     if(other) {
         e.distance=distanceCells(e.origin,other->GetCenterCoords());
         auto targetType=other->GetTechnoType();
@@ -603,15 +695,15 @@ Event eventSnapshot(const char* name,TechnoClass* holder,TechnoClass* other,Tech
 bool meetsEventFormula(const Skill& skill,const Event& event) {
     if(skill.conditionFormula.expression.empty()) return true;
     auto distance=event.distance>=0?std::optional<double>{event.distance}:std::nullopt;
-    auto stacks=event.stackSnapshot.find(skill.id);
+
     HealthFormula::Values target{event.targetHp,event.targetMaxHp,event.targetCost};
     std::optional<HealthFormula::Values> sender;
     if(event.trigger=="onsignal") sender=HealthFormula::Values{event.senderHp,event.senderMaxHp,event.senderCost};
     bool missing=false;
     auto value=skill.conditionFormula.expression.evaluate(event.hp,event.maxHp,event.damage,distance,
-        stacks==event.stackSnapshot.end()?0:stacks->second,target,&missing,event.selfCost,event.ammo,
+        event.heldStacks(skill.id),target,&missing,event.selfCost,event.ammo,
         event.passengers>=0?std::optional<int>{event.passengers}:std::nullopt,sender,
-        event.trigger=="onsignal"?std::optional<double>{event.signalValue}:std::nullopt);
+        event.trigger=="onsignal"?std::optional<double>{event.signalValue}:std::nullopt,std::nullopt,event.owner,Research::counter);
     if(!value) {if(!missing) skill.conditionFormula.report();return false;}
     return *value!=0;
 }
@@ -749,6 +841,7 @@ void observeTransitions() {
         }
     }
 }
+#include "runtime/RewardText.inc"
 #include "runtime/PassiveActions.inc"
 #include "LuaAnim.inc"
 #include "LuaSkillActions.inc"
@@ -764,11 +857,12 @@ bool playEventAnim(const Skill& s,const Event& e,TechnoClass* holder,const Objec
         return playSkillAnim(s.triggerAnim,unit,unit->Location,owner)!=nullptr;
     return !attacker && e.hasImpact && playSkillAnim(s.triggerAnim,nullptr,e.impact,owner);
 }
-bool applyResults(const Skill& s,Event& e,TechnoClass*& holder,const Objects& objects) {
+#include "runtime/LandingTransform.inc"
+bool applyResults(const Skill& s,Event& e,TechnoClass*& holder,const Objects& objects,int firstDraw=0) {
     bool success=false;
     Event actionEvent=e;
     int draws=s.randomActionCount?s.randomActionCount:static_cast<int>(s.actions.size());
-    for(int draw=0;draw<draws;++draw) {
+    for(int draw=firstDraw;draw<draws;++draw) {
         size_t index=static_cast<size_t>(draw);
         if(s.randomActionCount) {
             int pick=ScenarioClass::Instance->Random.RandomRanged(1,s.randomActionTotal);index=0;
@@ -778,11 +872,26 @@ bool applyResults(const Skill& s,Event& e,TechnoClass*& holder,const Objects& ob
         const auto& action=s.actions[index];
         // Keep the last live position if this action destroys the holder.
         if(holder && s.actions.size()>1) actionEvent.origin=holder->GetCenterCoords();
-        auto stack=e.stackSnapshot.find(s.id);
-        bool changed=apply(action,actionEvent,holder,objects,stack==e.stackSnapshot.end()?0:stack->second);
+
+        if(action.landFirst) {
+            auto unit=findLive(objects,resultTarget(action,actionEvent));
+            if(unit && unit->WhatAmI()==AbstractType::Unit && unit->GetTechnoType()->Locomotor==LocomotionClass::CLSIDs::Jumpjet &&
+                action.unitType->Locomotor==LocomotionClass::CLSIDs::Drive) {
+                if(landingSites.contains(unit->UniqueID)) break;
+                auto converter=publicPhobosConverter();
+                if(canTransformUnit(unit,action.unitType,converter,true)) {
+                    if(!landingSiteFree(static_cast<UnitClass*>(unit),action.unitType,unit->GetMapCoords())) break;
+                    if(!transformUnit(unit,action.unitType,converter,true)) break;
+                    success=true;
+                    continue;
+                }
+                return queueLanding(static_cast<UnitClass*>(unit),action.unitType,s,actionEvent,draw+1) || success;
+            }
+        }
+        bool changed=apply(action,actionEvent,holder,objects,e.heldStacks(s.id));
         if(changed) success=true;
         if(e.trigger!="ondeath") holder=findLive(objects,e.holder);
-        if(!s.randomActionCount && !changed && stopsSequenceOnFailure(action.action)) break;
+        if(!changed && (action.landFirst || (!s.randomActionCount && stopsSequenceOnFailure(action.action)))) break;
     }
     return success;
 }
@@ -792,8 +901,28 @@ void dispatch() {
     for(auto* t : TechnoClass::Array) if(alive(t)) objects.emplace(t->UniqueID,t);
     activeObjects=&objects;
     auto events=std::move(pending);
+    pending.clear();
+    landingSites.clear();
+    for(const auto& e:events) if(e.landing) landingSites.emplace(e.landing->unit,e.landing->cell);
     for(auto& e:events) {
         auto holder=findLive(objects,e.holder);
+        if(e.landing) {
+            auto order=*e.landing;
+            auto status=advanceLanding(order,objects);
+            if(status==LandingStatus::Waiting) {pending.push_back(std::move(e));continue;}
+            landingSites.erase(order.unit);
+            if(status==LandingStatus::Failed) continue;
+            e.landing.reset();
+            if(e.trigger=="ondeath") holder=nullptr;
+            const Skill* skill=nullptr;
+            if(e.trigger=="onpickup" && e.snapshot.size()==1) {
+                if(auto it=pickupTypes.find(e.snapshot.front());it!=pickupTypes.end()) skill=&it->second.reward;
+            } else if(e.trigger=="onweaponfire") {
+                if(auto it=weaponScripts.find(order.skill);it!=weaponScripts.end()) skill=&it->second;
+            } else if(auto it=skills.find(order.skill);it!=skills.end()) skill=&it->second;
+            if(skill && skill->id==order.skill) applyResults(*skill,e,holder,objects,order.nextDraw);
+            continue;
+        }
         bool death=e.trigger=="ondeath";
         if(death) holder=nullptr;
         // A parasite can kill its victim and be removed while exiting it, before
@@ -883,8 +1012,8 @@ int adjustPendingDamage(const char* trigger,TechnoClass* holder,TechnoClass* oth
         progress.count=0;
         if(skill.chance==0 || (skill.chance<100 && ScenarioClass::Instance->Random.RandomRanged(1,100)>skill.chance)) continue;
         bool success=false;
-        auto stack=e.stackSnapshot.find(id);
-        int stacks=stack==e.stackSnapshot.end()?0:stack->second;
+
+        int stacks=e.heldStacks(id);
         for(const auto& action:skill.actions) {
             if(action.action=="runscript") {
                 Objects live;
@@ -909,7 +1038,10 @@ int adjustPendingDamage(const char* trigger,TechnoClass* holder,TechnoClass* oth
     return damage;
 }
 
+bool recheckLoadedStages=false;
 void reset() {
+    UnitOrders::orders.clear();UnitOrders::definitions.clear();CommandBarOrders::entries.clear();
+    recheckLoadedStages=false;
     bombSnapshots.clear();
     bombKeys.clear();
     rebindBombKeys=false;
@@ -919,6 +1051,13 @@ void reset() {
     pickupTypes.clear();
     groundPickups.clear();
     SonicRipple::clear();
+    ArtSp::Tracers::clearTrails();
+    ArtSp::Tracers::clearRules();
+    ArtSp::TipsLabel::clear();
+    ArtSp::ContinuousBeam::reset();
+    splitTargets.clear();
+    Taunt::controls.clear();Taunt::rebind=false;
+    RewardText::labels.clear();
     pickupImages.clear();
     linkedGrants.clear();
     anyLinkedPassives=false;
@@ -944,7 +1083,9 @@ void reset() {
     mapPassiveBindings.clear();
     mapPassengersBySize.clear();
     scriptTimers={};
+    ScriptRuntime::clearPool();
     scriptModules.clear();
+    ProjectileScript::reset();
     scriptDefinitions.clear();
     scriptBindings.clear();
     transportGrants.clear();
@@ -969,6 +1110,8 @@ void reset() {
     UnitHealth::pools.clear();
     fireRateBase.clear();
     fireRateState.clear();
+    experienceState.clear();
+    unscaledKillScores.clear();
     rangeBase.clear();
     rangeState.clear();
     projectileBase.clear();
@@ -1000,6 +1143,8 @@ void reset() {
     needMotion=false;
     nearbySamples.clear();
     weaponRules.clear();
+    ProjectileShield::active.clear();
+    ProjectileShield::configured=false;
     volleyWeapons.clear();
     mountCopies.clear();
     buildingLookups.clear();
@@ -1029,6 +1174,12 @@ void reset() {
 }
 } // namespace
 
+void ForceMove::playJumpEffect(const JumpEffect& effect,const CoordStruct& at,HouseClass* owner) {
+    if(!effect.anim.empty())
+        if(auto type=AnimTypeClass::Find(effect.anim.c_str())) playSkillAnim(type,nullptr,at,owner);
+    if(!effect.sound.empty()) playActionSound(effect.sound,at);
+}
+
 // The stock unit name and Phobos's EnemyUIName converge here. A null ESI
 // continues through the game's terrain tooltip path.
 DEFINE_HOOK(0x4AE678,SF_UnitHoverText,8) {
@@ -1041,7 +1192,43 @@ DEFINE_HOOK(0x4AE678,SF_UnitHoverText,8) {
     return 0x4AE69D;
 }
 
+// Capture the list chosen by YR itself (solo/skirmish or multiplayer). The native
+// parser advances the physical slot even for an unrecognized command and for x.
+// A later INI without this section leaves the native layout intact.
+DEFINE_HOOK(0x67467B,SF_BeginCommandBarList,5) {
+    if(R->EAX()) CommandBarOrders::listedSlots.clear();
+    return 0;
+}
+DEFINE_HOOK(0x6746DC,SF_CommandBarListItem,7) {
+    const char* name=R->EAX<const char*>();
+    const int native=reinterpret_cast<int(__fastcall*)(const char*)>(0x6CFCC0)(name);
+    if(native==*reinterpret_cast<const int*>(0x8427CC) && name && _stricmp(name,"x")!=0)
+        CommandBarOrders::listedSlots.try_emplace(ConfigText::lower(name),R->ESI<int>());
+    R->EAX(native);
+    return 0x6746E3;
+}
+
+bool CommandBarOrders::eligible(TechnoClass* unit,HouseClass* owner,unsigned enterKinds) {
+    if(!owner || owner->Defeated || owner->IsObserver() || !ActiveSkills::readyCaster(unit,owner) ||
+       UnitMount::mounted(unit) || unit->IsImmobilized || unit->IsCrashing) return false;
+    if(enterKinds) return UnitOrders::enterSource(unit,enterKinds);
+    if(unit->IsArmed()) return true;
+    auto secondary=unit->GetWeapon(1);
+    return secondary && secondary->WeaponType;
+}
+bool CommandBarOrders::execute(int sender,unsigned index,int object,CellStruct center) {
+    if(!ready) readSkills();
+    if(index>=entries.size() || sender<0 || sender>=HouseClass::Array.Count || !ScenarioClass::Instance) return false;
+    TargetClass handle;
+    handle.m_RTTI=static_cast<unsigned char>(AbstractType::Abstract);
+    handle.m_ID=object;
+    auto unit=handle.As_Techno();
+    const auto& entry=entries[index];
+    if(!eligible(unit,HouseClass::Array.Items[sender],entry.enterKinds)) return false;
+    return UnitOrders::start(unit,entry.id,center,entry.radius);
+}
 #include "ActiveCast.inc"
+#include "../modules/ActSp/ProjectileScript.inc"
 
 const PassiveRules::Skill* PassiveRules::findSkill(const string& id) {
     const auto it=skills.find(id);
@@ -1058,6 +1245,8 @@ bool Research::Detail::Runtime::hasPassive(const string& id) { return skills.con
 // activity during scenario loading must not reroll a pending research reward.
 int Research::Detail::randomIndex(int count) { return scriptTimers.range(0,count-1,Game::Seed); }
 bool Research::Detail::Runtime::conversionSupportsTypes(const TechnoTypeClass* from,const TechnoTypeClass* to) {
+    if(!IsEqualGUID(from->Locomotor,to->Locomotor))
+        return groundFlightPair(from,to) && publicPhobosConverter();
     return publicPhobosConverter() || nativeConversionTypesSafe(from,to);
 }
 bool Research::Detail::Runtime::canTransformUnit(TechnoClass* unit,TechnoTypeClass* to) { return ::canTransformUnit(unit,to); }
@@ -1083,76 +1272,24 @@ DEFINE_HOOK(0x508D29,SF_BuildingPowerOutageCheck,5) {
     R->EAX(powerContribution(building,building->GetPowerOutput(),0));
     return 0x508D2E;
 }
-// Read the custom name at the native Type parser. Apart from this effect
-// marker and a point cursor, the SW remains an ordinary per-house instance.
-DEFINE_HOOK(0x6CEC32,SF_ActionSequenceType,7) {
-    if(_stricmp(R->lea_Stack<const char*>(0x58),"ActionSequence")) return 0;
-    auto sw=R->EBP<SuperWeaponTypeClass*>();
-    sw->Type=ActionSequence::type;sw->Action=Action::ParaDrop;
-    return 0x6CEC84;
-}
-bool fireSequence(SuperClass* sw,CellStruct point) {
-    if(!sw->Owner || sw->Owner->Defeated || !ActiveSkills::playable(point)) return false;
-    if(!ready) readSkills();
-    auto found=ActionSequence::definitions.find(lower(sw->Type->ID));
-    if(found==ActionSequence::definitions.end() || found->second.empty() || ActionSequence::lastCast==UINT32_MAX) return false;
-    auto id=++ActionSequence::lastCast;
-    auto& cast=ActionSequence::casts.emplace(id,ActionSequence::Cast{sw->Type->ID,sw->Owner->ArrayIndex,point}).first->second;
+void ActionSequence::executeSteps(DWORD id,const Cast& cast,const vector<Skill>& steps) {
     auto event=sequenceEvent(id,cast);
     Objects live;
     for(auto u:TechnoClass::Array) if(alive(u)) live.emplace(u->UniqueID,u);
     auto previous=activeObjects;activeObjects=&live;
-    for(const auto& step:found->second) apply(step.actions.front(),event,nullptr,live,0);
+    for(const auto& step:steps) apply(step.actions.front(),event,nullptr,live,0);
     activeObjects=previous;
-    ActionSequence::retire(id);
-    return true;
 }
-static bool consumeSequenceCommand(int sender,int index,CellStruct point) {
-    if(index<0 || index>=SuperWeaponTypeClass::Array.Count ||
-       SuperWeaponTypeClass::Array.Items[index]->Type!=ActionSequence::type) return false;
-    if(sender<0 || sender>=HouseClass::Array.Count) return true;
-    auto house=HouseClass::Array.Items[sender];
-    if(!house || house->IsObserver() || index>=house->Supers.Count) return true;
-    auto sw=house->Supers.Items[index];
-    if(!sw || !sw->IsPresent || !sw->IsReady || sw->IsSuspended || !fireSequence(sw,point)) return true;
-    sw->Reset();
-    if(sw->IsOneTime) {sw->IsOneTime=false;sw->Lose();}
-    if(house==HouseClass::CurrentPlayer && Unsorted::CurrentSWType==index) Unsorted::CurrentSWType=-1;
-    return true;
-}
-// Intercept only our point commands before extensions dispatch built-in SWs.
+// Shared synchronized command entry for unit orders and point superweapons.
 DEFINE_HOOK(0x4C6CB0,SF_ActionSequenceCommand,6) {
     auto event=R->ECX<EventClass*>();
-    if(event->Type==EventType::SpecialPlace &&
-       consumeSequenceCommand(event->HouseIndex,event->SpecialPlace.ID,event->SpecialPlace.Location)) return 0x4C6CEF;
-    return 0;
-}
-// At this site native ClickFire has checked availability. Rejoin its normal
-// charge/one-shot bookkeeping immediately after the built-in effect call.
-DEFINE_HOOK(0x6CBAF9,SF_ActionSequenceClick,8) {
-    auto sw=R->ESI<SuperClass*>();
-    if(sw->Type->Type!=ActionSequence::type) return 0;
-    auto point=R->Stack<CellStruct*>(0x24);
-    if(!sw->IsPresent || !sw->IsReady || sw->IsSuspended || !point || !fireSequence(sw,*point)) return 0x6CBC94;
-    if(sw->Owner==HouseClass::CurrentPlayer && Unsorted::CurrentSWType==sw->Type->ArrayIndex)
-        Unsorted::CurrentSWType=-1;
-    return 0x6CBB0A;
-}
-// Direct engine launches (e.g. scripted launches) bypass ClickFire.
-DEFINE_HOOK(0x6CC390,SF_ActionSequenceLaunch,6) {
-    auto sw=R->ECX<SuperClass*>();
-    if(sw->Type->Type!=ActionSequence::type) return 0;
-    if(auto point=R->Stack<CellStruct*>(4)) fireSequence(sw,*point);
-    return 0x6CC482;
-}
-DEFINE_HOOK(0x6CEEB0,SF_SelectedSequence,8) {
-    int index=Unsorted::CurrentSWType;
-    if(index>=0 && index<SuperWeaponTypeClass::Array.Count) {
-        auto sw=SuperWeaponTypeClass::Array.Items[index];
-        if(sw && sw->Type==ActionSequence::type && sw->Action==R->ECX<Action>()) {
-            R->EAX(sw);return 0x6CEEE5;
-        }
+    if(Taunt::blocksOrder(*event)) return 0x4C6CEF;
+    if(!UnitOrders::orders.empty() && (event->Type==EventType::Deploy || event->Type==EventType::Scatter)) {
+        auto unit=event->MegaMission.Whom.As_Techno();
+        if(unit && unit->Owner && unit->Owner->ArrayIndex==event->HouseIndex) UnitOrders::cancel(unit);
     }
+    if(event->Type==EventType::SpecialPlace &&
+       ActionSequence::consumeCommand(event->HouseIndex,event->SpecialPlace.ID,event->SpecialPlace.Location)) return 0x4C6CEF;
     return 0;
 }
 // Custom type keys are in the scenario INI while it is being read. The rules INI
@@ -1160,12 +1297,16 @@ DEFINE_HOOK(0x6CEEB0,SF_SelectedSequence,8) {
 DEFINE_HOOK(0x68AD2F, SF_MapPassiveBindings, 5) {
     auto ini=R->EDI<CCINIClass*>();
     ActionSequence::mapFields.clear();ActionSequence::collect(ini,ActionSequence::mapFields);
+    if(ready) ArtSp::TipsLabel::readRules();
     mapPassiveBindings.clear();mapPassengersBySize.clear();bindings.clear();
+    ProjectileScript::mapSpeeds.clear();ProjectileScript::weaponSpeeds.clear();
     if(ini) for(auto section=ini->Sections.First();section && section->IsValid();section=section->Next()) {
         if(!section->Name || strlen(section->Name)>127) continue;
         char list[2048]{};
         ini->ReadString(section->Name,"Starfall.Passives","",list,sizeof(list));
         if(list[0]) mapPassiveBindings.emplace(lower(section->Name),list);
+        int speed=ini->ReadInteger(section->Name,"Speed",INT_MIN);
+        if(speed!=INT_MIN) ProjectileScript::mapSpeeds.emplace(lower(section->Name),speed);
         char capacityMode[32]{};
         ini->ReadString(section->Name,"Passengers.BySize","",capacityMode,sizeof(capacityMode));
         if(capacityMode[0]) mapPassengersBySize.emplace(lower(section->Name),ini->ReadBool(section->Name,"Passengers.BySize",true));
@@ -1201,7 +1342,11 @@ DEFINE_HOOK(0x5F6625,SF_MountUninit,7) {
     return 0;
 }
 DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
+    ArtSp::ContinuousBeam::forget(R->ECX<TechnoClass*>());
+    splitTargets.erase(R->ECX<TechnoClass*>()->UniqueID);
+    ProjectileShield::forget(R->ECX<TechnoClass*>());
     auto id=R->ECX<TechnoClass*>()->UniqueID;
+    Taunt::forget(id);
     Mount::forget(id);
     LuaNearby::forget(id);
     auto power=buildingPower.find(id);
@@ -1221,30 +1366,40 @@ DEFINE_HOOK(0x6F4500, SF_UnitDestroyed, 5) {
     UnitHealth::pools.erase(id);gainSeen.erase(id);gainInputs.erase(id);
     hitSequences.erase(id);std::erase_if(observedHits,[&](const auto& entry){return entry.first.first==id;});
     warheadGrants.erase(id);passiveStacks.erase(id);cloakableUnits.erase(id);mirageUnits.erase(id);immuneUnits.erase(id);mindImmuneUnits.erase(id);empUnits.erase(id);projectileBase.erase(id);projectileState.erase(id);rangeBase.erase(id);rangeState.erase(id);fireRateBase.erase(id);fireRateState.erase(id);
+    experienceState.erase(id);
     activeTooltips.erase(id);passiveTints.erase(id);VisualScale::base.erase(id);VisualScale::state.erase(id);
     weaponRules.erase(id); volleyWeapons.erase(id); mountCopies.erase({id,0});mountCopies.erase({id,1});
-    previousState.erase(id); reportedDeaths.erase(id); removedPassives.erase(id); counts.erase(id); triggerTotals.erase(id); applied.erase(id); Research::producers.erase(id);
+    previousState.erase(id); reportedDeaths.erase(id); removedPassives.erase(id); counts.erase(id); triggerTotals.erase(id); applied.erase(id);
+    BuildingResearch::forget(id);
     ForceMove::forget(id);ForceMove::settling.erase(id);
     LuaAnim::forget(id);scriptTimers.forget(id);
     if(activeObjects) activeObjects->erase(id);
+    UnitOrders::forget(id);
     ActSp::forget(id);
+    ArtSp::Tracers::forget(id);
     return 0;
 }
 // QueueMission and ForceMission ignore new orders while the motion owns the unit.
 DEFINE_HOOK(0x5B35E0,SF_ForceMoveQueue,5) {
+    if(Taunt::blocksMission(R->ECX<AbstractClass*>(),R->Stack<Mission>(4))) {R->EAX(0);return 0x5B3642;}
     if((ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>()))) {R->EAX(0);return 0x5B3642;}
     return 0;
 }
 DEFINE_HOOK(0x5B2FD0,SF_ForceMoveMission,6) {
+    if(Taunt::blocksMission(R->ECX<AbstractClass*>(),R->Stack<Mission>(4))) return 0x5B3030;
     if((ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>())) && R->Stack<Mission>(4)!=Mission::Sleep) return 0x5B3030;
     return 0;
 }
 // After the prologues shared with Phobos sync logging, before the destination is read.
 DEFINE_HOOK(0x74197A,SF_ForceMoveVehicleDestination,7) {
+    auto vehicle=R->EBP<TechnoClass*>();
+    if((Taunt::targetOf(vehicle)?Taunt::fixedPosition(vehicle):UnitOrders::fixedPosition(vehicle))) R->Stack<AbstractClass*>(0x8C,nullptr);
     if(UnitMount::mounted(R->EBP<AbstractClass*>()) || ForceMove::locked(R->EBP<AbstractClass*>()) || empLocked(R->EBP<AbstractClass*>())) R->Stack<AbstractClass*>(0x8C,nullptr);
     return 0;
 }
 DEFINE_HOOK(0x51AA45,SF_ForceMoveInfantryDestination,7) {
+    auto infantry=R->ECX<TechnoClass*>();
+    if((Taunt::targetOf(infantry)?Taunt::fixedPosition(infantry):UnitOrders::fixedPosition(infantry))) R->Stack<AbstractClass*>(0x38,nullptr);
     if(UnitMount::mounted(R->ECX<AbstractClass*>()) || ForceMove::locked(R->ECX<AbstractClass*>()) || empLocked(R->ECX<AbstractClass*>())) R->Stack<AbstractClass*>(0x38,nullptr);
     return 0;
 }
@@ -1261,6 +1416,7 @@ DEFINE_HOOK(0x4C7225,SF_ApplyObjectOrder,5) {
         if(UnitMount::mounted(source)) return 0x4C8109;
         Mount::order(source,event->MegaMission.Mission==static_cast<BYTE>(Mission::Attack)?event->MegaMission.Target.As_Techno():nullptr);
     }
+    UnitOrders::cancel(source);
     BetterGarrison::applyOrder(source,event);
     return 0;
 }
@@ -1271,7 +1427,10 @@ DEFINE_HOOK(0x4C757D,SF_ApplyStopOrder,6) {
         if(UnitMount::mounted(source)) return 0x4C8109;
         Mount::order(source,nullptr);
     }
+    UnitOrders::cancel(source);
     ActSp::stopOrder(source);
+    ArtSp::ContinuousBeam::stop(source);
+    splitTargets.erase(source->UniqueID);
     return 0;
 }
 #include "runtime/CombatHooks.inc"
@@ -1293,6 +1452,15 @@ DEFINE_HOOK(0x4A192D,SF_CheckCrateCellForPickup,6) {
 // The tactical draw surface has been selected; render before the native object layers.
 DEFINE_HOOK(0x6D465F,SF_DrawGroundPickups,5) {
     drawGroundPickups();
+    EntityWalls::drawPreview();
+    return 0;
+}
+// Share the tactical flying-string draw pass used by Ares and Phobos.
+DEFINE_HOOK(0x6D4684,SF_DrawRewardText,6) {
+    ArtSp::ContinuousBeam::draw(DSurface::Temp,{0,0,DSurface::ViewBounds.Width,DSurface::ViewBounds.Height},Unsorted::CurrentFrame);
+    ArtSp::Tracers::draw(DSurface::Temp,{0,0,DSurface::ViewBounds.Width,DSurface::ViewBounds.Height},Unsorted::CurrentFrame);
+    ArtSp::TipsLabel::draw();
+    RewardText::draw();
     return 0;
 }
 
@@ -1300,11 +1468,21 @@ DEFINE_HOOK(0x55B4E1, SF_Frame, 5) {
     LuaAnim::tick();
     LuaNearby::expire();
     SonicRipple::expire(Unsorted::CurrentFrame);
+    ArtSp::Tracers::expire(Unsorted::CurrentFrame);
+    ArtSp::ContinuousBeam::tick();
+    RewardText::expire(Unsorted::CurrentFrame);
     ForceMove::tick();
     Mount::tick();
     incomingDamage.clear();
     clearCompletedVolleys();
     UnitHealth::syncAll();
+    if(recheckLoadedStages) {
+        recheckLoadedStages=false;
+        Research::ensureReady();
+        for(const auto& [house,projects]:Research::unlocked) {
+            Research::Detail::checkBonds(house);Research::Detail::checkStages(house);
+        }
+    }
     BuildingResearch::tickBuildings();
     refreshSpawnGrants();
     expireWarheadGrants();
@@ -1315,11 +1493,13 @@ DEFINE_HOOK(0x55B4E1, SF_Frame, 5) {
     tickGains();
     observeTransitions();
     tickStates();
+    Taunt::tick();
     tickIntervals();
     collectPickups();
     dispatch();
     tickScriptTimers();
     ActSp::tick();
+    UnitOrders::tick();
     return 0;
 }
 
@@ -1387,6 +1567,6 @@ SYRINGE_HANDSHAKE(info) {
     if(!info || info->cbSize<sizeof(SyringeHandshakeInfo)) return E_INVALIDARG;
     if(info->exeCRC!=0x54CC0A13) return E_FAIL;
     if(info->Message && info->cchMessage>0)
-        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.39");
+        _snprintf_s(info->Message,info->cchMessage,_TRUNCATE,"Starfall Lab 0.40");
     return S_OK;
 }

@@ -1,6 +1,6 @@
 # Starfall Lab Manual
 
-English reference for mod authors, AI assistants, and maintainers. The current source implements Starfall Lab 0.39. Configuration and Lua references describe the repository implementation.
+English reference for mod authors, AI assistants, and maintainers. The current source implements Starfall Lab 0.40. Configuration and Lua references describe the repository implementation.
 
 ## Find a task
 
@@ -8,9 +8,14 @@ English reference for mod authors, AI assistants, and maintainers. The current s
 | --- | --- |
 | Write a Lua event, active skill, weapon or map script | [Lua guide](manual/lua.md) |
 | Install Starfall and choose a configuration source | [Installation and configuration sources](manual/setup.md#installation-and-configuration-sources) |
+| Launch infantry passengers in sequence with parachutes | [Passenger ejection](manual/passives.md#passenger-ejection) |
+| Give ground vehicles a group jump command | [Vehicle jump and landing rules](manual/passives.md#vehicle-jump) |
 | Create passive effects and triggers | [Passive example](manual/setup.md#registries-and-a-complete-passive-example), [passive guide](manual/passives.md) |
 | Configure research projects and rewards | [Research projects](manual/research.md#research-projects) |
 | Configure ActSp drones or garrisons | [Special behavior submodule](manual/actsp.md#special-behavior-submodule) |
+| Add a moving tracer to a weapon | [ArtSp weapon tracers](manual/artsp.md#weapon-tracers) |
+| Show a text label above a unit | [ArtSp unit labels](manual/artsp.md#unit-labels) |
+| Keep a laser, electric arc or radiation beam on the target between shots | [ArtSp continuous beams](manual/artsp.md#continuous-beams) |
 | Integrate map actions or superweapons | [Map integration](manual/map-integration.md), [ActionSequence](manual/miscellaneous.md#actionsequence-superweapons) |
 | Diagnose errors or build and test | [Diagnostics](manual/setup.md#diagnostics-and-removed-interfaces), [build and tests](manual/setup.md#build-tests-and-source-map) |
 
@@ -23,13 +28,15 @@ Engine-loaded rules and `Starfall.ini` can both supply configuration, with looku
 ## Reference guides
 
 - [Lua guide](manual/lua.md) covers script entry points, context, APIs, state, timers, examples, and execution limits.
+- [Active skills guide](manual/active-skills.md) covers targeting, cooldowns, indicators, and scripted skills.
+- [Miscellaneous guide](manual/miscellaneous.md) covers custom ground pickups and ActionSequence superweapons.
 - [Passive guide](manual/passives.md) covers triggers, filters, actions, continuous modifiers, formulas, and passive visuals.
 - [Research guide](manual/research.md) covers projects, offers, rewards, buildings, and the native query API.
 - [Map guide](manual/map-integration.md) covers map triggers, team scripts, grant presets, and map Lua entry points.
-- [Miscellaneous](manual/miscellaneous.md) covers ActionSequence superweapons.
 - [Installation and configuration](manual/setup.md) covers setup, configuration sources, diagnostics, and development.
-- [ActSp guide](manual/actsp.md) covers drone behavior and advanced garrisons.
+- [ActSp guide](manual/actsp.md) covers [continuous unit orders](manual/actsp.md#continuous-unit-orders), drone behavior, advanced garrisons, raised platforms, [entity walls](manual/actsp.md#entity-walls), [projectile interception by buildings](manual/actsp.md#projectile-interception-by-buildings), and [piercing projectiles](manual/actsp.md#piercing-projectiles).
 - [Resources guide](manual/resources.md) covers icons, text, audio, and animations.
+- [ArtSp visual effects](manual/artsp.md) covers unit labels, tracer styles, per-weapon tracer intervals and continuous beams.
 - [Compatibility guide](manual/compatibility.md) covers saves, multiplayer, and conversions.
 - [Manual writing guide](manual/style.md) records the structure and INI formatting conventions for maintainers.
 - [Configuration reference](manual/reference.md) provides links for earlier section bookmarks.
@@ -100,7 +107,7 @@ The links below preserve previous section bookmarks and lead to the current refe
 [Action catalog](manual/passives.md#action-catalog)
 
 <a id="custom-ground-pickups"></a>
-[Custom ground pickups](manual/passives.md#custom-ground-pickups)
+[Custom ground pickups](manual/miscellaneous.md#custom-ground-pickups)
 
 <a id="attached-units"></a>
 [Attached units](manual/passives.md#attached-units)
@@ -169,7 +176,7 @@ The links below preserve previous section bookmarks and lead to the current refe
 [Map Lua preset](manual/lua.md#map-lua-preset)
 
 <a id="active-skills"></a>
-[Active skills](manual/lua.md#active-skills)
+[Active skills](manual/active-skills.md#active-skills)
 
 <a id="lua-api"></a>
 [Lua API](manual/lua.md#lua-api)
@@ -218,6 +225,15 @@ The links below preserve previous section bookmarks and lead to the current refe
 
 <a id="advanced-garrison"></a>
 [Advanced garrison](manual/actsp.md#advanced-garrison)
+
+<a id="entity-walls"></a>
+[Entity walls](manual/actsp.md#entity-walls)
+
+<a id="projectile-interception-by-buildings"></a>
+[Projectile interception by buildings](manual/actsp.md#projectile-interception-by-buildings)
+
+<a id="target-relative-weapon-origin"></a>
+[Target-relative weapon origin](manual/actsp.md#target-relative-weapon-origin)
 
 <a id="actionsequence-superweapons"></a>
 [ActionSequence superweapons](manual/miscellaneous.md#actionsequence-superweapons)

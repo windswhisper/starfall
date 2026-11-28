@@ -39,40 +39,40 @@ DEFINE_HOOK(0x55B4EB,SF_TestReapply,5) {
             !skills.contains("wrongaction") && !skills.contains("badswitch"),"configuration");
         grantToUnit(u,PassiveGrant{{"single","double","fullprobe","defaultgrant","testaura"},-1});refreshAuras();
         event("ondeploy",u,enemy);event("onkill",u,enemy);
-        check(stackCount(id,"stacked")==0 && triggerTotals[id]["stacked"]==1,"first grant and opt out");
+        check(unitStacks(u,"stacked")==1 && triggerTotals[id]["stacked"]==1,"first grant and opt out");
         event("onpromote",u,enemy);
-        check(stackCount(id,"stacked")==2 && triggerTotals[id]["stacked"]==1,"two actions two stacks");
+        check(unitStacks(u,"stacked")==2 && triggerTotals[id]["stacked"]==1,"two actions two stacks");
         event("onfire",u,enemy);
         check(counts[id]["fullprobe"].next==0 && triggerTotals[id]["stacked"]==1,"no change no cooldown");
         float previous=wh->CellSpread;wh->CellSpread=1;
         const int hp=peer->Health;
         hit(enemy,peer,wh);
-        check(peer->Health<hp && stackCount(pid,"shellbuff")==0 && stackCount(pid,"nativebuff")==1 &&
-            stackCount(pid,"aurabuff")==1 && reapplyImpacts.empty(),"direct and area deduplicated");
+        check(peer->Health<hp && unitStacks(peer,"shellbuff")==1 && unitStacks(peer,"nativebuff")==2 &&
+            unitStacks(peer,"aurabuff")==2 && reapplyImpacts.empty(),"direct and area deduplicated");
         hit(enemy,peer,wh);
         MapClass::DamageArea(peer->GetCoords(),8,enemy,wh,false,foe);
         wh->CellSpread=0;
         hit(enemy,peer,wh);
         int damage=8;peer->ReceiveDamage(&damage,0,wh,enemy,false,false,foe);
         wh->CellSpread=previous;
-        check(stackCount(pid,"shellbuff")==4 && stackCount(pid,"nativebuff")==5 && stackCount(pid,"aurabuff")==5 &&
+        check(unitStacks(peer,"shellbuff")==5 && unitStacks(peer,"nativebuff")==6 && unitStacks(peer,"aurabuff")==6 &&
             reapplyImpacts.empty(),"independent hits in one frame");
         std::ofstream("reapply.ids")<<id<<" "<<pid;
     } else if(frame==22) {
         event("onfire",u,enemy);
-        check(stackCount(id,"stacked")==2 && counts[id]["fullprobe"].next==52 &&
+        check(unitStacks(u,"stacked")==2 && counts[id]["fullprobe"].next==52 &&
             warheadGrants.at(id).skills.at("stacked").remaining(frame)==10 && triggerTotals[id]["stacked"]==1,"capped renewal");
         check(ScenarioClass::SaveGame("Saved Games\\Reapply.sav",L"Reapply"),"saved");
         TerminateProcess(GetCurrentProcess(),0);
     } else if(frame==24) {
-        check(stackCount(id,"stacked")==2 && triggerTotals[id]["stacked"]==1 &&
-            warheadGrants.at(id).skills.at("stacked").remaining(frame)==8 && stackCount(pid,"shellbuff")==4,"restored stacks and duration");
+        check(unitStacks(u,"stacked")==2 && triggerTotals[id]["stacked"]==1 &&
+            warheadGrants.at(id).skills.at("stacked").remaining(frame)==8 && unitStacks(peer,"shellbuff")==5,"restored stacks and duration");
     } else {
-        check(stackCount(id,"stacked")==0 && stackCount(pid,"shellbuff")==0 && stackCount(pid,"nativebuff")==5,
+        check(unitStacks(u,"stacked")==0 && unitStacks(peer,"shellbuff")==0 && unitStacks(peer,"nativebuff")==6,
             "expiry preserves other sources");
-        check(stackCount(pid,"aurabuff")==5,"aura refresh is not an application");
+        check(unitStacks(peer,"aurabuff")==6,"aura refresh is not an application");
         event("ondeploy",u,enemy);
-        check(stackCount(id,"stacked")==0 && triggerTotals[id]["stacked"]==2,"reacquired at zero");
+        check(unitStacks(u,"stacked")==1 && triggerTotals[id]["stacked"]==2,"reacquired at one");
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

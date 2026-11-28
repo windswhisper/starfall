@@ -1,7 +1,10 @@
 #include "ResearchInternal.h"
 #include "ConfigText.h"
 #include "ActiveSkills.h"
+#include "../modules/ActSp/CommandBarOrders.h"
+#include "ForceMove.h"
 #include <DisplayClass.h>
+#include <FileSystem.h>
 #include <deque>
 #include <set>
 #include <EventClass.h>
@@ -14,6 +17,8 @@
 #include "SonicRipple.h"
 #include "ResearchAudio.h"
 #include <WWMouseClass.h>
+#include <ShapeButtonClass.h>
+#include <CCToolTip.h>
 #include <BuildingClass.h>
 #include <TacticalClass.h>
 #include <CellClass.h>
@@ -61,7 +66,7 @@ bool hasAvailableResearch() {
     for(int i=0;i<static_cast<int>(Research::options.size());++i) {
         const auto& option=Research::options[i];int rarity=static_cast<int>(option.rarity);
         if(!option.grantOnly && Research::meetsCountryOrTech(house->ArrayIndex,option,country) && rarity>=0 && rarity<Research::rarityCount && Research::rarityWeights[rarity]>0 &&
-           !Research::owns(house->ArrayIndex,option.id) && Research::available(i) &&
+           Research::ownershipAllows(house->ArrayIndex,option) && Research::available(i) &&
            Research::meetsPrerequisites(house->ArrayIndex,i) && Research::canApply(house->ArrayIndex,i)) return true;
     }
     return false;
@@ -173,6 +178,11 @@ int hitTest(const Layout& l, Point2D p) {
     return Research::expanded && inside(DSurface::ViewBounds,p)?inertHit:-1;
 }
 int color(int r,int g,int b) { return Drawing::RGB_To_Int(r,g,b); }
+int rarityInk(Research::Rarity rarity,int fallback) {
+    if(static_cast<size_t>(rarity)>=Research::rarityCount) return fallback;
+    const auto& rgb=Research::Detail::rarityColors[static_cast<size_t>(rarity)];
+    return rgb?color((*rgb)[0],(*rgb)[1],(*rgb)[2]):fallback;
+}
 struct PngImage { int width=0,height=0; std::vector<BYTE> pixels; RectangleStruct content{}; };
 void measureImageContent(PngImage& image) {
     int left=image.width,top=image.height,right=0,bottom=0;
@@ -182,7 +192,7 @@ void measureImageContent(PngImage& image) {
     }
     if(right>left && bottom>top) image.content={left,top,right-left,bottom-top};
 }
-using ImageKey=std::tuple<std::string,int,Research::Rarity>;
+using ImageKey=std::tuple<std::string,int,std::optional<Research::Rarity>>;
 auto& imageCache() {
     static Resources::Cache<ImageKey,PngImage> cache(256,64*1024*1024);
     return cache;
@@ -275,11 +285,26 @@ void colorRarityIcon(PngImage& image,Research::Rarity rarity) {
     static const auto rare=makePalette({{{11,12,34},{53,62,161},{134,111,232},{233,226,255}}});
     static const auto epic=makePalette({{{38,24,5},{139,84,15},{225,166,45},{255,240,177}}});
     static const auto insane=makePalette({{{42,5,9},{147,18,33},{232,54,63},{255,195,185}}});
-    const auto& palette=rarity==Research::Rarity::Insane?insane:rarity==Research::Rarity::Epic?epic:rare;
+    const auto& custom=Research::Detail::rarityColors[static_cast<size_t>(rarity)];
+    if(!custom && rarity==Research::Rarity::Common) return;
+    const auto* palette=&(rarity==Research::Rarity::Insane?insane:rarity==Research::Rarity::Epic?epic:rare);
+    std::array<std::array<BYTE,3>,256> tinted;
+    if(custom) {
+        std::array<std::array<int,3>,4> stops{};
+        for(size_t c=0;c<3;++c) {
+            int channel=(*custom)[c];
+            stops[0][c]=channel/12;
+            stops[1][c]=channel/2;
+            stops[2][c]=channel;
+            stops[3][c]=channel+(255-channel)*2/3;
+        }
+        tinted=makePalette(stops);
+        palette=&tinted;
+    }
     for(size_t i=0;i<image.pixels.size();i+=4) {
         BYTE* p=image.pixels.data()+i;
         int light=(54*p[2]+183*p[1]+19*p[0]+128)>>8;
-        std::copy_n(palette[light].data(),3,p);
+        std::copy_n((*palette)[light].data(),3,p);
     }
 }
 bool readPcxPixels(BSurface& src,PngImage& out) {
@@ -304,7 +329,9 @@ bool readPcxPixels(BSurface& src,PngImage& out) {
     out.width=w;out.height=h;
     return true;
 }
-std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Research::Rarity rarity,bool png) {
+std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,std::optional<Research::Rarity> rarity,bool png) {
+    // Untinted UI art can share an original image with an uncolored Common project.
+    if(!rarity && !Research::Detail::rarityColors[static_cast<size_t>(Research::Rarity::Common)]) rarity=Research::Rarity::Common;
     return imageCache().get(ImageKey{Resources::pathKey(path),resource,rarity},[&] {
         PngImage image;
         if(png) loadPng(path,resource,image);
@@ -314,14 +341,14 @@ std::shared_ptr<const PngImage> imageFor(const std::string& path,int resource,Re
             if(!surface && pcx.LoadFile(path.c_str())) surface=pcx.GetSurface(path.c_str());
             if(surface) readPcxPixels(*surface,image);
         }
-        if(rarity!=Research::Rarity::Common) colorRarityIcon(image,rarity);
+        if(rarity && *rarity!=Research::Rarity::Invalid) colorRarityIcon(image,*rarity);
         if(!image.pixels.empty()) measureImageContent(image);
         return image;
     },[](const ImageKey& key,const PngImage& image) {
         return image.pixels.capacity()+2*(std::get<0>(key).size()+1)+sizeof(PngImage);
     });
 }
-bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rarity=Research::Rarity::Common,int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
+bool blit(const char* name, RectangleStruct rect,int crop=0,std::optional<Research::Rarity> rarity={},int opacity=255,const RectangleStruct* clip=nullptr,Surface* surface=DSurface::Composite) {
     // Zero IDs preserve legacy .pcx aliases for externally supplied PNGs.
     struct Builtin { const char* stem;int id; };
     static const Builtin builtins[]={{"sfrlab",101},{"sfrpanel",0},{"sfrfocus",0},{"sfrdefault",104},{"sfrheal",0},{"sfrdrain",0},{"sfrripst",0},{"sfframe",109},{"sfactive_default",110}};
@@ -340,9 +367,9 @@ bool blit(const char* name, RectangleStruct rect,int crop=0,Research::Rarity rar
     auto image=imageFor(path,resource,rarity,png);
     return !image->pixels.empty() && drawPng(*image,rect,crop,opacity,clip,surface);
 }
-void drawProjectIcon(const Research::Option& project,RectangleStruct rect,Surface* surface=DSurface::Composite) {
-    if(project.icon.empty() || !blit(project.icon.c_str(),rect,0,project.rarity,255,nullptr,surface))
-        blit("sfrdefault.pcx",rect,0,project.rarity,255,nullptr,surface);
+void drawProjectIcon(const Research::Option& project,RectangleStruct rect,Surface* surface=DSurface::Composite,int opacity=255) {
+    if(project.icon.empty() || !blit(project.icon.c_str(),rect,0,project.rarity,opacity,nullptr,surface))
+        blit("sfrdefault.pcx",rect,0,project.rarity,opacity,nullptr,surface);
 }
 std::wstring targetLabel(const Research::Option& option,bool compact) {
     if(!option.targetLabel.empty()) return option.targetLabel;
@@ -389,9 +416,8 @@ std::wstring targetLabel(const Research::Option& option,bool compact) {
 std::wstring cardSubtitle(const Research::Option& project) {
     return std::wstring(Research::rarityName(project.rarity))+L"  ·  "+targetLabel(project,true);
 }
-std::vector<std::wstring> tooltipLines(int option,int width,int maxHeight) {
-    wchar_t conditions[96]{};
-    std::wistringstream detail(Research::describe(option,conditions));
+std::vector<std::wstring> tooltipLines(const std::wstring& text,int width,int maxHeight) {
+    std::wistringstream detail(text);
     std::vector<std::wstring> detailLines;
     for(std::wstring line;std::getline(detail,line);) {
         if(line.empty()) {detailLines.emplace_back();continue;}
@@ -414,24 +440,148 @@ std::vector<std::wstring> tooltipLines(int option,int width,int maxHeight) {
     }
     return detailLines;
 }
-int tooltipHeight(const std::vector<std::wstring>& lines) {
-    return 60+20*std::max(0,static_cast<int>(lines.size())-1);
+struct BondIcon {int project;bool owned;};
+struct TipRow {
+    std::wstring text;
+    bool bright=true;
+    std::vector<BondIcon> icons;
+    int iconSize=0;
+    int height() const {return iconSize?iconSize+4:20;}
+};
+struct TipPanel {
+    std::wstring title;
+    std::vector<TipRow> rows;
+    bool bond=false;
+    int height() const {
+        int body=0;
+        for(const auto& row:rows) body+=row.height();
+        return 40+std::max(20,body);
+    }
+};
+using TipPage=std::vector<TipPanel>;
+int pageHeight(const TipPage& page) {
+    int height=0;
+    for(const auto& panel:page) height+=panel.height()+4;
+    return height?height-4:0;
 }
-void paintTooltip(Surface* surface,int option,RectangleStruct rect,const std::vector<std::wstring>& detailLines) {
+std::vector<TipPage> makeTooltipPages(int option,int house,const std::wstring& text,int width,int maxHeight) {
+    const auto& project=Research::options[option];
+    auto groups=Research::memberBonds.find(project.id);
+    const bool hasBonds=groups!=Research::memberBonds.end();
+    TipPanel main{std::wstring(L"[")+Research::rarityName(project.rarity)+L"] "+project.name};
+    for(auto& line:tooltipLines(text,width,hasBonds?std::max(60,maxHeight/2):maxHeight))
+        main.rows.push_back({std::move(line)});
+    std::vector<TipPage> pages{{main}};
+    if(!hasBonds) return pages;
+    const bool repeatMain=maxHeight>=main.height()+4+76;
+    auto nextPage=[&](){pages.emplace_back();if(repeatMain) pages.back().push_back(main);};
+    const int freshSpace=maxHeight-(repeatMain?main.height()+4:0);
+    auto space=[&]() {return maxHeight-pageHeight(pages.back())-(pages.back().empty()?0:4);};
+    for(int index:groups->second) {
+        const auto& bond=Research::bonds[index];
+        const int count=Research::bondCount(house,bond);
+        auto title=L"羁绊 · "+bond.name+L"  "+std::to_wstring(count)+L"/"+std::to_wstring(bond.members.size());
+        std::vector<BondIcon> members;
+        for(const auto& id:bond.members) {
+            auto it=std::find_if(Research::options.begin(),Research::options.end(),[&](const auto& o){return o.id==id;});
+            if(it==Research::options.end()) continue;
+            members.push_back({static_cast<int>(it-Research::options.begin()),Research::owns(house,id)});
+        }
+        std::vector<TipRow> rewards;
+        for(const auto& tier:bond.tiers) {
+            std::wstring body=L"（"+std::to_wstring(tier.required)+L"）";
+            if(!tier.summary.empty()) body+=tier.summary;
+            else for(size_t i=0;i<tier.effects.size();++i) {
+                if(i) body+=L"，";
+                body+=Research::bondRewardText(tier.effects[i]);
+            }
+            for(auto& line:tooltipLines(body,width,INT_MAX))
+                rewards.push_back({std::move(line),count>=tier.required});
+        }
+        // Preserve member order and a single horizontal strip, even on small diplomacy pages.
+        constexpr int gap=4;
+        const int innerWidth=std::max(1,width-28);
+        const int preferred=(innerWidth+gap)/std::max(1,static_cast<int>(members.size()))-gap;
+        const int size=std::max(1,std::min({std::clamp(preferred,24,32),freshSpace-44,innerWidth}));
+        const int capacity=std::max(1,(innerWidth+gap)/(size+gap));
+        for(size_t first=0;first<members.size();first+=capacity) {
+            if(first) nextPage();
+            TipRow strip;
+            strip.iconSize=size;
+            auto end=std::min(members.size(),first+capacity);
+            strip.icons.assign(members.begin()+first,members.begin()+end);
+            TipPanel panel{title,{},true};
+            panel.rows.push_back(std::move(strip));
+            int fullHeight=panel.height()+static_cast<int>(rewards.size())*20;
+            if(panel.height()>space() || (fullHeight>space() && fullHeight<=freshSpace)) nextPage();
+            for(const auto& reward:rewards) {
+                if(panel.height()+reward.height()>space()) {
+                    pages.back().push_back(std::move(panel));
+                    nextPage();
+                    panel={title,{},true};
+                }
+                panel.rows.push_back(reward);
+            }
+            pages.back().push_back(std::move(panel));
+        }
+    }
+    if(pages.size()>1) for(size_t i=0;i<pages.size();++i)
+        pages[i].front().title=L"["+std::to_wstring(i+1)+L"/"+std::to_wstring(pages.size())+L"] "+pages[i].front().title;
+    return pages;
+}
+const std::vector<TipPage>& tooltipPages(int project,int house,const std::wstring& text,int width,int maxHeight) {
+    static std::tuple<int,int,std::wstring,int,int,unsigned,unsigned> key;
+    static std::vector<TipPage> pages;
+    auto next=std::make_tuple(project,house,text,width,maxHeight,Research::uiGeneration,Research::bondRevision);
+    if(next!=key || pages.empty()) {
+        pages=makeTooltipPages(project,house,text,width,maxHeight);key=std::move(next);
+    }
+    return pages;
+}
+void paintTooltip(Surface* surface,int option,RectangleStruct rect,const TipPanel& panel) {
     const auto& project=Research::options[option];
     surface->FillRect(&rect,color(15,19,35));
     surface->DrawRect(&rect,color(117,125,178));
-    auto title=std::wstring(L"[")+Research::rarityName(project.rarity)+L"] "+project.name;
-    int titleColor=project.rarity==Research::Rarity::Insane?color(255,111,117):project.rarity==Research::Rarity::Epic?color(255,213,112):color(211,201,255);
+    const auto& title=panel.title;
+    int titleColor=panel.bond?color(99,219,206):rarityInk(project.rarity,project.rarity==Research::Rarity::Insane?color(255,111,117):project.rarity==Research::Rarity::Epic?color(255,213,112):color(211,201,255));
     ResearchText::draw(title.c_str(),rect.X+14,rect.Y+8,titleColor,17,rect.Width-28,surface);
-    for(size_t i=0;i<detailLines.size();++i)
-        ResearchText::draw(detailLines[i].c_str(),rect.X+14,rect.Y+39+20*static_cast<int>(i),color(233,237,250),15,rect.Width-28,surface);
+    int y=rect.Y+(panel.bond?33:39);
+    for(const auto& row:panel.rows) {
+        int x=rect.X+14;
+        if(row.iconSize) {
+            for(const auto& icon:row.icons) {
+                RectangleStruct tile{x,y,row.iconSize,row.iconSize};
+                surface->FillRect(&tile,color(12,18,29));
+                RectangleStruct glyph{x+2,y+2,row.iconSize-4,row.iconSize-4};
+                drawProjectIcon(Research::options[icon.project],glyph,surface,icon.owned?255:88);
+                surface->DrawRect(&tile,icon.owned?color(105,176,178):color(51,61,76));
+                x+=row.iconSize+4;
+            }
+        } else {
+            int ink=row.bright?color(233,237,250):color(132,138,151);
+            ResearchText::draw(row.text.c_str(),x,y,ink,15,rect.Width-28,surface);
+        }
+        y+=row.height();
+    }
+}
+void paintPage(Surface* surface,int option,int x,int y,int width,const TipPage& page) {
+    for(const auto& panel:page) {
+        int height=panel.height();
+        paintTooltip(surface,option,{x,y,width,height},panel);
+        y+=height+4;
+    }
 }
 void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anchor=nullptr) {
     const auto& view=DSurface::ViewBounds;
     constexpr int width=328;
-    const auto detailLines=tooltipLines(option,width,view.Height);
-    const int height=tooltipHeight(detailLines);
+    const int house=HouseClass::CurrentPlayer->ArrayIndex;
+    const auto& pages=tooltipPages(option,house,Research::describe(option,house),width,view.Height);
+    static int previous=-1;static ULONGLONG since=0,last=0;
+    auto now=GetTickCount64();
+    if(option!=previous || now-last>500) {since=now;previous=option;}
+    last=now;
+    const auto& page=pages[((now-since)/5000)%pages.size()];
+    const int height=pageHeight(page);
     auto card=l.card(slot);
     int x=anchor?anchor->X-width/2:card.X+(card.Width-width)/2;
     int y=anchor?anchor->Y+anchor->Height+4:l.panel.Y+l.panel.Height+4;
@@ -442,7 +592,7 @@ void drawTooltip(const Layout& l,int slot,int option, const RectangleStruct* anc
     }
     x=std::clamp(x,view.X,std::max(view.X,view.X+view.Width-width));
     y=std::clamp(y,view.Y,std::max(view.Y,view.Y+view.Height-height));
-    paintTooltip(DSurface::Composite,option,{x,y,width,height},detailLines);
+    paintPage(DSurface::Composite,option,x,y,width,page);
 }
 void drawResearchButton(RectangleStruct tab,int points,double flash) {
     auto surface=DSurface::Composite;
@@ -503,7 +653,7 @@ void drawInfoTip(const RectangleStruct& icon) {
     RectangleStruct tip{std::max(view.X,icon.X+icon.Width-width),icon.Y+icon.Height+4,width,52};
     DSurface::Composite->FillRect(&tip,color(14,23,36));
     DSurface::Composite->DrawRect(&tip,color(75,111,131));
-    ResearchText::draw(L"流火实验室 0.39",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
+    ResearchText::draw(L"流火实验室 0.40",tip.X+10,tip.Y+5,color(218,240,251),16,width-20);
     ResearchText::draw(L"By 斩断云天",tip.X+10,tip.Y+28,color(159,194,210),14,width-20);
 }
 void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int size) {
@@ -513,7 +663,7 @@ void centered(const std::wstring& text,RectangleStruct bounds,int y,int ink,int 
 }
 // Cache the scaled foreground and alpha, never pixels blended with the map.
 void drawCardSkin(RectangleStruct rect) {
-    auto art=imageFor("sfrcard.png",108,Research::Rarity::Common,true);
+    auto art=imageFor("sfrcard.png",108,std::nullopt,true);
     auto& skin=cardSkinCache();
     auto& [source,width,height,pixels,alpha]=skin;
     auto surface=DSurface::Composite;
@@ -588,8 +738,8 @@ void drawCard(const Layout& l,int slot,int index,Point2D pointer,bool showRefres
     bool enabled=forceEnabled || Research::canApply(house->ArrayIndex,index);
     bool hovering=inside(c,pointer);
     drawCardSkin(c);
-    int accent=o.rarity==Research::Rarity::Insane?color(255,99,106):o.rarity==Research::Rarity::Epic?color(255,205,91):
-        o.rarity==Research::Rarity::Rare?color(109,211,250):color(169,205,213);
+    int accent=rarityInk(o.rarity,o.rarity==Research::Rarity::Insane?color(255,99,106):o.rarity==Research::Rarity::Epic?color(255,205,91):
+        o.rarity==Research::Rarity::Rare?color(109,211,250):color(169,205,213));
     if(hovering) {
         auto outline=c;
         DSurface::Composite->DrawRect(&outline,enabled?accent:color(100,112,123));
@@ -921,12 +1071,43 @@ void ResearchImages::drawBadge(Surface* surface,int project,RectangleStruct rect
     drawProjectIcon(Research::options[project],glyph,surface);
     surface->DrawRect(&rect,color(56,73,89));
 }
-ResearchImages::Bitmap ResearchImages::tooltip(int project,int width,int maxHeight) {
-    const auto lines=tooltipLines(project,width,maxHeight);
-    int height=tooltipHeight(lines);
-    Bitmap image(GameCreate<BSurface>(width,height));
-    paintTooltip(image.get(),project,{0,0,width,height},lines);
+ResearchImages::Bitmap ResearchImages::tooltip(int project,int house,const std::wstring& text,int width,int maxHeight,unsigned turn) {
+    const auto& pages=tooltipPages(project,house,text,width,maxHeight);
+    const auto& page=pages[turn%pages.size()];
+    Bitmap image(GameCreate<BSurface>(width,pageHeight(page)));
+    image->Fill(color(9,13,23));
+    paintPage(image.get(),project,0,0,width,page);
     return image;
+}
+DEFINE_HOOK(0x6D0A20,SF_PrepareCommandBarOrders,8) {
+    if(ActiveHUD::Bar::prepareNativeBar()) R->Stack<bool>(4,true);
+    return 0;
+}
+// The expanded bar has painted the slot backgrounds and is about to draw its gadgets.
+DEFINE_HOOK(0x6D0D4F,SF_PaintCommandBarOrders,5) {
+    ActiveHUD::Bar::paintNativeBar();
+    return 0;
+}
+DEFINE_HOOK(0x724AE2,SF_CommandBarTooltipText,5) {
+    const unsigned id=R->EAX<ToolTip*>()->GadgetID;
+    if((id&0xFFFF0000u)!=ActiveHUD::Bar::tooltipBase) return 0;
+    const unsigned index=id-ActiveHUD::Bar::tooltipBase;
+    R->EAX(index<CommandBarOrders::entries.size()?CommandBarOrders::entries[index].tooltip.c_str():L"");
+    return 0x724B06;
+}
+// SetCursor and RestoreCursor both dispatch through UpdateCursor. Resolve the
+// requested shape before the engine paints it or resets its animation frame.
+DEFINE_HOOK(0x5BDC80, SF_OrderTargetCursor, 7) {
+    const auto cursor=ActiveHUD::mapOrderCursor();
+    if(cursor!=MouseCursorType::Default) {
+        R->Stack(4,cursor);
+        R->Stack<bool>(8,false);
+    }
+    return 0;
+}
+DEFINE_HOOK(0x5BDAB0, SF_OrderTargetCursorMinimap, 7) {
+    if(ActiveHUD::mapOrderCursor()!=MouseCursorType::Default) R->Stack<bool>(4,false);
+    return 0;
 }
 DEFINE_HOOK(0x4F4583, SF_ResearchDraw, 6) {
     SonicRipple::draw(DSurface::Composite,DSurface::ViewBounds,Unsorted::CurrentFrame);
@@ -937,16 +1118,35 @@ DEFINE_HOOK(0x4F4583, SF_ResearchDraw, 6) {
     return 0;
 }
 namespace {
+void cancelOrderAim() {
+    ActiveHUD::Bar::cancel();
+    ActiveHUD::ui.aiming=-1;
+    ActiveHUD::ui.pressed=ActiveHUD::nothing;
+    ActiveHUD::updateOrderCursor();
+}
 bool hudButton(Point2D pointer,int flags) {
     bool researchVisible=visible();
     int researchHit=researchVisible?hitTest(layout(),pointer):-1;
+    if(ActiveHUD::aimingOrder()) {
+        if(flags&16) {cancelOrderAim();return true;}
+        const int slot=ActiveHUD::Bar::hit(pointer);
+        const bool ownButton=slot>=0 && slot==ActiveHUD::ui.barAiming;
+        if(ownButton || (inside(DSurface::ViewBounds,pointer) && researchHit<0 && slot<0)) {
+            ActiveHUD::input(pointer,flags);
+        } else {
+            ActiveHUD::ui.pressed=ActiveHUD::nothing;
+            ActiveHUD::ui.barPressed=ActiveHUD::nothing;
+        }
+        if(!ActiveHUD::aimingOrder()) ActiveHUD::updateOrderCursor();
+        return true;
+    }
     if(ActiveHUD::ui.pressed!=ActiveHUD::nothing && researchHit>=0 && (flags&4)) {
         ActiveHUD::ui.pressed=ActiveHUD::nothing;
         return true;
     }
-    if((researchHit<0 || ((flags&16) && ActiveHUD::ui.aiming>=0)) &&
+    if((researchHit<0 || ((flags&16) && (ActiveHUD::ui.aiming>=0 || ActiveHUD::ui.barAiming>=0))) &&
        Research::pressed<0 && ActiveHUD::input(pointer,flags)) return true;
-    if(researchHit>=0 && (flags&1)) ActiveHUD::ui.aiming=-1;
+    if(researchHit>=0 && (flags&1)) {ActiveHUD::ui.aiming=-1;ActiveHUD::Bar::cancel();}
     if(!researchVisible) return false;
     if(Research::expanded && (cardAnimation.pending || cardAnimation.selecting)) {
         Research::pressed=-1;Research::pressedOption=-1;
@@ -1017,6 +1217,8 @@ bool hudButton(Point2D pointer,int flags) {
 
 struct HUDMouseCapture {
     unsigned buttons=0,canceled=0;
+    unsigned orderClicks=0;
+    std::array<bool,256> orderKeys{};
     HWND window=nullptr; // Only set if Starfall acquired Windows mouse capture.
     unsigned generation=0;
     void release() {
@@ -1030,15 +1232,32 @@ struct HUDMouseCapture {
         Research::pressed=Research::pressedOption=-1;
         ActiveHUD::ui.pressed=ActiveHUD::nothing;
         ActiveHUD::ui.aiming=-1;
+        ActiveHUD::Bar::cancel();
+        ActiveHUD::updateOrderCursor();
+        orderClicks=0;
         release();
     }
 } hudCapture;
 
-bool windowMouse(HWND window,UINT msg,LPARAM coordinates) {
+bool windowMouse(HWND window,UINT msg,WPARAM key,LPARAM coordinates) {
     if(!window || window!=Game::hWnd) return false;
     if(msg==WM_KILLFOCUS || msg==WM_CANCELMODE || (msg==WM_CAPTURECHANGED && hudCapture.buttons && reinterpret_cast<HWND>(coordinates)!=window)) {
         hudCapture.cancel();
+        if(msg==WM_KILLFOCUS) hudCapture.orderKeys.fill(false);
         return false;
+    }
+    if(msg==WM_KEYUP && key<hudCapture.orderKeys.size() && hudCapture.orderKeys[key]) {
+        hudCapture.orderKeys[key]=false;
+        return true;
+    }
+    if(msg==WM_KEYDOWN && key<hudCapture.orderKeys.size()) {
+        if(hudCapture.orderKeys[key]) return true;
+        if(ActiveHUD::aimingOrder() && Game::IsActive && Unsorted::TacticalActive && ActiveHUD::available() &&
+           key!=VK_SHIFT && key!=VK_CONTROL && key!=VK_LWIN && key!=VK_RWIN) {
+            hudCapture.orderKeys[key]=true;
+            if(key==VK_ESCAPE) cancelOrderAim();
+            return true;
+        }
     }
     unsigned button;
     bool press;
@@ -1068,13 +1287,27 @@ bool windowMouse(HWND window,UINT msg,LPARAM coordinates) {
             hudButton(point,4);
             Research::pressed=Research::pressedOption=-1;
             ActiveHUD::ui.pressed=ActiveHUD::nothing;
+            ActiveHUD::ui.barPressed=ActiveHUD::nothing;
         }
         if(!hudCapture.buttons) hudCapture.release();
         return true;
     }
     hudCapture.canceled&=~button;
-    if(!battlefield || !inside(DSurface::ViewBounds,point)) return false;
+    if(!battlefield) return false;
+    // Windows reports the second press of a double-click after the first release has already confirmed or canceled.
+    if((msg==WM_LBUTTONDBLCLK || msg==WM_RBUTTONDBLCLK) && (hudCapture.orderClicks&button)) {
+        hudCapture.orderClicks&=~button;
+        hudCapture.canceled|=button;
+        return true;
+    }
+    hudCapture.orderClicks&=~button;
+    const bool aimingOrder=ActiveHUD::aimingOrder();
+    if(!aimingOrder && !inside(DSurface::ViewBounds,point) && ActiveHUD::Bar::hit(point)<0) {
+        ActiveHUD::Bar::cancel();
+        return false;
+    }
     if(!hudButton(point,button==1?1:16)) return false;
+    if(aimingOrder) hudCapture.orderClicks|=button;
     hudCapture.buttons|=button;
     if(!GetCapture()) {
         SetCapture(window);
@@ -1087,7 +1320,7 @@ bool windowMouse(HWND window,UINT msg,LPARAM coordinates) {
 // The window procedure dispatches map orders at 0x777640, then queues the same
 // mouse message for gadgets at 0x7779CB. Consume owned edges before either path.
 DEFINE_HOOK(0x777627, SF_HUDWindowMouse, 8) {
-    return windowMouse(R->Stack<HWND>(0x14),R->Stack<UINT>(0x18),R->Stack<LPARAM>(0x20))
+    return windowMouse(R->Stack<HWND>(0x14),R->Stack<UINT>(0x18),R->Stack<WPARAM>(0x1C),R->Stack<LPARAM>(0x20))
         ?0x777A5B:0;
 }
 // Reuse the game's serialized SpecialPlace envelope with a reserved negative ID.

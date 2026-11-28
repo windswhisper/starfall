@@ -134,6 +134,9 @@ DEFINE_HOOK(0x55B4EB,SF_TestHealthFormula,5) {
     const int maximum=holder->Type->Strength;
     if(frame==20) {
         grammar();
+        for(size_t k:{1u,2u})
+            check(percentLimits[k].clamp(400)==400 && percentLimits[k].clamp(1001)==1000 &&
+                percentLimits[k].clamp(0)==1,"firepower and armor accumulation limits");
         check(!skills.contains("removedshield"),"removed shield action rejected");
         check(skills.contains("dynamic") && skills.contains("growth") && !skills.contains("malformed"),"rejected invalid skill");
         check(skills.contains("damageformula") && !skills.contains("invaliddamagestate") && !skills.contains("invaliddamagekill"),"damage trigger validation");

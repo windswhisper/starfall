@@ -37,15 +37,15 @@ void readPercentLimits() {
     constexpr const char* section="Starfall.PassiveLimits";
     constexpr std::array keys={"Speed","Firepower","Armor","Scale","ProjectileScale","WeaponRange","FireRate"};
     for(size_t k=0;k<keys.size();++k) {
-        int limit=number(read(section,keys[k],"300%"),true);
+        const auto defaults=defaultPercentLimits[k];
+        int limit=number(read(section,keys[k],std::to_string(defaults.max).c_str()),true);
         if(limit<1) {
-            std::ofstream("Starfall.log",std::ios::app)<<"Starfall: ["<<section<<"] invalid "<<keys[k]<<", using 300%\n";
-            limit=300;
+            std::ofstream("Starfall.log",std::ios::app)<<"Starfall: ["<<section<<"] invalid "<<keys[k]<<", using "<<defaults.max<<"%\n";
+            limit=defaults.max;
         }
         const string minKey=string(keys[k])+".Min";
-        int defaultMin=k==scaleIndex?25:1;
-        defaultMin=std::min(defaultMin,limit);
-        int minimum=number(read(section,minKey.c_str(),k==scaleIndex?"25%":"1%"),true);
+        const int defaultMin=std::min(defaults.min,limit);
+        int minimum=number(read(section,minKey.c_str(),std::to_string(defaults.min).c_str()),true);
         if(minimum<1 || minimum>limit) {
             std::ofstream("Starfall.log",std::ios::app)<<"Starfall: ["<<section<<"] invalid "<<minKey<<", using "<<defaultMin<<"%\n";
             minimum=defaultMin;
@@ -271,8 +271,8 @@ std::optional<double> stateFormulaValue(const ConfigFormula& formula,TechnoClass
         live.gattlingStage=1+std::clamp(unit->CurrentGattlingStage,0,type->WeaponStages-1);
     }
     if(unit->Owner) {live.powerOutput=unit->Owner->PowerOutput;live.powerDrain=unit->Owner->PowerDrain;}
-    auto result=formula.expression.evaluate(hp.current,hp.maximum,0,distance,stackCount(unit->UniqueID,skillId),
-        values,&missing,type->Cost,type->Ammo<0?-1:unit->Ammo,unit->Passengers.NumPassengers,std::nullopt,std::nullopt,live);
+    auto result=formula.expression.evaluate(hp.current,hp.maximum,0,distance,heldUnitStacks(unit,skillId),
+        values,&missing,type->Cost,type->Ammo<0?-1:unit->Ammo,unit->Passengers.NumPassengers,std::nullopt,std::nullopt,live,unit->Owner?unit->Owner->ArrayIndex:-1,Research::counter);
     if(!result && !missing) formula.report();
     return result;
 }
@@ -418,6 +418,7 @@ size_t appendMountStates(TechnoClass* child,vector<string>& ids,TechnoClass*& pa
     return ownCount;
 }
 void tickStates() {
+    ProjectileShield::active.clear();
     if(UnitMount::links.empty() && buildingPower.empty() && !anyStateSkills && !anyPassiveVisuals && attachedAnims.empty() && activeAnimStates.empty() && applied.empty() && stateTimers.empty() && mirageUnits.empty() && immuneUnits.empty() && mindImmuneUnits.empty() && empUnits.empty() && cloakableUnits.empty()) return;
     for(auto& entry:activeTooltips) entry.second.clear();
     AnimFrame animFrame;
@@ -435,6 +436,7 @@ void tickStates() {
         Factors desired=identity;
         double scaleFactor=1.0,projectileFactor=1.0,rangeFactor=1.0,fireRateFactor=1.0;
         double powerFactor=1;
+        double experienceFactor=1;
         bool berserk=false,mirage=false,immune=false,mindImmune=false,emp=false,cloakable=false;
         PassiveTint tint{};
         std::string_view tintId;
@@ -446,7 +448,7 @@ void tickStates() {
         if(alive(unit) && (onMap || passengerOnly || rider)) {
             auto type=unit->GetTechnoType();
             const auto& native=unitSkills(unit);
-            if(!rider && native.empty() && old==applied.end() && !weaponRules.contains(unit->UniqueID) && !VisualScale::state.contains(unit->UniqueID) && !projectileState.contains(unit->UniqueID) && !rangeState.contains(unit->UniqueID) && !fireRateState.contains(unit->UniqueID) && !buildingPower.contains(unit->UniqueID) && !mirageUnits.contains(unit->UniqueID) && !empUnits.contains(unit->UniqueID) && !passiveTints.contains(unit->UniqueID) && !extraSkills(unit)) continue;
+            if(!rider && native.empty() && old==applied.end() && !weaponRules.contains(unit->UniqueID) && !VisualScale::state.contains(unit->UniqueID) && !projectileState.contains(unit->UniqueID) && !rangeState.contains(unit->UniqueID) && !fireRateState.contains(unit->UniqueID) && !experienceState.contains(unit->UniqueID) && !buildingPower.contains(unit->UniqueID) && !mirageUnits.contains(unit->UniqueID) && !empUnits.contains(unit->UniqueID) && !passiveTints.contains(unit->UniqueID) && !extraSkills(unit)) continue;
             auto ids=native;
             extraSkills(unit,&ids);
             int bits=stateOf(unit);
@@ -500,8 +502,11 @@ void tickStates() {
                 }
                 rangeFactor=std::clamp(rangeFactor*multipliers[3],0.0001,10000.0);
                 fireRateFactor=std::clamp(fireRateFactor*multipliers[4],0.0001,10000.0);
+                experienceFactor=std::min(10000.0,experienceFactor*multipliers[experienceMultiplierIndex]);
                 desired[1]=std::clamp(desired[1]*multipliers[1],0.0001,10000.0);
                 if(riding) continue;
+                if(onMap && !inherited && s.shield.radius>0)
+                    ProjectileShield::active.push_back({unit,s.shield});
                 scaleFactor*=s.visualScale/100.0;
                 projectileFactor*=s.projectileScale/100.0;
                 if(!inherited) powerFactor=std::min(10000.0,powerFactor*multipliers[powerMultiplierIndex]);
@@ -566,6 +571,8 @@ void tickStates() {
         else rangeState.erase(scaleId);
         if(fireRateFactor!=1.0) fireRateState[scaleId]=fireRateFactor;
         else fireRateState.erase(scaleId);
+        if(experienceFactor!=1.0) experienceState[scaleId]=experienceFactor;
+        else experienceState.erase(scaleId);
         updateSlots(unit->UniqueID,nextSlots);
         auto fields=statFields(unit);
         if(!fields[0]) desired[0]=1.0;

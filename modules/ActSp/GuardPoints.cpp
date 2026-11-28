@@ -8,11 +8,15 @@
 #include "GroundGuards.h"
 #include "BetterGarrison.h"
 #include "HighPlatforms.h"
+#include "Piercing.h"
+#include "FireOrigin.h"
+#include "BuildNodes.h"
+#include "EntityWalls.h"
 
 namespace {
 std::map<DWORD,CellStruct> overrides;
 constexpr wchar_t streamName[]=L"ActSp.GuardPoints";
-constexpr DWORD formatVersion=4;
+constexpr DWORD formatVersion=5;
 
 bool playable(CellStruct cell) {
     return cell.X>=0 && cell.X<512 && cell.Y>=0 && cell.Y<512 &&
@@ -25,7 +29,7 @@ bool needsRallyCommand(BuildingClass* building) {
 
 struct SavedPoint { DWORD owner; CellStruct cell; };
 static_assert(sizeof(SavedPoint)==8);
-struct SavedGround { DWORD post; GroundGuards::Slot slot; };
+struct SavedGround { DWORD post; int child; DWORD readyFrame; int house; };
 static_assert(sizeof(SavedGround)==16);
 struct SavedObjectOrder { DWORD post; int house; int target; };
 static_assert(sizeof(SavedObjectOrder)==12);
@@ -41,7 +45,7 @@ bool writePoints(IStream* stream) {
     const DWORD guards=static_cast<DWORD>(GroundGuards::slots.size());
     if(!write(guards)) return false;
     for(const auto& [post,slot]:GroundGuards::slots)
-        if(!write(SavedGround{post,slot})) return false;
+        if(!write(SavedGround{post,slot.child,slot.readyFrame,slot.house}) || !write(slot.dock)) return false;
     const DWORD orders=static_cast<DWORD>(BetterGarrison::orders.size());
     if(!write(orders)) return false;
     for(const auto& [post,order]:BetterGarrison::orders)
@@ -69,14 +73,17 @@ bool readPoints(IStream* stream) {
     if(version>=2) {
         DWORD guards=0;
         if(!read(guards)) return false;
-        prefix+=sizeof(DWORD)+static_cast<ULONGLONG>(guards)*sizeof(SavedGround);
+        const auto entrySize=sizeof(SavedGround)+(version>=5?sizeof(GroundGuards::DockState):0);
+        prefix+=sizeof(DWORD)+static_cast<ULONGLONG>(guards)*entrySize;
         if(info.cbSize.QuadPart<prefix || (version==2 && info.cbSize.QuadPart!=prefix)) return false;
         std::set<int> children;
         for(DWORD i=0;i<guards;++i) {
             SavedGround entry{};
-            if(!read(entry) || !entry.post || entry.slot.house<0 || entry.slot.house>=HouseClass::Array.Count ||
-               (entry.slot.child && !children.insert(entry.slot.child).second) ||
-               !slots.emplace(entry.post,entry.slot).second) return false;
+            auto dock=GroundGuards::DockState::None;
+            if(!read(entry) || (version>=5 && !read(dock)) || dock>GroundGuards::DockState::Parked ||
+               !entry.post || entry.house<0 || entry.house>=HouseClass::Array.Count ||
+               (entry.child && !children.insert(entry.child).second) ||
+               !slots.emplace(entry.post,GroundGuards::Slot{entry.child,entry.readyFrame,entry.house,dock}).second) return false;
         }
     }
     std::map<DWORD,BetterGarrison::Order> orders;
@@ -145,6 +152,10 @@ DEFINE_HOOK(0x4C6DD3,ActSp_ApplyGuardRally,8) {
 }
 
 void ActSp::reset() {
+    Piercing::reset();
+    FireOrigin::reset();
+    BuildNodes::reset();
+    EntityWalls::reset();
     GuardPoints::clearProfiles();
     overrides.clear();
     GroundGuards::slots.clear();
@@ -154,7 +165,7 @@ void ActSp::reset() {
 
 void ActSp::forget(DWORD id) {
     overrides.erase(id);
-    GroundGuards::slots.erase(id);
+    GroundGuards::forget(id);
     BetterGarrison::orders.erase(id);
     HighPlatforms::forget(id);
 }
@@ -165,13 +176,15 @@ bool ActSp::save(IStorage* storage) {
         return false;
     const bool ok=writePoints(stream);
     stream->Release();
-    return ok && HighPlatforms::save(storage);
+    return ok && HighPlatforms::save(storage) && Piercing::save(storage);
 }
 
 bool ActSp::load(IStorage* storage) {
+    BuildNodes::reset();
+    EntityWalls::reset();
     GuardPoints::clearProfiles();
     BetterGarrison::reset();
-    if(!storage || !HighPlatforms::load(storage)) return false;
+    if(!storage || !HighPlatforms::load(storage) || !Piercing::load(storage)) return false;
     IStream* stream=nullptr;
     HRESULT status=storage->OpenStream(streamName,nullptr,STGM_READ|STGM_SHARE_EXCLUSIVE,0,&stream);
     if(status==STG_E_FILENOTFOUND) {

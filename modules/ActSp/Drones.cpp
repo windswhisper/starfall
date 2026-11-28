@@ -2,8 +2,10 @@
 #include <AircraftTrackerClass.h>
 #include <BulletTypeClass.h>
 #include <CCINIClass.h>
+#include <InfantryTypeClass.h>
 #include <MapClass.h>
 #include <SpawnManagerClass.h>
+#include <UnitTypeClass.h>
 #include <Unsorted.h>
 #include <WeaponTypeClass.h>
 #include <array>
@@ -13,11 +15,13 @@
 #include <string_view>
 #include "GuardPoints.h"
 #include "GroundGuards.h"
+#include "BuildingDocks.h"
 
 namespace {
 enum class Mode { Native, Guard, Follow, Orbit };
 struct Rules {
     Mode mode=Mode::Native;
+    bool useBuildingDocks=false;
     CellStruct point{-1,-1};
     int radius=3;
     int period=180;
@@ -49,6 +53,7 @@ bool pair(const std::string& text,int min,int max,CellStruct& out) {
 }
 Rules readRules(const char* type) {
     Rules rules;
+    rules.useBuildingDocks=CCINIClass::INI_Rules->ReadBool(type,"Drone.UseBuildingDocks",false);
     auto mode=field(type,"Drone.Mode");
     if(mode.empty() || !_stricmp(mode.c_str(),"Native")) return rules;
     if(!_stricmp(mode.c_str(),"Guard")) {
@@ -67,13 +72,15 @@ Rules readRules(const char* type) {
     if(rules.mode==Mode::Guard) {
         auto id=field(type,"Drone.GroundUnit");
         if(!id.empty()) {
-            auto unit=UnitTypeClass::Find(id.c_str());
+            TechnoTypeClass* unit=UnitTypeClass::Find(id.c_str());
+            if(!unit) unit=InfantryTypeClass::Find(id.c_str());
             if(unit && unit->Speed>0 && !unit->Naval && !unit->JumpJet && !unit->BalloonHover &&
                unit->SpeedType!=SpeedType::Winged && unit->MovementZone!=MovementZone::Fly &&
                integer(field(type,"Drone.GroundRespawnDelay","300"),0,1000000,rules.ground.delay)) {
                 rules.ground.type=unit;
                 rules.ground.initialPoint=rules.point;
                 rules.ground.radius=rules.guardRange;
+                rules.ground.useBuildingDocks=rules.useBuildingDocks && unit->WhatAmI()==AbstractType::UnitType;
             } else OutputDebugStringA(("ActSp: invalid ground guard for ["+std::string(type)+"]\n").c_str());
         }
     }
@@ -85,6 +92,55 @@ const Rules& rulesFor(TechnoClass* owner) {
     if(added) it->second=readRules(type->ID);
     return it->second;
 }
+
+BuildingClass* dockHost(SpawnManagerClass* manager,AircraftClass* child) {
+    auto host=abstract_cast<BuildingClass*>(manager->Owner);
+    if(!host || !host->IsAlive || host->Health<=0 || host->InLimbo || !host->IsOnMap || !CCINIClass::INI_Rules ||
+       !child || !child->IsAlive || child->Health<=0 || child->IsCrashing || child->SpawnOwner!=host || child->Owner!=host->Owner ||
+       child->Type->MissileSpawn || host->Type->NumberOfDocks<=0 || child->Type->Dock.FindItemIndex(host->Type)<0 ||
+       !rulesFor(host).useBuildingDocks) return nullptr;
+    return host;
+}
+
+bool reserveDock(BuildingClass* host,AircraftClass* child) {
+    return BuildingDocks::reserve(host,child,host->Type->NumberOfDocks);
+}
+
+bool parkNewSpawn(BuildingClass* host,AircraftClass* child) {
+    if(host->CurrentMission==Mission::Construction || host->CurrentMission==Mission::Selling ||
+       !host->ActuallyPlacedOnMap || !reserveDock(host,child)) return false;
+    auto berth=host->GetDestination(child);
+    if(!child->Unlimbo(berth,host->PrimaryFacing.Current().GetDir())) {
+        child->SendCommand(RadioCommand::NotifyUnlink,host);
+        return false;
+    }
+    child->ForceMission(Mission::Sleep);
+    return true;
+}
+
+// A full airport must not send its own spawn to another airfield. Keep its
+// current position until a real berth is available, then let Enter land it.
+bool guideToDock(BuildingClass* host,AircraftClass* child) {
+    if(!reserveDock(host,child)) {
+        if(child->CurrentMission!=Mission::Sleep || child->Destination) {
+            child->SetDestination(nullptr,true);
+            child->Locomotor->Stop_Moving();
+            child->ForceMission(Mission::Sleep);
+        }
+        return false;
+    }
+    const auto delta=child->GetCoords()-host->GetDestination(child);
+    if(std::abs(delta.X)<=12 && std::abs(delta.Y)<=12 && std::abs(delta.Z)<=1) {
+        child->ForceMission(Mission::Sleep);
+        return true;
+    }
+    if(child->CurrentMission!=Mission::Enter || child->Destination!=host) {
+        child->SetDestination(host,true);
+        child->QueueMission(Mission::Enter,true);
+    }
+    return false;
+}
+
 const Rules* profile(SpawnManagerClass* manager,int slot) {
     auto owner=manager->Owner;
     const auto node=manager->SpawnedNodes[slot];
@@ -214,6 +270,9 @@ bool GuardPoints::eligible(TechnoClass* owner) {
 // Only relax the absent-target gate. Native launch timing, placement and node setup follow.
 DEFINE_HOOK(0x6B72A2, ActSp_IdleLaunch, 5) {
     auto manager=R->ESI<SpawnManagerClass*>();
+    auto child=R->EDI<AircraftClass*>();
+    if(auto host=dockHost(manager,child);host && child->InLimbo && !parkNewSpawn(host,child))
+        return 0x6B795A;
     if(manager->Target || manager->NewTarget) return 0;
     const int slot=R->EBX<int>();
     auto rules=profile(manager,slot);
@@ -223,17 +282,75 @@ DEFINE_HOOK(0x6B72A2, ActSp_IdleLaunch, 5) {
     return mount && mount->WeaponType && mount->WeaponType->Spawner ? 0x6B72AD : 0;
 }
 
+// AirportBound aircraft also ask for a home between missions. A busy pad
+// still belongs to their carrier; reporting no airfield can crash the plane.
+DEFINE_HOOK(0x41BBD3,ActSp_FindSpawnHomeAirport,6) {
+    auto child=R->ESI<AircraftClass*>();
+    auto owner=child->SpawnOwner;
+    if(owner && owner->SpawnManager) {
+        if(auto host=dockHost(owner->SpawnManager,child)) {
+            child->DockNowHeadingTo=host;
+            R->EAX(host);
+            return 0x41BC22;
+        }
+    }
+    return 0;
+}
+
+// EnterIdleMode requests a berth immediately and crashes AirportBound
+// aircraft if the radio link is refused. The spawn manager retries this one.
+DEFINE_HOOK_AGAIN(0x417B72,ActSp_WaitForSpawnDock,6)
+DEFINE_HOOK(0x4179E7,ActSp_WaitForSpawnDock,6) {
+    auto child=R->ESI<AircraftClass*>();
+    auto owner=child->SpawnOwner;
+    if(owner && owner->SpawnManager && dockHost(owner->SpawnManager,child)) {
+        R->EDI(static_cast<int>(Mission::Sleep));
+        return 0x417B44;
+    }
+    return 0;
+}
+
+// The native launch timer and target selection still apply. An aircraft
+// already on a pad can start its mission without being placed a second time.
+DEFINE_HOOK(0x6B73FC,ActSp_LaunchFromBuildingDock,5) {
+    auto manager=R->ESI<SpawnManagerClass*>();
+    auto child=R->EDI<AircraftClass*>();
+    auto host=dockHost(manager,child);
+    if(!host || child->InLimbo || !child->IsOnMap) return 0;
+    BuildingDocks::release(host,child);
+    manager->SpawnedNodes[R->EBX<int>()]->Status=SpawnNodeStatus::Preparing;
+    return 0x6B757A;
+}
+
+// Run before the stock/Phobos distance-to-carrier check. Airport berths
+// may lie several cells from the carrier's origin and at a different height.
+DEFINE_HOOK(0x6B7793,ActSp_ReturnToBuildingDock,7) {
+    auto manager=R->ESI<SpawnManagerClass*>();
+    auto child=R->EDI<AircraftClass*>();
+    auto host=dockHost(manager,child);
+    if(!host) return 0;
+    return guideToDock(host,child) ? 0x6B7809 : 0x6B795A;
+}
+
 // Just before the native return order for a preparing/attacking aircraft.
-// Leave empty aircraft on the normal return, docking and reload path.
+// The ordinary absent-target patrol only applies to aircraft with ammunition.
 DEFINE_HOOK(0x6B7663, ActSp_NoTargetPatrol, 5) {
     auto manager=R->ESI<SpawnManagerClass*>();
     auto child=R->EDI<AircraftClass*>();
-    if(manager->Target || manager->NewTarget) return 0;
     const int slot=R->EBX<int>();
-    auto rules=profile(manager,slot);
-    if(!rules) return 0;
-    auto point=station(*rules,manager,slot);
-    if(!point || !patrol(child,point,rules->guardRange)) return 0;
-    manager->SpawnedNodes[slot]->Status=SpawnNodeStatus::Preparing;
-    return 0x6B795A;
+    if(!manager->Target && !manager->NewTarget) {
+        if(auto rules=profile(manager,slot)) {
+            auto point=station(*rules,manager,slot);
+            if(point && patrol(child,point,rules->guardRange)) {
+                manager->SpawnedNodes[slot]->Status=SpawnNodeStatus::Preparing;
+                return 0x6B795A;
+            }
+        }
+    }
+    if(auto host=dockHost(manager,child)) {
+        child->SetTarget(nullptr);
+        manager->SpawnedNodes[slot]->Status=SpawnNodeStatus::Returning;
+        return guideToDock(host,child) ? 0x6B7809 : 0x6B795A;
+    }
+    return 0;
 }

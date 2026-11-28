@@ -21,20 +21,27 @@ void checkTheft(UnitClass* donor,TechnoClass* receiver) {
     check(a && b,"theft passengers");
     for(auto p:{a,b}) grantToUnit(p,PassiveGrant{{support.id},-1});
     refreshTransportGrants();
+    PassiveAction reduction{};
+    reduction.action="changepassivestack";reduction.target="self";reduction.passive=loot.id;reduction.amount=-10;
+    Event event{};event.holder=donor->UniqueID;
+    Objects live{{donor->UniqueID,donor}};
+    changeUnitStacks(donor,loot.id,1,loot.stackMax);
+    check(apply(reduction,event,donor,live,0) && unitStacks(donor,loot.id)==2 &&
+          !apply(reduction,event,donor,live,0),"excess reduction leaves passenger layers intact");
     PassiveAction action{};action.passiveList={loot.id};action.amount=1;
-    check(stackCount(donor->UniqueID,loot.id)==2 && !stealPassives(receiver,donor,action) &&
-        !stealPassives(receiver,donor,action) && stackCount(receiver->UniqueID,loot.id)==0,"support layers cannot be duplicated");
+    check(unitStacks(donor,loot.id)==2 && !stealPassives(receiver,donor,action) &&
+        !stealPassives(receiver,donor,action) && unitStacks(receiver,loot.id)==0,"support layers cannot be duplicated");
     changeStacks(donor->UniqueID,loot.id,2,10);
-    check(stealPassives(receiver,donor,action) && stackCount(donor->UniqueID,loot.id)==3 &&
-        stackCount(receiver->UniqueID,loot.id)==1,"mixed source manual theft");
+    check(stealPassives(receiver,donor,action) && unitStacks(donor,loot.id)==3 &&
+        unitStacks(receiver,loot.id)==1,"mixed source manual theft");
     check(stealPassives(receiver,donor,action) && !stealPassives(receiver,donor,action) &&
-        stackCount(donor->UniqueID,loot.id)==2 && ownsPassive(donor,loot.id) &&
-        stackCount(receiver->UniqueID,loot.id)==2,"support survives manual theft");
+        unitStacks(donor,loot.id)==2 && ownsPassive(donor,loot.id) &&
+        unitStacks(receiver,loot.id)==2,"support survives manual theft");
     refreshTransportGrants();
-    check(!stealPassives(receiver,donor,action) && stackCount(receiver->UniqueID,loot.id)==2,"refresh does not replenish stolen inventory");
+    check(!stealPassives(receiver,donor,action) && unitStacks(receiver,loot.id)==2,"refresh does not replenish stolen inventory");
     for(int i=0;i<2;++i) {auto p=donor->RemoveFirstPassenger();p->Transporter=nullptr;p->UnInit();}
     refreshTransportGrants();
-    check(stackCount(donor->UniqueID,loot.id)==0 && stackCount(receiver->UniqueID,loot.id)==2,"withdrawal preserves transferred manual layers");
+    check(unitStacks(donor,loot.id)==0 && unitStacks(receiver,loot.id)==2,"withdrawal preserves transferred manual layers");
     removeHeldPassive(receiver,loot.id);
     skills.erase(support.id);skills.erase(loot.id);
 }
@@ -81,18 +88,18 @@ DEFINE_HOOK(0x55B4EB,SF_TestTransportSupport,5) {
         grantToUnit(b,PassiveGrant{{"support","nonstacksupport"},-1});
         int points=Research::balance(house->ArrayIndex);
         sample();
-        check(stackCount(u->UniqueID,"boost")==2 && approx(u->FirepowerMultiplier,1.6) && Research::balance(house->ArrayIndex)==points+7,"two passengers stack");
+        check(unitStacks(u,"boost")==2 && approx(u->FirepowerMultiplier,1.6) && Research::balance(house->ArrayIndex)==points+7,"two passengers stack");
         capture("onkill",u,enemy,u,enemy,0);dispatch();check(Research::balance(house->ArrayIndex)==points+27,"snapshot layers");
         u->Passengers.RemoveFirstPassenger();b->Transporter=nullptr;sample();
-        check(stackCount(u->UniqueID,"boost")==1 && approx(u->FirepowerMultiplier,1.3),"passenger withdrawal");
+        check(unitStacks(u,"boost")==1 && approx(u->FirepowerMultiplier,1.3),"passenger withdrawal");
         check(changeStacks(u->UniqueID,"boost",1,2),"add manual stack");sample();
-        check(stackCount(u->UniqueID,"boost")==2 && approx(u->FirepowerMultiplier,1.6),"separate layers");
+        check(unitStacks(u,"boost")==2 && approx(u->FirepowerMultiplier,1.6),"separate layers");
         a->Health=type->Strength/2;sample();check(approx(u->SpeedMultiplier,1.5),"conditional support");
         a->Health=type->Strength;sample();check(approx(u->SpeedMultiplier,1.0),"conditional withdrawal");
-        check(approx(u->ArmorMultiplier,1.2) && stackCount(u->UniqueID,"armorboost")==0,"no stack");
+        check(approx(u->ArmorMultiplier,1.2) && unitStacks(u,"armorboost")==1,"no stack");
 
         u->EnterAsPassenger(b);b->Transporter=u;sample();
-        check(stackCount(u->UniqueID,"boost")==2 && Research::balance(house->ArrayIndex)==points+27,"overlapping gain stays once");
+        check(unitStacks(u,"boost")==2 && Research::balance(house->ArrayIndex)==points+27,"overlapping gain stays once");
         grantToUnit(b,PassiveGrant{{"personalcombat"},-1});
         b->Health=type->Strength/2;sample();
         checkCombat(b,a);
@@ -131,7 +138,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestTransportSupport,5) {
             <<" shooter flags "<<a->InOpenToppedTransport<<" "<<b->InOpenToppedTransport<<" fire error "<<int(a->GetFireError(dummy,0,true))<<"\n";
         check(normal && boosted && normal->Health>0 && boosted->Health==2*normal->Health,"open topped shot damage");
     } else {
-        sample();check(u->Passengers.NumPassengers==2 && stackCount(u->UniqueID,"boost")==2 && approx(u->FirepowerMultiplier,1.6),"load sources");
+        sample();check(u->Passengers.NumPassengers==2 && unitStacks(u,"boost")==2 && approx(u->FirepowerMultiplier,1.6),"load sources");
         check(Research::balance(house->ArrayIndex)==savedPoints,"load no repeated gain");
         auto first=u->Passengers.GetFirstPassenger();
         auto peer=static_cast<FootClass*>(first->NextObject);
@@ -145,7 +152,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestTransportSupport,5) {
         check(removed->Unlimbo(MapClass::Instance.GetCellAt(cell)->GetCoordsWithBridge(),DirType::North),"unload passenger");
         sample();checkCombat(removed,peer);
         check(approx(removed->ArmorMultiplier,1.75),"unloaded passenger uses normal state");
-        check(stackCount(u->UniqueID,"boost")==2 && approx(u->FirepowerMultiplier,1.6),"load removal");
+        check(unitStacks(u,"boost")==2 && approx(u->FirepowerMultiplier,1.6),"load removal");
         TerminateProcess(GetCurrentProcess(),0);
     }
     return 0;

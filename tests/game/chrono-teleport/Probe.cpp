@@ -11,6 +11,41 @@ TechnoClass* place(TechnoTypeClass* type,HouseClass* owner,CellStruct p) {
     check(u && cell && u->Unlimbo(cell->GetCoordsWithBridge(),DirType::North),"place fixture");
     return u;
 }
+void checkObjectDestinations(HouseClass* owner) {
+    const CellStruct center{70,74};
+    auto tank=UnitTypeClass::Find("MTNK");
+    auto reference=place(tank,owner,center);
+    auto warper=place(tank,owner,{65,74});
+    auto jumper=place(tank,owner,{65,75});
+    auto ejectee=place(tank,owner,{65,76});
+    auto carrier=static_cast<UnitClass*>(place(UnitTypeClass::Find("BFRT"),owner,{65,77}));
+    auto passenger=static_cast<FootClass*>(InfantryTypeClass::Find("E1")->CreateObject(owner));
+    carrier->EnterAsPassenger(passenger);passenger->Transporter=carrier;
+    Objects live;
+    for(auto unit:TechnoClass::Array) if(alive(unit)) live.emplace(unit->UniqueID,unit);
+    auto run=[&](const char* id,TechnoClass* mover,bool incoming=false){
+        auto e=eventSnapshot(incoming?"ontakedamage":"onfire",mover,reference,incoming?reference:mover,incoming?mover:reference,1);
+        e.impact=mover->Location; // The event position differs from the live destination.
+        return apply(skills.at(id).actions.front(),e,mover,live,1);
+    };
+    auto nearReference=[&](CellStruct p){int dx=p.X-center.X,dy=p.Y-center.Y;return dx*dx+dy*dy<=9;};
+    auto flightNear=[&](TechnoClass* unit){
+        auto it=ForceMove::motions.find(unit->UniqueID);
+        if(it==ForceMove::motions.end()) return false;
+        const auto& m=it->second;
+        return nearReference(CellClass::Coord2Cell({m.x+m.dx,m.y+m.dy,0}));
+    };
+    for(auto id:{"warptounit","jumptounit","ejecttounit","passengerstounit"}) {
+        check(skills.contains(id),"object destination rule parsed");
+        auto absent=eventSnapshot("onfire",warper,nullptr,warper,nullptr,0);
+        absent.hasImpact=true;absent.impact=reference->Location;
+        check(!apply(skills.at(id).actions.front(),absent,warper,live,1),"missing target skips action despite impact");
+    }
+    check(run("warptounit",warper,true) && nearReference(warper->GetMapCoords()) && warper->GetMapCoords()!=center,"teleport near incoming attacker");
+    check(run("jumptounit",jumper) && flightNear(jumper),"vehicle jumps toward event target");
+    check(run("ejecttounit",ejectee) && flightNear(ejectee),"unit ejects toward event target");
+    check(run("passengerstounit",carrier) && flightNear(passenger),"passengers eject toward event target");
+}
 }
 DEFINE_HOOK(0x55B4EB,SF_TestChronoTeleport,5) {
     if(GetFileAttributesA("Starfall.test")==INVALID_FILE_ATTRIBUTES) return 0;
@@ -21,6 +56,7 @@ DEFINE_HOOK(0x55B4EB,SF_TestChronoTeleport,5) {
         Research::ensureReady();
         check(skills.contains("fixedwarp") && skills.contains("scriptwarp") &&
               !skills.contains("badcoordinates") && !skills.contains("badradius"),"config validation");
+        checkObjectDestinations(house);
         auto carrier=static_cast<UnitClass*>(place(UnitTypeClass::Find("BFRT"),house,{46,72}));
         auto peer=place(UnitTypeClass::Find("MTNK"),house,{49,74});
         auto passenger=static_cast<FootClass*>(InfantryTypeClass::Find("E1")->CreateObject(house));

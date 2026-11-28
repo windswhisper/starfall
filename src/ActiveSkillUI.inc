@@ -17,24 +17,65 @@ int cooldownSeconds(const Group& group) {
     // Game seconds use 15 simulation frames; avoid overflow at INT_MAX.
     return group.cooldownFrames/15+(group.cooldownFrames%15!=0);
 }
+struct BarAppearance {
+    int order,x,y,width,height,frame;
+    bool operator==(const BarAppearance&) const=default;
+};
 struct State {
     unsigned generation=0;
     HouseClass* house=nullptr;
     int aiming=-1,pressed=nothing,page=0;
+    int barAiming=-1,barPressed=nothing;
+    bool showSelectedOrderAreas=true;
+    std::map<std::string,std::unique_ptr<SHPReference>> barImages;
+    std::map<int,std::unique_ptr<ShapeButtonClass,GameDeleter>> barGadgets;
+    std::vector<BarAppearance> barAppearance;
+    std::set<std::string> reportedBarImages;
     std::vector<DWORD> selection;
     std::set<std::pair<int,DWORD>> awaiting;
     std::deque<EventClass> unsent;
 } ui;
 
+MouseCursorType orderCursor() {
+    if(ui.barAiming>=0 && ui.barAiming<static_cast<int>(CommandBarOrders::entries.size()))
+        return CommandBarOrders::entries[ui.barAiming].enterKinds?MouseCursorType::Enter:MouseCursorType::Attack;
+    if(ui.aiming>=0 && ui.aiming<static_cast<int>(ActiveSkills::specs.size()))
+        return ActiveSkills::specs[ui.aiming].orderCursor;
+    return MouseCursorType::Default;
+}
+bool aimingOrder() {return orderCursor()!=MouseCursorType::Default;}
+void updateOrderCursor(MouseCursorType cursor=MouseCursorType::Default) {
+    static MouseCursorType previous=MouseCursorType::Default;
+    auto& mouse=MouseClass::Instance;
+    if(cursor!=MouseCursorType::Default) {
+        if(mouse.MouseCursorIndex!=cursor || mouse.MouseCursorIsMini)
+            mouse.UpdateCursor(cursor,false);
+    } else if(previous!=MouseCursorType::Default && mouse.MouseCursorIndex==previous) {
+        mouse.UpdateCursor(MouseCursorType::Default,false);
+    }
+    previous=cursor;
+}
+
 bool available() {
     auto h=HouseClass::CurrentPlayer;
-    return !ActiveSkills::specs.empty() && h && !h->Defeated && !h->IsObserver() && ScenarioClass::Instance &&
+    return (!ActiveSkills::specs.empty() || !CommandBarOrders::entries.empty()) && h && !h->Defeated && !h->IsObserver() && ScenarioClass::Instance &&
         !ScenarioClass::Instance->UserInputLocked && TacticalClass::Instance && DSurface::Composite;
 }
-void synchronize() {
+MouseCursorType mapOrderCursor() {
+    const auto cursor=orderCursor();
+    if(cursor==MouseCursorType::Default || ui.generation!=ActiveSkills::generation ||
+       ui.house!=HouseClass::CurrentPlayer || !Game::IsActive || !Unsorted::TacticalActive ||
+       Unsorted::UserInputLocked || Research::expanded || !available() || !WWMouseClass::Instance ||
+       !inside(DSurface::ViewBounds,WWMouseClass::Instance->XY1)) return MouseCursorType::Default;
+    return cursor;
+}
+void syncLocalState() {
     if(ui.generation!=ActiveSkills::generation || ui.house!=HouseClass::CurrentPlayer) {
         ui=State{};ui.generation=ActiveSkills::generation;ui.house=HouseClass::CurrentPlayer;
     }
+}
+void synchronize() {
+    syncLocalState();
     while(!ui.unsent.empty() && EventClass::OutList.Add(ui.unsent.front())) ui.unsent.pop_front();
 }
 std::vector<Group> groups() {
@@ -54,7 +95,7 @@ std::vector<Group> groups() {
         }
     }
     std::sort(ids.begin(),ids.end());
-    if(ids!=ui.selection) {ui.aiming=-1;ui.pressed=nothing;ui.page=0;ui.selection=std::move(ids);}
+    if(ids!=ui.selection) {ui.barAiming=-1;ui.barPressed=nothing;ui.aiming=-1;ui.pressed=nothing;ui.page=0;ui.showSelectedOrderAreas=true;ui.selection=std::move(ids);}
     if(!grouped.contains(ui.aiming) || grouped[ui.aiming].ready.empty()) ui.aiming=-1;
     std::vector<Group> result;
     for(auto& [index,g]:grouped) result.push_back(std::move(g));
@@ -87,6 +128,7 @@ std::vector<Choice> choose(const Group& group,const Pick& pick) {
     for(auto caster:group.ready) {
         CellStruct end{};
         if(!ActiveSkills::aim(spec,caster,pick.unit,pick.cell,end)) continue;
+        if(spec.eject && !ForceMove::canEject(caster,end,*spec.eject)) continue;
         auto origin=caster->GetMapCoords();
         auto goal=spec.kind==Kind::Direction?pick.cell:end;
         int dx=origin.X-goal.X,dy=origin.Y-goal.Y;
@@ -95,8 +137,24 @@ std::vector<Choice> choose(const Group& group,const Pick& pick) {
     std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){
         return a.squared!=b.squared?a.squared<b.squared:a.caster->UniqueID<b.caster->UniqueID;
     });
+    if(spec.jump) {
+        std::vector<CellStruct> claimed;
+        std::vector<Choice> assigned;
+        for(auto choice:choices) {
+            auto slot=ForceMove::jumpSlot(choice.caster,pick.cell,*spec.jump,claimed);
+            if(!slot) continue;
+            choice.end=*slot;claimed.push_back(*slot);assigned.push_back(choice);
+            if(!spec.all) break;
+        }
+        return assigned;
+    }
     if(!spec.all && choices.size()>1) choices.resize(1);
     return choices;
+}
+void acknowledgeOrder(TechnoClass* speaker,MouseCursorType order,ObjectClass* target) {
+    if(!Unsorted::MoveFeedback || !VocClass::VoicesEnabled) return;
+    if(order==MouseCursorType::Enter) speaker->VoiceMove();
+    else if(order==MouseCursorType::Attack) speaker->VoiceAttack(target);
 }
 bool confirm(const Group& group,const Pick& pick) {
     const auto& spec=ActiveSkills::specs[group.index];
@@ -109,11 +167,39 @@ bool confirm(const Group& group,const Pick& pick) {
         ui.unsent.emplace_back(command);
     }
     if(choices.empty()) return false;
-    synchronize();ui.aiming=-1;playClick();return true;
+    if(spec.orderCursor!=MouseCursorType::Default) {
+        ui.showSelectedOrderAreas=false;
+        acknowledgeOrder(choices.front().caster,spec.orderCursor,pick.unit);
+    } else playClick();
+    synchronize();ui.aiming=-1;return true;
 }
+void circle(CoordStruct pos,int radius,int rgb);
+void drawOrderRange(CoordStruct pos,int radius,MouseCursorType style,bool valid=true) {
+    auto player=HouseClass::CurrentPlayer;
+    if(radius<=0 || !player || !DSurface::Composite) return;
+    ColorStruct base=valid?player->Color:ColorStruct{237,91,83};
+    // The native range renderer draws to Temp. Here the tactical view has already been composited.
+    auto previous=DSurface::Temp;
+    DSurface::Temp=DSurface::Composite;
+    if(style==MouseCursorType::Enter) {
+        Game::DrawRadialIndicator(false,true,pos,base,static_cast<float>(radius),false,true);
+    } else {
+        // Stock NukeSpecial has LineMultiplier=2. Its half-cell rings pulse in house color.
+        int phase=Unsorted::CurrentFrame%20;
+        for(int i=0;i<=radius*2;++i) {
+            int shade=10*std::abs(10-(phase+i)%20);
+            ColorStruct tint{static_cast<BYTE>(base.R-base.R*shade/256),
+                static_cast<BYTE>(base.G-base.G*shade/256),static_cast<BYTE>(base.B-base.B*shade/256)};
+            Game::DrawRadialIndicator(false,true,pos,tint,0.5f*i,false,false);
+        }
+    }
+    DSurface::Temp=previous;
+}
+#include "../modules/ActSp/CommandBarUI.inc"
 bool input(Point2D p,int flags) {
-    if(!available() || Research::expanded) {ui.aiming=-1;ui.pressed=nothing;return false;}
+    if(!available() || Research::expanded) {Bar::cancel();ui.aiming=-1;ui.pressed=nothing;return false;}
     auto items=groups();
+    if(Bar::input(p,flags)) return true;
     if((flags&0x10) && ui.aiming>=0) {ui.aiming=-1;ui.pressed=nothing;return true;}
     if(items.empty()) return false;
     int per=pageSize(),pages=(static_cast<int>(items.size())+per-1)/per;ui.page%=pages;
@@ -182,8 +268,11 @@ void preview(const Group& g,Point2D mouse) {
     auto pos=cell->GetCoordsWithBridge();
     bool valid=!choices.empty();
     int radius=s.kind==Kind::Area?s.radius*256:176;
-    if(!Indicator::marker(pos,radius,s.indicatorTexture,s.kind==Kind::Area,valid,s.indicatorOpacity,milliseconds)) circle(pos,radius,rgb);
+    if(s.orderCursor!=MouseCursorType::Default) drawOrderRange(pos,s.radius,s.orderCursor,valid);
+    else if(!Indicator::marker(pos,radius,s.indicatorTexture,s.kind==Kind::Area,valid,s.indicatorOpacity,milliseconds)) circle(pos,radius,rgb);
     for(const auto& c:choices) {
+        if(s.jump && c.end!=picked.cell)
+            circle(MapClass::Instance.GetCellAt(c.end)->GetCoordsWithBridge(),116,rgb);
         auto origin=Indicator::ground(c.caster);
         if(s.kind==Kind::Direction) {
             auto endCell=MapClass::Instance.TryGetCellAt(c.end);
@@ -196,8 +285,8 @@ void drawButtonArt(const ActiveSkills::Spec& spec,RectangleStruct rect,bool enab
     // Enlarge the subject, then crop to the solid rim so opaque image corners cannot escape.
     RectangleStruct icon{rect.X+5,rect.Y+4,54,54},clip{rect.X+10,rect.Y+9,44,44};
     int opacity=enabled?255:112;
-    if(spec.icon.empty() || !blit(spec.icon.c_str(),icon,0,Research::Rarity::Common,opacity,&clip))
-        blit("sfactive_default.png",icon,0,Research::Rarity::Common,opacity,&clip);
+    if(spec.icon.empty() || !blit(spec.icon.c_str(),icon,0,std::nullopt,opacity,&clip))
+        blit("sfactive_default.png",icon,0,std::nullopt,opacity,&clip);
     blit("sfframe.png",rect);
 }
 void drawButtonLabel(const ActiveSkills::Spec& spec,RectangleStruct rect,bool enabled) {
@@ -224,9 +313,21 @@ void drawCooldown(const Group& group,RectangleStruct rect) {
 }
 void draw() {
     synchronize();
-    if(!available() || !WWMouseClass::Instance || Research::expanded) return;
-    auto items=groups();if(items.empty()) return;
+    if(!available() || !WWMouseClass::Instance || Research::expanded) {updateOrderCursor();return;}
+    auto items=groups();
+    if(ui.showSelectedOrderAreas && !aimingOrder()) {
+        std::set<std::tuple<short,short,int,MouseCursorType>> shown;
+        for(auto id:ui.selection) {
+            CellStruct center{};int radius=0;
+            MouseCursorType style{};
+            if(ActiveSkills::orderArea(id,center,radius,style) && shown.emplace(center.X,center.Y,radius,style).second)
+                drawOrderRange(MapClass::Instance.GetCellAt(center)->GetCoordsWithBridge(),radius,style);
+        }
+    }
     auto mouse=WWMouseClass::Instance->XY1;
+    Bar::draw(mouse);
+    updateOrderCursor(mapOrderCursor());
+    if(items.empty()) return;
     auto surface=DSurface::Composite;
     int per=pageSize(),pages=(static_cast<int>(items.size())+per-1)/per;ui.page%=pages;
     const Group* hover=nullptr;const Group* aiming=nullptr;
@@ -258,6 +359,10 @@ void draw() {
 bool command(EventClass* event) {
     if(event->Type!=EventType::Place) return false;
     auto tag=static_cast<unsigned>(event->Place.RTTIType);
+    if((tag&0xffff0000u)==CommandBarOrders::eventTag) {
+        CommandBarOrders::execute(event->HouseIndex,tag&0xffff,event->Place.HeapID,event->Place.Location);
+        return true;
+    }
     if((tag&0xffff0000u)!=commandTag) return false;
     int index=tag&0xffff;
     if(HouseClass::CurrentPlayer && event->HouseIndex==HouseClass::CurrentPlayer->ArrayIndex)

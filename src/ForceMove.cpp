@@ -1,4 +1,7 @@
 #include "ForceMove.h"
+#include "../modules/ActSp/HighPlatforms.h"
+#include <OverlayTypeClass.h>
+#include <tuple>
 #include "UnitMount.h"
 #include "UnitHealth.h"
 #include <AircraftTrackerClass.h>
@@ -29,6 +32,10 @@ const Motion* find(const AbstractClass* unit) {
 int screenLift(const AbstractClass* unit) {
     const auto motion=find(unit);
     return motion?TacticalClass::AdjustForZ(motion->lift()):0;
+}
+int ejectionLift(const AbstractClass* unit) {
+    const auto m=find(unit);
+    return m && m->landing && m->landing->openHeight ? m->lift() : 0;
 }
 bool airborne(const AbstractClass* unit) {
     if(UnitMount::mounted(unit)) {
@@ -110,12 +117,14 @@ void syncAirTracker(Motion& motion) {
     }
 }
 void forget(DWORD id) {
+    ejectOrders.erase(id);descending.erase(id);
     if(auto it=motions.find(id);it!=motions.end()) {
         removeTracker(it->second);
         motions.erase(it);
     }
 }
 void clearMotions() {
+    ejectOrders.clear();descending.clear();
     for(auto& [id,motion]:motions) if(!motion.nativeTracked) removeTracker(motion);
     motions.clear();
 }
@@ -231,7 +240,7 @@ bool start(TechnoClass* unit,const Spec& spec,const CoordStruct& center) {
     return true;
 }
 // Sweep even one-frame moves in short steps to catch intervening cells.
-bool moveTo(FootClass* foot,int x,int y,bool ignoreCollision) {
+bool moveTo(FootClass* foot,int x,int y,bool ignoreCollision,std::optional<int> jumpZ) {
     auto from=foot->Location,pos=from;
     auto cell=foot->GetCell();
     bool bridge=foot->OnBridge;
@@ -256,7 +265,9 @@ bool moveTo(FootClass* foot,int x,int y,bool ignoreCollision) {
                foot->IsCellOccupied(dest,FacingType::None,level,cell,false)!=Move::OK)) break;
             bridge=deck;cell=dest;
         }
-        next.Z=map.GetCellFloorHeight(next)+(bridge?CellClass::BridgeHeight:0);
+        next.Z=map.GetCellFloorHeight(next);
+        if(jumpZ) bridge=dest->ContainsBridge() && *jumpZ>=next.Z+CellClass::BridgeHeight;
+        if(bridge) next.Z+=CellClass::BridgeHeight;
         pos=next;
     }
     if(pos!=from) {
@@ -297,6 +308,9 @@ bool land(FootClass* foot) {
     if(!clearForSolid(foot)) {crush(foot,nullptr);return false;}
     return true;
 }
+#include "VehicleJump.inc"
+#include "PassengerEjection.inc"
+
 void resume(FootClass* foot) {
     foot->ClearMegaMissionData();
     foot->NavQueue.Count=0;
@@ -310,6 +324,7 @@ void resume(FootClass* foot) {
 void tick() {
     auto frame=static_cast<unsigned>(Unsorted::CurrentFrame);
     std::erase_if(settling,[frame](const auto& e){return frame-e.second.start>=settleFrames;});
+    tickEjections(frame);
     if(motions.empty()) return;
     // A restored motion has no native pointer. Resolve all of them in one scan.
     if(std::any_of(motions.begin(),motions.end(),[](const auto& e){return !e.second.foot;}))
@@ -318,13 +333,20 @@ void tick() {
             if(found!=motions.end() && !found->second.foot) {
                 found->second.foot=foot;
                 found->second.trackerIndex=locateTracker(foot);
-                syncAirTracker(found->second);
+                if(!foot->InLimbo) syncAirTracker(found->second);
             }
         }
     vector<DWORD> completed;
     for(auto it=motions.begin();it!=motions.end();) {
         auto& m=it->second;
         auto foot=m.foot;
+        // A completely full map can gain free cells again. Rate-limit the
+        // emergency search, including while restoring a failed native opening.
+        if(m.landing && m.landing->openHeight && m.blocked && m.elapsed==m.duration-1 &&
+           frame-m.lastFrame<15) {++it;continue;}
+        if(m.landing && m.landing->openHeight && foot && foot->IsAlive && foot->InLimbo && !foot->Transporter) {
+            completed.push_back(it->first);++it;continue;
+        }
         if(!eligible(foot)) {
             bool ghost=m.ignoreCollision;
             if(!m.nativeTracked) {
@@ -344,8 +366,9 @@ void tick() {
         ++m.elapsed;
         if(!m.blocked) {
             auto pos=m.position();
-            m.blocked=!moveTo(foot,pos.X,pos.Y,m.ignoreCollision);
+            m.blocked=!moveTo(foot,pos.X,pos.Y,m.ignoreCollision,m.landing?std::optional<int>(m.jumpZ()):std::nullopt);
         }
+        if(m.landing && m.landing->openHeight) playEjectionCrawl(foot);
         syncAirTracker(m);
         foot->MarkForRedraw();
         if(m.elapsed==m.duration || (!m.ignoreCollision && m.blocked && !m.height && !m.startHeight)) {
@@ -367,10 +390,16 @@ void tick() {
             auto pos=foot->Location;
             moveTo(foot,(pos.X/256)*256+128,(pos.Y/256)*256+128,motion.ignoreCollision);
         }
-        bool survived=!motion.ignoreCollision || land(foot);
+        if(motion.landing && motion.landing->openHeight) {
+            finishEjection(id,motion);
+            continue;
+        }
+        bool survived=!motion.ignoreCollision || (motion.landing?landJump(foot,motion):land(foot));
+        if(motion.landing && !survived) continue;
         motions.erase(id);
         if(!survived) continue;
         if(motion.ignoreCollision) foot->MarkAllOccupationBits(foot->Location);
+        if(motion.landing) playJumpEffect(motion.landing->effect,foot->Location,foot->Owner);
         releaseTilt(foot,motion);
         TargetClass handle(foot);
         foot->UpdatePosition(PCPType::During);

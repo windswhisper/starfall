@@ -1,21 +1,33 @@
-// Native SW types carry this marker through the game's own save stream.
+#include "ActionSequence.h"
+#include "ActiveSkills.h"
+#include "ConfigText.h"
+#include "PassiveRules.h"
+#include <CCINIClass.h>
+#include <HouseClass.h>
+#include <SuperClass.h>
+#include <Unsorted.h>
+#include <WarheadTypeClass.h>
+
 namespace ActionSequence {
-constexpr auto type=static_cast<SuperWeaponType>(-0x534651);
-using Sections=std::map<string,ScriptFields>;
+using namespace PassiveRules;
+using ConfigText::includes;
+using ConfigText::lower;
+using ConfigText::number;
+using ConfigText::trim;
+
 Sections mapFields;
 std::map<string,vector<Skill>> definitions;
 std::map<WarheadTypeClass*,const Skill*> warheadScripts;
 LuaTimers::Store timers;
-struct Cast {string typeId;int owner;CellStruct point;};
 std::map<int,string> mapScripts;
 std::map<DWORD,Cast> casts;
 DWORD lastCast=0;
 
 bool fieldName(const string& key) {
-    // The map overlay also persists warhead house flags needed by single-target damage.
+    // The saved map overlay also retains custom unit labels and warhead house flags.
     return key=="starfall.detonatescript" || key=="starfall.detonatefunction" ||
         key=="starfall.firescript" || key=="starfall.firefunction" || key=="affectsowner" || key=="affectsenemies" || key=="affectsneutral" ||
-        key=="starfall.actions" || key=="starfall.target" || key=="action" || key=="script" || key=="function" ||
+        key=="tipslabel" || key=="starfall.actions" || key=="starfall.target" || key=="action" || key=="script" || key=="function" ||
         key.starts_with("action.") || key.starts_with("script.param.");
 }
 void collect(CCINIClass* ini,Sections& out) {
@@ -47,10 +59,10 @@ ScriptFields fields(const Sections& rules,const string& id) {
         for(const auto& [key,value]:found->second) values[key]=value;
     return values;
 }
-bool houseAction(const string& name) {return name=="givecredits" || name=="giveresearchpoints" || name=="grantrandomresearch" || name=="grantfreeresearch" || name=="grantresearch";}
+bool houseAction(const string& name) {return name=="changeresearchcounter" || name=="givecredits" || name=="giveresearchpoints" || name=="grantrandomresearch" || name=="grantfreeresearch" || name=="grantresearch";}
 // Translate the SW's point and house to the location/owner paths in the
 // existing action executor. A unit action in Lua must carry a real unit handle.
-bool prepare(ScriptFields& f,bool selected=false) {
+bool prepare(ScriptFields& f,bool selected) {
     auto name=lower(f["action"]);
     string target=f.contains("action.target")?lower(f.at("action.target")):"";
     if(name=="runscript") return !selected && target.empty();
@@ -151,49 +163,66 @@ void retire(DWORD id) {
     timers.forget(id);casts.erase(id);
 }
 void reset() {warheadScripts.clear();definitions.clear();mapScripts.clear();mapFields.clear();casts.clear();lastCast=0;timers={};}
-template<class W> void write(W& w) {
-    w.word(lastCast);w.word(static_cast<DWORD>(casts.size()));
-    for(const auto& [id,c]:casts) {w.word(id);w.str(c.typeId);w.word(c.owner);w.word(c.point.X);w.word(c.point.Y);}
-    timers.write(w);
-    w.word(static_cast<DWORD>(mapFields.size()));
-    for(const auto& [id,fields]:mapFields) {
-        w.str(id);w.word(static_cast<DWORD>(fields.size()));
-        for(const auto& [key,value]:fields){w.str(key);w.str(value);}
-    }
+
+static bool fireSequence(SuperClass* sw,CellStruct point) {
+    if(!sw->Owner || sw->Owner->Defeated || !ActiveSkills::playable(point)) return false;
+    Research::ensureReady();
+    auto steps=definitions.find(lower(sw->Type->ID));
+    if(steps==definitions.end() || steps->second.empty() || lastCast==UINT32_MAX) return false;
+    auto id=++lastCast;
+    auto& cast=casts.emplace(id,Cast{sw->Type->ID,sw->Owner->ArrayIndex,point}).first->second;
+    executeSteps(id,cast,steps->second);
+    retire(id);
+    return true;
 }
-// Keep this block staged until the enclosing save stream has also been validated.
-struct SavedState {
-    decltype(casts) casts;
-    LuaTimers::Store timers;
-    Sections mapFields;
-    DWORD lastCast=0;
-    void commit() {
-        ActionSequence::casts.swap(casts);
-        ActionSequence::timers=std::move(timers);
-        ActionSequence::mapFields.swap(mapFields);
-        ActionSequence::lastCast=lastCast;
-    }
-};
-template<class R> SavedState readSaved(R& r) {
-    auto last=r.word();decltype(casts) restored;
-    for(auto n=r.word();n && r.ok;--n) {
-        auto id=r.word();auto typeId=r.str();auto house=r.word(),x=r.word(),y=r.word();
-        bool noPoint=x==UINT32_MAX && y==UINT32_MAX && typeId.starts_with("@map:");
-        if(!id || id>last || typeId.empty() || house>127 || (!noPoint && (x>=512 || y>=512)) ||
-           !restored.emplace(id,Cast{typeId,static_cast<int>(house),{static_cast<short>(x),static_cast<short>(y)}}).second) r.ok=false;
-    }
-    LuaTimers::Store pending;if(r.ok) pending.read(r);
-    for(const auto& entry:pending.queue) if(!restored.contains(entry.second.owner)) r.ok=false;
-    Sections map;
-    for(auto n=r.word();n && r.ok;--n) {
-        auto id=r.str(2047);auto count=r.word();
-        if(id.empty() || map.contains(id)) {r.ok=false;break;}
-        auto& f=map[id];
-        while(count-- && r.ok) {
-            auto key=r.str(2047),value=r.str(32767);
-            if((!fieldName(key) && id!="starfall.mapscripts") || !f.emplace(key,value).second) r.ok=false;
+bool consumeCommand(int sender,int index,CellStruct point) {
+    if(index<0 || index>=SuperWeaponTypeClass::Array.Count ||
+       SuperWeaponTypeClass::Array.Items[index]->Type!=ActionSequence::type) return false;
+    if(sender<0 || sender>=HouseClass::Array.Count) return true;
+    auto house=HouseClass::Array.Items[sender];
+    if(!house || house->IsObserver() || index>=house->Supers.Count) return true;
+    auto sw=house->Supers.Items[index];
+    if(!sw || !sw->IsPresent || !sw->IsReady || sw->IsSuspended || !fireSequence(sw,point)) return true;
+    sw->Reset();
+    if(sw->IsOneTime) {sw->IsOneTime=false;sw->Lose();}
+    if(house==HouseClass::CurrentPlayer && Unsorted::CurrentSWType==index) Unsorted::CurrentSWType=-1;
+    return true;
+}
+}
+
+// Read the custom name at the native Type parser. Apart from this effect
+// marker and a point cursor, the SW remains an ordinary per-house instance.
+DEFINE_HOOK(0x6CEC32,SF_ActionSequenceType,7) {
+    if(_stricmp(R->lea_Stack<const char*>(0x58),"ActionSequence")) return 0;
+    auto sw=R->EBP<SuperWeaponTypeClass*>();
+    sw->Type=ActionSequence::type;sw->Action=Action::ParaDrop;
+    return 0x6CEC84;
+}
+// At this site native ClickFire has checked availability. Rejoin its normal
+// charge/one-shot bookkeeping immediately after the built-in effect call.
+DEFINE_HOOK(0x6CBAF9,SF_ActionSequenceClick,8) {
+    auto sw=R->ESI<SuperClass*>();
+    if(sw->Type->Type!=ActionSequence::type) return 0;
+    auto point=R->Stack<CellStruct*>(0x24);
+    if(!sw->IsPresent || !sw->IsReady || sw->IsSuspended || !point || !ActionSequence::fireSequence(sw,*point)) return 0x6CBC94;
+    if(sw->Owner==HouseClass::CurrentPlayer && Unsorted::CurrentSWType==sw->Type->ArrayIndex)
+        Unsorted::CurrentSWType=-1;
+    return 0x6CBB0A;
+}
+// Direct engine launches (e.g. scripted launches) bypass ClickFire.
+DEFINE_HOOK(0x6CC390,SF_ActionSequenceLaunch,6) {
+    auto sw=R->ECX<SuperClass*>();
+    if(sw->Type->Type!=ActionSequence::type) return 0;
+    if(auto point=R->Stack<CellStruct*>(4)) ActionSequence::fireSequence(sw,*point);
+    return 0x6CC482;
+}
+DEFINE_HOOK(0x6CEEB0,SF_SelectedSequence,8) {
+    int index=Unsorted::CurrentSWType;
+    if(index>=0 && index<SuperWeaponTypeClass::Array.Count) {
+        auto sw=SuperWeaponTypeClass::Array.Items[index];
+        if(sw && sw->Type==ActionSequence::type && sw->Action==R->ECX<Action>()) {
+            R->EAX(sw);return 0x6CEEE5;
         }
     }
-    return {std::move(restored),std::move(pending),std::move(map),last};
-}
+    return 0;
 }

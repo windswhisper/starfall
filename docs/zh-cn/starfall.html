@@ -1,0 +1,1971 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="../../assets/brand/starfall-lab-comet-fragments.png"><title>StarfallLab 流火实验室</title><style>*{box-sizing:border-box}:root{color-scheme:light;--paper:#fcfbf8;--ink:#222d31;--dim:#576469;--line:#dadbd3;--hot:#a33622;--pale:#f4e6dc;--head:#202e32;--sans:Inter,"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",sans-serif;--mono:"IBM Plex Mono",Consolas,"Microsoft YaHei",monospace}html{scroll-padding-top:84px}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.85 var(--sans)}a{color:var(--hot);text-underline-offset:3px}button,input{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,pre:focus-visible{outline:3px solid #cc754e;outline-offset:3px}[hidden]{display:none!important}.skip{position:fixed;top:-60px;z-index:10;background:white;padding:6px 15px}.skip:focus{top:5px}.top{position:sticky;top:0;z-index:5;background:var(--head);color:white;border-bottom:3px solid #c95737}.bar{max-width:1410px;margin:auto;padding:0 36px;height:62px;display:flex;align-items:center;gap:17px}.brand{color:white;text-decoration:none;display:flex;align-items:center;gap:12px;font-weight:750;font-size:20px;letter-spacing:-.45px}.emblem{width:30px;height:30px;object-fit:contain}.brand span:last-child{font-weight:560;letter-spacing:.03em}.version{color:#dcdfd9;border-left:1px solid #5a686a;padding-left:16px;font:13px var(--mono)}.tools{margin-left:auto;display:flex;align-items:center;gap:18px}.tools a,.tools button{color:#e7ecea;background:transparent;border:0;font-size:13px;text-decoration:none}.tools a:hover,.tools button:hover{text-decoration:underline}.searchbox{display:flex;align-items:center;gap:10px;background:#354448;border:1px solid #617072;border-radius:5px;padding:3px 10px}.searchbox:focus-within{outline:2px solid #efaa89}.lens{width:12px;height:12px;border:1.6px solid #c2ceca;border-radius:50%;position:relative}.lens:after{content:"";position:absolute;right:-4px;bottom:-2px;background:#c2ceca;width:5px;height:1.5px;transform:rotate(45deg)}.searchbox input{width:190px;min-width:0;background:transparent;border:0;color:white;line-height:27px;font-size:14px}.searchbox input::placeholder{color:#e2e6e4}.searchbox input:focus{outline:none}kbd{border:1px solid #829090;border-radius:3px;padding:0 5px;color:#e4e9e6;font:11px/19px var(--mono)}.frame{max-width:1320px;margin:auto;display:grid;grid-template-columns:231px minmax(0,1fr);gap:clamp(28px,4.5vw,76px);padding:0 32px 0 24px}.sidebar{align-self:start;position:sticky;top:65px;height:calc(100vh - 65px);overflow-y:auto;border-right:1px solid var(--line);padding:27px 20px 34px 2px;scrollbar-width:thin}.nav-group+.nav-group{margin-top:15px}.group{font-size:12px;font-weight:700;color:var(--dim);padding:0 10px;margin-bottom:3px}.sidebar a{display:block;font-size:14px;text-decoration:none;color:#394549;padding:3px 9px;border-left:3px solid transparent;border-radius:0 4px 4px 0;line-height:1.75}.sidebar a:hover{background:#f0f0e9}.sidebar a[aria-current=page]{background:var(--pale);color:#8d301f;border-color:#bd4d31;font-weight:700}main{min-width:0;padding:36px 0 56px;max-width:960px;outline:none}article{margin-bottom:48px}.crumb{font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.05em}.crumb span{padding:0 6px;color:#adb1a9}h1,h2,h3{line-height:1.35}h1,h2{margin:13px 0 20px;font-size:clamp(30px,3vw,44px);letter-spacing:-.045em}h2{font-size:clamp(27px,2.5vw,37px)}h3{margin:32px 0 12px;font-size:20px;letter-spacing:-.02em}p{margin:13px 0}p.lead{color:var(--dim);margin-top:-10px}.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:23px 0 30px}.card{display:grid;align-content:start;background:#fff;border:1px solid var(--line);border-top:3px solid #b34d34;border-radius:4px;padding:19px 20px;color:var(--ink);text-decoration:none;gap:5px}.card:nth-child(2){border-top-color:#4c7276}.card:hover{border-color:#a95339;background:#fffaf5}.sig{font:12px var(--mono);color:var(--dim)}.card strong{display:flex;justify-content:space-between;font-size:19px}.card i{font:19px sans-serif;color:var(--hot)}.card span:last-child{color:var(--dim);font-size:14px}.table-wrap{margin:14px 0 22px;overflow:auto;border:1px solid var(--line);border-radius:4px;background:white}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.7}th,td{text-align:left;padding:11px 14px;vertical-align:top}thead{background:#eaece6;color:#485451}thead th{font-weight:650;font-size:13px}tbody tr+tr{border-top:1px solid #e5e6df}tbody th{width:23%;font-weight:600}tbody tr:hover{background:#fcfaf5}code{font-family:var(--mono);font-size:.92em;background:#eeeee8;color:#394c4f;border-radius:3px;padding:1px 4px;overflow-wrap:anywhere}th code{font-weight:600;color:#8c3d2b;background:transparent;padding:0}figure{margin:18px 0 25px;background:#1f2d31;color:#edf0e8;border-radius:6px;overflow:hidden}figcaption{display:flex;align-items:center;justify-content:space-between;padding:7px 15px;background:#2b3a3e;color:#cfdbd6;font:12px/1.5 var(--mono);gap:8px}figcaption b{color:#ffac86;letter-spacing:.06em;margin-right:8px}.copy{background:transparent;color:#e6eae7;border:1px solid #647275;border-radius:4px;padding:2px 9px;font:12px var(--sans);min-height:25px}.copy:hover{background:#43565a}pre{margin:0;padding:15px 18px 17px;overflow:auto;font:14px/1.7 var(--mono);tab-size:4}pre code{padding:0;background:none;color:#edf0e8;overflow-wrap:normal;font:inherit}.key{color:#b8d9d1}.section-name{color:#ffc098}.comment{color:#acbcb7}.pager{display:flex;justify-content:space-between;margin:36px 0 0;padding-top:15px;border-top:1px solid var(--line);gap:12px}.pager a{text-decoration:none;font-weight:650}.pager small{display:block;color:var(--dim);font-weight:400;font-size:12px}.pager a:last-child{text-align:right}.results a{display:block;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line);padding:12px 6px}.results a:hover{background:#f3f1ea}.results small,.results span{display:block;color:var(--dim)}.results strong{color:var(--hot);overflow-wrap:anywhere}.results span{font-size:14px}.results a:focus{outline:2px solid #c77953}.menu{display:none}.hit{outline:2px solid #be6541;outline-offset:-2px;background:#fcf1df}.js article{display:none}.js article.active{display:block}html:not(.js) .interactive,html:not(.js) .copy,html:not(.js) .pager{display:none}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.named-table tbody th{width:7em;min-width:6em}.named-table tbody td:nth-child(2) code{color:#8c3d2b;background:transparent;padding:0}
+@media(max-width:850px){.bar{padding:0 18px;gap:10px}.frame{padding:0 18px;gap:22px;grid-template-columns:188px minmax(0,1fr)}.sidebar{padding-right:11px}.tools{gap:10px}.card{padding:13px}.searchbox input{width:160px}}
+@media(max-width:680px){html{scroll-padding-top:110px}.bar{height:auto;min-height:96px;flex-wrap:wrap;gap:6px 12px;padding:7px 16px}.brand{font-size:17px}.emblem{width:22px;height:22px}.version{font-size:12px}.menu{margin-left:auto;display:block;border:1px solid #6a7778;border-radius:4px;background:transparent;color:white;font-size:13px;padding:2px 9px}.tools{width:100%;margin:0}.searchbox{flex:1}.searchbox input{width:100%}.frame{display:block;padding:0 16px}.js .sidebar{display:none}.js .sidebar.open{display:block;position:fixed;z-index:4;left:0;right:0;top:99px;max-height:calc(100dvh - 99px);height:auto;background:var(--paper);padding:14px 20px 20px;box-shadow:0 8px 18px #0002}.sidebar{position:static;height:auto}.sidebar a{padding:6px 9px}main{padding-top:23px}h1{font-size:29px}.cards{gap:9px}.card{padding:12px}.card strong{font-size:16px}.sig{font-size:10px}.card span:last-child{font-size:12px}th,td{padding:8px}table{font-size:13px}.table-wrap table{min-width:460px}.table-wrap{max-width:100%}.pager{font-size:13px}}
+p kbd{color:var(--ink);border-color:#b8c1bc;padding:1px 5px}
+@media screen and (max-width:680px){
+.table-wrap table{display:block;min-width:0}.table-wrap thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.table-wrap tbody,.table-wrap tbody tr,.table-wrap tbody th,.table-wrap tbody td{display:block;width:auto}
+.table-wrap tbody tr{padding:10px 12px}.table-wrap tbody th,.table-wrap tbody td{padding:0}.table-wrap tbody td{margin-top:5px}.table-wrap tbody th{font-size:14px}
+.table-wrap tr:has(td:nth-child(3)) td:before{content:attr(data-label) "　";font-size:12px;font-weight:650;color:var(--dim)}
+}
+@media print{html,body{background:white;color:black;font-size:10pt}.top,.sidebar,.pager,.copy,.skip,.results,.cards,.crumb,.interactive{display:none!important}.frame,main{display:block;max-width:none;padding:0}.js article,article{display:block!important;margin:0 0 20pt}article+article{break-before:page}h1,h2,h3,figcaption{break-after:avoid}figure,.table-wrap{overflow:visible}pre{overflow:visible;white-space:pre-wrap;overflow-wrap:anywhere}.table-wrap table{min-width:0}table,th,td{font-size:9pt}tr,figure{break-inside:avoid}a{color:inherit}figure,figcaption{background:white;color:black;border:1px solid #bbb}.key,.section-name,.comment,figcaption b{color:black}body .hit{outline:none}thead{display:table-header-group}}.nav-home{margin-bottom:15px}.nav-group>summary,.nav-subgroup>summary{cursor:pointer;list-style:none;user-select:none;border-radius:4px}.nav-group>summary::-webkit-details-marker,.nav-subgroup>summary::-webkit-details-marker{display:none}.nav-group>summary::before,.nav-subgroup>summary::before{content:"▸";display:inline-block;width:15px;color:#879493}.nav-group[open]>summary::before,.nav-subgroup[open]>summary::before{content:"▾"}.nav-group>summary:hover,.nav-subgroup>summary:hover{background:#f0f0e9}.nav-group>summary{padding:4px 8px;font-size:13px}.nav-subgroup>summary{padding:3px 8px 3px 17px;font-size:12px;color:#647477;font-weight:650}.sidebar a{padding-left:24px}.nav-subgroup a{padding-left:36px}.nav-home a{padding-left:9px}article ul{padding-left:1.5em}article li{margin:3px 0}article h4{font-size:16px;margin:24px 0 10px}.sidebar .nav-group+.nav-group{margin-top:8px}.sidebar .nav-group>summary{display:flex;align-items:center;gap:5px;margin:0;padding:7px 10px;border:1px solid #e1e5df;background:#f3f5f0;color:#394d4d;font-size:13px;font-weight:700;line-height:1.5;transition:background-color .15s,border-color .15s}.sidebar .nav-group>summary::before{width:13px;flex:none;color:#82918c}.sidebar .nav-group>summary:hover{background:#e9eee8;border-color:#cbd7d0}.sidebar .nav-group[open]>summary{background:#f5eae4;border-color:#e9d5c8;color:#8d432d}.sidebar .nav-group[open]>summary::before{color:#b45b3d}.sidebar summary:focus-visible{outline:3px solid #cc754e;outline-offset:2px}.nav-subgroup:first-of-type{margin-top:5px}.sidebar .nav-group>summary{font-size:15px}.sidebar .nav-subgroup>summary{font-size:14px}.sidebar .nav-group>a,.sidebar .nav-subgroup>a{font-size:13px}</style></head><body><a class="skip" href="#main">跳至正文</a><header class="top"><div class="bar"><a class="brand" href="#start"><img class="emblem" src="../../assets/brand/starfall-lab-comet-fragments.png" alt=""><span>StarfallLab 流火实验室</span></a><span class="version">v0.40</span><button class="menu" type="button">目录</button><div class="tools"><label class="searchbox"><span class="lens" aria-hidden="true"></span><input id="search" type="search" placeholder="搜索参数或章节" aria-label="搜索手册"><kbd>/</kbd></label><button id="print" type="button">打印</button></div></div></header><div class="frame"><nav class="sidebar" aria-label="手册目录"><div class="nav-home"><a href="#start">手册首页</a></div><details class="nav-group"><summary class="group">基础配置</summary><a href="#page-basics-conventions">通用类型、单位与数值约定</a></details><details class="nav-group"><summary class="group">被动能力</summary><a href="#page-passives-overview">被动能力简介</a><details class="nav-subgroup"><summary class="subgroup">注册与来源</summary><a href="#page-passives-foundation-registration">注册、定义与授予</a><a href="#page-passives-foundation-warhead-grants">弹头授予被动</a><a href="#page-passives-foundation-sources">被动来源</a><a href="#page-passives-foundation-stacks">被动层数</a></details><details class="nav-subgroup"><summary class="subgroup">触发、条件与目标</summary><a href="#page-passives-events-triggers">触发时机</a><a href="#page-passives-events-event-filters">事件条件</a><a href="#page-passives-events-holder-state">持有者状态条件</a><a href="#page-passives-events-continuous-state">持续状态专用条件</a></details><details class="nav-subgroup"><summary class="subgroup">一次性结果</summary><a href="#page-passives-actions-index">结果概述</a><a href="#page-passives-events-targets">结果目标</a><a href="#page-passives-actions-catalog">一次性结果参数</a><a href="#page-passives-actions-multiple">多结果</a><a href="#page-passives-actions-random">随机结果</a><a href="#page-passives-actions-force-move">强制位移</a><a href="#page-passives-actions-teleport">超时空传送</a><a href="#page-passives-actions-jump">载具跳跃</a><a href="#page-passives-actions-ejection">弹射乘客与单位</a><a href="#page-passives-actions-attachments">挂载子单位</a><a href="#page-passives-events-signals">自定义信号</a></details><details class="nav-subgroup"><summary class="subgroup">持续性结果</summary><a href="#page-passives-continuous-index">持续效果概述</a><a href="#page-passives-continuous-stats">属性倍率</a><a href="#page-passives-continuous-limits">被动属性上下限</a><a href="#page-passives-continuous-weapons-abilities">武器与特殊能力</a><a href="#page-passives-continuous-projectile-shield">抛射体护盾</a><a href="#page-passives-continuous-aura-links">关联被动与光环</a><a href="#page-passives-continuous-visuals">被动动画与染色</a></details><details class="nav-subgroup"><summary class="subgroup">数值公式</summary><a href="#page-passives-formulas-index">公式语法与规则</a><a href="#page-passives-formulas-variables">常用变量</a></details></details><details class="nav-group"><summary class="group">主动技能</summary><a href="#page-active-overview">主动技能简介</a><details class="nav-subgroup"><summary class="subgroup">基础配置</summary><a href="#page-active-registration">主动技能注册与授予</a><a href="#page-active-targeting">目标选择与释放方式</a><a href="#page-active-cooldown">主动技能冷却</a></details><details class="nav-subgroup"><summary class="subgroup">界面与效果</summary><a href="#page-active-icons">主动技能名称与图标</a><a href="#page-active-indicators">主动技能目标指示器</a><a href="#page-active-results">主动技能结果</a></details></details><details class="nav-group"><summary class="group">科研三选一</summary><a href="#page-research-overview">科研三选一简介</a><details class="nav-subgroup"><summary class="subgroup">项目与结果</summary><a href="#page-research-projects">科研项目</a><a href="#page-research-effects">科研结果</a></details><details class="nav-subgroup"><summary class="subgroup">抽取与奖励</summary><a href="#page-research-selection">科研抽取与全局设置</a><a href="#page-research-free-choices">免费与随机科研奖励</a></details><details class="nav-subgroup"><summary class="subgroup">进度与组合</summary><a href="#page-research-counters">科研计数器</a><a href="#page-research-stages">科研阶段</a><a href="#page-research-bonds">科研羁绊</a></details><details class="nav-subgroup"><summary class="subgroup">建筑科研</summary><a href="#page-research-building-points">建筑定时产出科研点</a><a href="#page-research-building-free">建筑免费科研</a></details><details class="nav-subgroup"><summary class="subgroup">界面与资源</summary><a href="#page-research-interface">科研界面与提示</a></details></details><details class="nav-group"><summary class="group">Lua 脚本</summary><a href="#page-lua-overview">Lua 脚本简介</a><details class="nav-subgroup"><summary class="subgroup">脚本入口</summary><a href="#page-lua-entries">Lua 脚本入口</a><a href="#page-lua-weapon">武器开火脚本</a><a href="#page-lua-warhead">弹头引爆脚本</a></details><details class="nav-subgroup"><summary class="subgroup">上下文与查询</summary><a href="#page-lua-context">Lua 上下文与事件数据</a><a href="#page-lua-units">单位句柄与属性</a><a href="#page-lua-queries">玩家与附近单位查询</a></details><details class="nav-subgroup"><summary class="subgroup">指令与结果</summary><a href="#page-lua-orders">Lua 单位指令</a><a href="#page-lua-actions">Lua 结果调用</a></details><details class="nav-subgroup"><summary class="subgroup">状态与表现</summary><a href="#page-lua-timers">状态、定时任务与同步随机</a><a href="#page-lua-animations">Lua 可移动动画</a><a href="#page-lua-projectiles">Lua 抛射体运动</a></details><a href="#page-lua-limits">Lua 运行环境与限制</a></details><details class="nav-group"><summary class="group">地图与小队</summary><details class="nav-subgroup"><summary class="subgroup">地图触发与小队脚本</summary><a href="#page-map-trigger-actions">地图触发动作</a><a href="#page-map-team-actions">小队脚本动作</a></details><details class="nav-subgroup"><summary class="subgroup">预设与单位绑定</summary><a href="#page-map-grant-presets">被动授予预设</a><a href="#page-map-lua-presets">地图 Lua 预设</a><a href="#page-map-unit-bindings">地图单位被动绑定</a></details></details><details class="nav-group"><summary class="group">特殊行为</summary><details class="nav-subgroup"><summary class="subgroup">单位与建筑</summary><a href="#page-actsp-drones">子机与地面守卫</a><a href="#page-actsp-garrison">高级驻军</a><a href="#page-actsp-platform">建筑高台</a><a href="#page-actsp-build-nodes">移动建造节点</a><a href="#page-actsp-walls">实体围墙</a><a href="#page-actsp-orders">持续单位指令</a></details><details class="nav-subgroup"><summary class="subgroup">武器与抛射体</summary><a href="#page-actsp-projectile-blocker">建筑拦截抛射体</a><a href="#page-actsp-projectile-script">Lua 抛射体路径</a><a href="#page-actsp-piercing">穿透抛射体</a><a href="#page-actsp-fire-origin">相对目标的武器发射位置</a></details></details><details class="nav-group"><summary class="group">视觉效果</summary><details class="nav-subgroup"><summary class="subgroup">武器与单位表现</summary><a href="#page-artsp-tracers">武器曳光</a><a href="#page-artsp-beams">持续光束</a><a href="#page-artsp-labels">单位头顶注释</a></details></details><details class="nav-group"><summary class="group">杂项</summary><details class="nav-subgroup"><summary class="subgroup">独立规则</summary><a href="#page-misc-pickups">自定义拾取物</a><a href="#page-misc-superweapons">自定义超武</a></details></details><details class="nav-group"><summary class="group">额外说明</summary><a href="#page-resources-reference">素材引用</a><a href="#page-resources-log">Starfall.log 日志</a></details></nav><main id="main" tabindex="-1"><section class="results" hidden><div class="crumb">规则词典 / 搜索</div><h2>搜索结果</h2><p role="status"></p><div class="list"></div></section><article id="start" data-title="手册首页"><div class="crumb">规则词典 <span>/</span> 首页</div><h1>StarfallLab 流火实验室</h1><p>面向模组制作者的规则和接口参考。选择功能入口查看简介与参数，完整目录位于页面左侧。</p><h3>主要功能</h3><div class="cards"><a class="card" href="#page-passives-overview"><strong>被动能力<i aria-hidden="true">→</i></strong><span>为单位配置事件触发或持续生效的能力，组合条件、结果、层数和公式。</span></a><a class="card" href="#page-active-overview"><strong>主动技能<i aria-hidden="true">→</i></strong><span>配置由玩家操作释放的技能，设置目标、冷却、图标和指示器。</span></a><a class="card" href="#page-research-overview"><strong>科研三选一<i aria-hidden="true">→</i></strong><span>创建可供玩家选择的科研项目，配置稀有度、获取条件和升级奖励。</span></a><a class="card" href="#page-lua-overview"><strong>Lua 脚本<i aria-hidden="true">→</i></strong><span>通过脚本查询游戏状态、执行结果、安排定时任务并扩展自定义行为。</span></a></div></article><article id="page-basics-conventions" data-title="通用类型、单位与数值约定"><div class="crumb">基础配置</div><h2>通用类型、单位与数值约定</h2><p>本节说明配置中常见的数据类型、计量单位和术语，便于理解各参数的填写要求。</p><h3 id="page-basics-conventions--ini-参数的配置位置">INI 参数的配置位置</h3><p>词典中的 INI 参数表<strong>默认写在游戏加载的 <code>rulesmd.ini</code> 规则中</strong>。需要写在 <code>artmd.ini</code>、地图文件或其他位置的参数，会在对应参数表附近特别标注。部分流火配置也支持写入 <code>Starfall.ini</code>；是否支持及读取优先级以对应功能的说明为准。</p><h3 id="page-basics-conventions--通用类型与单位">通用类型与单位</h3><ul><li><strong>ID</strong>：被动、科研、结果等对象使用的标识符。引用时填写 ID，而不是显示名称；合并配置时应使用不冲突的 ID。</li><li><strong>布尔值</strong>：除字段另有说明外，使用 <code>yes</code> 或 <code>no</code>。不能假定所有字段都接受 <code>true</code> 或 <code>1</code>。</li><li><strong>列表</strong>：通常用英文逗号分隔。是否保留重复项取决于具体字段，例如被动的 <code>Actions</code> 保留重复执行步骤。</li><li><strong>百分比与倍率</strong>：按字段要求填写。例如 <code>+25%</code> 表示增加 25%，<code>1.25</code> 表示 1.25 倍；两种格式不能随意互换。</li><li><strong>格</strong>：地图坐标单位，不是屏幕像素。整数坐标还须位于可游玩地图内。</li><li><strong>帧与游戏秒</strong>：帧指模拟帧；按游戏秒配置的流火设置以 15 帧为一游戏秒，实际经过时间受游戏速度影响。</li><li><strong>玩家（House）</strong>：游戏中拥有单位或科研的玩家实例，与出生点编号不是同一概念。</li><li><strong>配置注释</strong>：INI 使用分号 <code>;</code> 引出注释，不要依赖字符串中的分号被保留。</li></ul><p>单位类型、武器、弹头和动画等原版对象 ID 必须在当前规则中存在。不同功能的参数、默认值和限制以各自章节为准。</p></article><article id="page-passives-overview" data-title="被动能力简介"><div class="crumb">被动能力</div><h2>被动能力简介</h2><p>被动能力用于给单位或建筑添加自动生效的规则。单位可以自带被动，也可以通过科研、弹头或其他效果获得被动。</p><p>事件型被动在指定时机检查条件，然后执行结果；持续型被动在条件满足期间保持效果，条件失效后撤销。被动还可以使用层数、公式和信号组织更复杂的行为。</p><p>查阅参数时，可以先从<a href="#page-passives-foundation-registration">注册、定义与授予</a>了解如何让单位获得被动，再查看<a href="#page-passives-events-triggers">触发时机</a>、<a href="#page-passives-actions-index">一次性结果</a>或<a href="#page-passives-continuous-index">持续性结果</a>。</p></article><article id="page-passives-foundation-registration" data-title="注册、定义与授予"><div class="crumb">被动能力 <span>/</span> 注册与来源</div><h2>注册、定义与授予</h2><p>被动先注册，再授予单位。注册本身不会使单位获得该能力。事件型被动可执行一次性结果；持续型被动使用 <code>Trigger=WhileState</code> 和 <code>Modifier.*</code>。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.PassiveTypes]
+0=(被动 ID)
+; 注册对应的被动配置节。合并时使用未占用的非负整数编号。
+
+[被动 ID]
+Trigger=(触发时机)
+; 选择触发事件或持续状态。
+
+Action=(结果名称)
+; 执行一个一次性结果，其参数使用 Action. 前缀。
+
+[单位类型 ID]
+Starfall.Passives=(被动 ID 列表)
+; 将已注册的被动授予该类型单位；多个 ID 用英文逗号分隔。
+</code></pre></figure><p>单位还可通过科研、弹头和其他结果获得被动。</p><p>合并到已有配置时，保留原有注册项，并把新 ID 追加到单位已有的 <code>Starfall.Passives</code> 列表。</p></article><article id="page-passives-foundation-warhead-grants" data-title="弹头授予被动"><div class="crumb">被动能力 <span>/</span> 注册与来源</div><h2>弹头授予被动</h2><p>弹头可以在命中符合条件的单位时授予被动，并按所属关系和单位类型筛选。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[弹头 ID]
+Starfall.GrantPassives=(被动 ID 列表)
+; 命中符合条件的单位时授予已注册的被动。
+; 默认值：无；列表中存在无效 ID 时整条规则不生效。
+
+Starfall.GrantPassives.Duration=(整数帧)
+; 每次授予的持续时间，正数为临时授予。
+; 默认值：-1，永久。
+
+Starfall.GrantPassives.StackOnReapply=(布尔值)
+; 目标已拥有该被动时，再次授予是否增加一层手动层数。
+; 默认值：no
+
+Starfall.GrantPassives.Houses=(所属关系列表)
+; 按开火方筛选：All、Self、Allies、Enemies、Neutral。
+; 默认值：All；弹头自身的阵营限制也会生效。
+
+Starfall.GrantPassives.TargetTypes=(类型或科研分类列表)
+; 筛选接收被动的单位类型。
+; 默认值：*，不限制类型。</code></pre></figure><p><code>CellSpread=0</code> 仅向直接命中的单位授予；正范围按爆炸位置筛选。零伤害命中也可授予，但死亡、离场、铁幕保护和弹头对应装甲 <code>Verses</code> 为零的目标会被排除。同一次引爆对同一单位的每项被动最多授予一次。</p></article><article id="page-passives-foundation-sources" data-title="被动来源"><div class="crumb">被动能力 <span>/</span> 注册与来源</div><h2>被动来源</h2><p>被动可由多个来源共同提供，仍按同一个被动 ID 识别。不同来源提供的同名被动<strong>默认不会叠加执行或重复计算效果</strong>，单位只持有一份该被动。明确配置重复授予叠层、可叠层乘客或可重复科研时，可以增加被动的有效层数。</p><p>失去一个来源不一定失去能力；彻底失去后再次获得才会重新触发 <code>OnPassiveGained</code>。层数的配置与增减见<a href="#page-passives-foundation-stacks">被动层数</a>。</p></article><article id="page-passives-foundation-stacks" data-title="被动层数"><div class="crumb">被动能力 <span>/</span> 注册与来源</div><h2>被动层数</h2><p>单位首次获得被动时，当前有效层数为 1。手动增加的层数单独记录；可叠加的乘客或重复科研来源也可以提供层数，首次提供的层数计入这一基础层，而非额外重复计算。有效总层数受上限约束。</p><h3 id="page-passives-foundation-stacks--可叠层的被动">可叠层的被动</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantPassive
+; 向目标授予已注册的被动。
+
+Action.Passive=(被动 ID)
+; 要授予的被动。
+; 必填。
+
+Action.StackOnReapply=(布尔值)
+; 目标已经拥有该被动时，再次授予是否增加一层手动层数。
+; 默认值：no；首次获得被动时有效层数为 1。</code></pre></figure><p>弹头授予被动时，可使用 <code>Starfall.GrantPassives.StackOnReapply</code> 控制重复授予是否增加手动层数；字段及筛选规则见<a href="#page-passives-foundation-warhead-grants">弹头授予被动</a>。</p><h3 id="page-passives-foundation-stacks--设置层数上限">设置层数上限</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Stack.Max=(正整数)
+; 限制该被动的有效层数，包括手动层数和其他来源提供的层数。
+; 默认值：2147483647。</code></pre></figure><h3 id="page-passives-foundation-stacks--增加或减少层数">增加或减少层数</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangePassiveStack
+; 修改目标已经拥有的被动的手动层数。
+
+Action.Passive=(被动 ID)
+; 要修改层数的已注册被动。
+; 必填；目标必须已拥有该被动。
+
+Action.Amount=(非零有符号整数)
+; 正数增加手动层数，负数减少手动层数。
+; 必填。</code></pre></figure><p>普通被动的初始 1 层也可以扣除。减到 0 层或扣减量超过剩余层数时，目标失去该被动。科研或乘客提供的层数会保留；父被动仍有效时，关联子被动也会保留。</p><p><code>StealPassive</code> 可以转移手动层数；普通被动的最后一层被转移时，来源单位会失去该被动。乘客支持来源提供的层数不能作为手动层数转移。</p><h3 id="page-passives-foundation-stacks--读取层数与生命周期">读取层数与生命周期</h3><p>公式变量 <code>This.Stack</code> 表示当前执行的被动的有效层数。事件公式通常读取触发时的快照；持续状态公式读取当前有效层数。</p><p>多个来源提供同一个被动时，单位只执行一份该 ID 的被动。一个来源消失不一定使被动消失；失去最后一个来源后，相关层数和进度清除。<code>RemovePassive</code> 会清除该被动的层数及相关计数、等待状态；之后仍可通过有效来源重新获得。</p></article><article id="page-passives-events-triggers" data-title="触发时机"><div class="crumb">被动能力 <span>/</span> 触发、条件与目标</div><h2>触发时机</h2><p>每项被动选择一种 <code>Trigger</code>。以下各项是可选值，并非同时填写。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=OnPassiveGained
+; 单位首次获得被动时，已拥有后重复获得不触发。
+; 通常用于即刻生效的效果。在地图上的单位立刻生效，载具和建筑内部的单位会在放出后才生效。
+
+Trigger=OnKill
+; 持有者击杀目标时；事件对方是被击杀者，记录伤害为 0。
+
+Trigger=OnDeath
+; 持有者死亡时触发一次；事件对方是击杀者，可能不存在。
+
+Trigger=OnFire
+; 标准武器实际发射时；连发的每一发分别判定。
+
+Trigger=OnDeploy
+; 支持的部署姿态完成、车辆展开为建筑或部署开火完成时。
+
+Trigger=OnPromote
+; 观察到持有者等级上升时。
+
+Trigger=OnPromoteVeteran
+; 晋升至老兵时。
+
+Trigger=OnPromoteElite
+; 晋升至精英时。
+
+Trigger=OnPassengerConsumed
+; 持有者的直接乘客被流火结果消耗时。
+
+Trigger=OnBuildingUpgrade
+; 原版建筑升级成功安装时；被动需绑定在升级类型上，持有者为宿主建筑。
+
+Trigger=OnBuilt
+; 工厂生产的独立建筑成功放置时，在建造动画结束之前。</code></pre></figure><p><code>OnBuilt</code> 不由预放置、占领、变形、<code>SpawnBuilding</code> 或读档触发。已是老兵或精英的单位出生及读档不算晋升；被动来源重叠、续期或读档不算重新获得。</p><h3 id="page-passives-events-triggers--开火前替换武器">开火前替换武器</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=OnBeforeFire
+; 标准一轮射击的第一发之前触发；仅支持 ReplaceWeapon 结果。</code></pre></figure><p><code>OnBeforeFire</code> 必须使用单个 <code>ReplaceWeapon</code>，并指定 <code>Action.Weapon</code>；不支持结果列表和非默认计数、概率、冷却、触发上限或触发动画。替换武器无法攻击时回退原武器。</p><h3 id="page-passives-events-triggers--伤害触发">伤害触发</h3><p>伤害触发区分造成伤害和受到伤害，也区分扣血前的同步拦截与实际损血后的事件。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=OnBeforeDealDamage
+; 持有者造成正生命损失前同步判定；事件对方是受害者。
+
+Trigger=OnDealDamage
+; 持有者造成实际生命损失时；事件对方是受害者。
+
+Trigger=OnBeforeTakeDamage
+; 持有者受到正生命损失前同步判定；事件对方是攻击者，可能不存在。
+
+Trigger=OnTakeDamage
+; 持有者实际损失生命时；事件对方是攻击者，可能不存在。</code></pre></figure><p>伤害拦截按攻击方 <code>OnBeforeDealDamage</code>、受害方 <code>OnBeforeTakeDamage</code>、扣血、实际损血事件的顺序执行。拦截阶段只允许 <code>SetDamage</code>、<code>BlockDamage</code> 和使用拦截接口的 <code>RunScript</code>；不能通过延迟事件修改已经发生的伤害。</p><h3 id="page-passives-events-triggers--自定义信号">自定义信号</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=OnSignal
+; 收到匹配的自定义信号时触发。</code></pre></figure><p>接收其他单位发送的信号，详见<a href="#page-passives-events-signals">自定义信号</a>。</p><h3 id="page-passives-events-triggers--定时触发">定时触发</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=OnInterval
+; 持有者满足条件且在地图上，每经过指定帧数时。
+
+Interval=(正整数帧)
+; OnInterval 的触发间隔。
+; 仅用于 OnInterval，必填。</code></pre></figure><p>持有者符合条件且在地图上时，按 <code>Interval</code> 指定的帧数定时触发。</p><h3 id="page-passives-events-triggers--持续状态">持续状态</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=WhileState
+; 持续检查状态并应用 Modifier.*，不执行一次性结果列表。</code></pre></figure><p>条件成立期间持续生效，详见<a href="#page-passives-continuous-index">持续性结果</a>。</p><h3 id="page-passives-events-triggers--主动技能">主动技能</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Trigger=Active
+; 玩家操作激活主动技能时触发。</code></pre></figure><p>由玩家操作释放，详见<a href="#page-active-registration">主动技能注册与授予</a>。</p></article><article id="page-passives-events-event-filters" data-title="事件条件"><div class="crumb">被动能力 <span>/</span> 触发、条件与目标</div><h2>事件条件</h2><p>事件条件用于筛选事件对方，并控制触发门槛、概率、次数和冷却。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Filter.TargetHouse=(所属关系列表)
+; 筛选事件对方：All、Self、Allies、Enemies、Neutral、None。
+; 默认值：All；Self 为同一玩家，Allies 为其他盟友。
+
+Filter.TargetKind=(单位类别列表)
+; 筛选事件对方：All、Infantry、Vehicle、Aircraft、Building、Other、None。
+; 默认值：All
+
+Condition.MinDamage=(非负整数)
+; 要求单次实际损血达到的最小值；伤害拦截中使用待结算损失。
+; 默认值：0
+
+Condition.Count=(正整数)
+; 每个单位分别累计合格事件，达到次数后重置并判定概率。
+; 默认值：1
+
+Chance=(0 至 100 的整数百分比)
+; 达到计数后的触发概率，可省略 %。
+; 默认值：100%
+
+Cooldown=(非负整数帧)
+; 结果执行成功后的冷却时间。
+; 默认值：0
+
+MaxTriggers=(非负整数)
+; 成功触发次数上限；0 表示不限。
+; 默认值：0
+
+Condition.Formula=(公式)
+; 公式结果非零时条件成立。
+; 默认值：无</code></pre></figure><p>筛选和条件须同时成立，同一列表内的值为“或”。冷却期间不累计次数；概率失败或结果组完全无效不会开始冷却。<code>None</code> 可匹配不存在的事件对方或所属方。</p></article><article id="page-passives-events-holder-state" data-title="持有者状态条件"><div class="crumb">被动能力 <span>/</span> 触发、条件与目标</div><h2>持有者状态条件</h2><p>持有者状态条件检查单位自身的电力、移动和隐形状态。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Condition.OwnerPower=(Sufficient 或 Low)
+; 检查所属玩家的电力是否充足。
+; 默认值：不限制。
+
+Condition.SelfPowered=(布尔值)
+; 检查持有者自身是否通电且在线。
+; 默认值：不限制。
+
+Condition.SelfMoving=(布尔值)
+; 检查移动器是否实际移动；建筑视为静止。
+; 默认值：不限制。
+
+Condition.SelfCloak=(隐形状态)
+; 可填 Uncloaked、Cloaking、Cloaked、Uncloaking。
+; 默认值：不限制。</code></pre></figure></article><article id="page-passives-events-continuous-state" data-title="持续状态专用条件"><div class="crumb">被动能力 <span>/</span> 触发、条件与目标</div><h2>持续状态专用条件</h2><p>这些条件专供持续状态使用，可判断部署姿态、持续时间和附近单位。</p><p>以下字段用于 <code>Trigger=WhileState</code>。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Condition.SelfDeployed=(布尔值)
+; 检查支持的步兵或简易部署载具是否处于部署姿态。
+; 默认值：不限制。
+
+Condition.StateDurationSeconds=(非负小数)
+; 状态持续满足指定游戏秒数后才生效，中断后重新计时。
+; 默认值：0；最多三位小数，换算帧数时向上取整。
+
+Condition.Nearby.Range=(整数格数)
+; 附近单位检查的平面圆形半径。
+; 使用附近条件时必填；范围：1–32。
+
+Condition.Nearby.Houses=(所属关系列表)
+; 可填 All、Self、Allies、Enemies、Neutral。
+; 默认值：All
+
+Condition.Nearby.Kinds=(单位类别列表)
+; 可填 All、Infantry、Vehicle、Aircraft、Building。
+; 默认值：All
+
+Condition.Nearby.Types=(类型或科研分类列表)
+; 用具体类型 ID 或 @Infantry 等分类筛选。
+; 默认值：*
+
+Condition.Nearby.CountAtLeast=(非负整数)
+; 符合条件的附近单位数量下限，包含边界。
+; 默认值：1；仅设置上限时为 0。
+
+Condition.Nearby.CountAtMost=(非负整数)
+; 符合条件的附近单位数量上限，包含边界。
+; 默认值：2147483647；不得小于下限。
+
+Condition.Nearby.ScanInterval=(正整数帧)
+; 附近单位重新采样的间隔。
+; 默认值：10；首次采样前条件不成立。</code></pre></figure><p>附近计数不包含持有者。<code>WhileState</code> 不接受事件专用的 <code>Action.*</code>、<code>Actions</code>、<code>Filter.*</code>、<code>Chance</code> 或 <code>Condition.Count</code>。</p></article><article id="page-passives-actions-index" data-title="结果概述"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>结果概述</h2><p>事件型被动可用 <code>Action</code> 配置一个结果，也可配置<a href="#page-passives-actions-multiple">多结果</a>或<a href="#page-passives-actions-random">随机结果</a>。三种写法互斥。单个结果的分类及参数见<a href="#page-passives-actions-catalog">一次性结果参数</a>，默认目标见<a href="#page-passives-events-targets">结果目标</a>，事件筛选见<a href="#page-passives-events-event-filters">事件条件</a>。</p></article><article id="page-passives-events-targets" data-title="结果目标"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>结果目标</h2><p>结果目标决定一次性结果作用于哪个单位或位置，与事件对方筛选分别配置。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action.Target=(目标名称)
+; Self：持有者；Self.Occupants：直接载员；Target：事件对方。
+; Attacker：攻击者；Victim：受害者；VictimLocation：记录的位置；Sender：信号发送者。</code></pre></figure><p>默认目标通常是 <code>Self</code>；<code>ConsumeTarget</code>、<code>StealPassive</code> 和 <code>OnBeforeDealDamage</code> 默认使用 <code>Target</code>。<code>VictimLocation</code> 只适用于可作用于坐标的结果，<code>Sender</code> 只用于 <code>OnSignal</code>。筛选中的事件对方与 <code>Action.Target</code> 是不同概念。</p></article><article id="page-passives-actions-catalog" data-title="一次性结果参数"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>一次性结果参数</h2><p>本节按功能分类列出一次性结果。每个参数表对应一种 <code>Action</code>；结果目标的通用选项见<a href="#page-passives-events-targets">结果目标</a>。 目标可用范围受具体结果和触发方式限制，不能将所有目标名称用于所有结果。</p><h3 id="page-passives-actions-catalog--生命伤害与奖励">生命、伤害与奖励</h3><p>这些结果用于治疗、伤害、保护以及发放资金和科研奖励。</p><h4 id="page-passives-actions-catalog--恢复生命">恢复生命</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=Heal
+; 恢复目标生命，不能超过当前最大生命。
+
+Action.Amount=(正整数或公式)
+; 例如在 OnDealDamage 时填写 $(Event.Damage * 25%)，结果向下取整。</code></pre></figure><h4 id="page-passives-actions-catalog--造成伤害">造成伤害</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=Damage
+; 伤害选中的单位。
+
+Action.Amount=(正整数或公式)
+; 例如在 OnDealDamage 时填写 $(Event.Damage * 25%)，结果向下取整。
+
+Action.Warhead=(弹头 ID)
+; 指定用于计算装甲和死亡效果的弹头。
+; 默认值：Super；弹头必须存在。</code></pre></figure><h4 id="page-passives-actions-catalog--设置伤害">设置伤害</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SetDamage
+; 修改当前待扣生命，仅用于伤害拦截。
+
+Action.Amount=(非负整数或公式)
+; 设置当前待结算损失。
+; 必填。</code></pre></figure><p>仅限 OnBeforeDealDamage 或 OnBeforeTakeDamage；前者目标为 Target 或 Victim，后者为 Self。</p><h4 id="page-passives-actions-catalog--阻止伤害">阻止伤害</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=BlockDamage
+; 将当前待扣生命设为 0，仅用于伤害拦截。</code></pre></figure><p>仅限 OnBeforeDealDamage 或 OnBeforeTakeDamage；目标限制与 SetDamage 相同。</p><h4 id="page-passives-actions-catalog--施加铁幕">施加铁幕</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ApplyIronCurtain
+; 对目标施加原版铁幕。
+
+Action.Duration=(正整数帧)
+; 指定铁幕持续时间。
+; 必填；已有更长持续时间时保留较长值。</code></pre></figure><p>原版铁幕规则仍生效，某些步兵或有机单位可能死亡；已有力场护盾优先。</p><h4 id="page-passives-actions-catalog--获得资金">获得资金</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GiveCredits
+; 向目标所属玩家增加资金。
+
+Action.Amount=(正整数或公式)
+; 例如在 OnDealDamage 时填写 $(Event.Damage * 25%)，结果向下取整。
+
+Action.ShowText=(布尔值)
+; 是否显示资金变化的字样。可以在被动持有者身上飘起资金数字。
+; 默认值：yes。</code></pre></figure><h4 id="page-passives-actions-catalog--获得科研点">获得科研点</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GiveResearchPoints
+; 向目标所属玩家增加科研点。
+
+Action.Amount=(正整数或公式)
+; 例如在 OnDealDamage 时填写 $(Event.Damage * 25%)，结果向下取整。
+
+Action.ShowText=(布尔值)
+; 是否为所属玩家显示增加的数值。
+; 默认值：yes。</code></pre></figure><h4 id="page-passives-actions-catalog--获得免费科研机会">获得免费科研机会</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantFreeResearch
+; 给予目标所属玩家一次免费科研选择。
+
+Action.ResearchOptions=(科研项目 ID 列表)
+; 限制免费选择可使用的指定项目。
+; 默认值：不指定列表。
+
+Action.Rarity=(稀有度)
+; 可填 All、Common、Rare、Epic、Insane。
+; 默认值：All。</code></pre></figure><h4 id="page-passives-actions-catalog--获得指定科研">获得指定科研</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantResearch
+; 向目标所属玩家立即授予一项科研。
+
+Action.Research=(科研项目 ID)
+; 指定要授予的单个项目。
+; 必填；仍检查所属、阵营、前置和可用性。</code></pre></figure><h4 id="page-passives-actions-catalog--获得随机科研">获得随机科研</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantRandomResearch
+; 向目标所属玩家立即授予一个随机科研。
+
+Action.Rarity=(稀有度)
+; 可填 All、Common、Rare、Epic、Insane。
+; 默认值：All。</code></pre></figure><h4 id="page-passives-actions-catalog--修改科研计数器">修改科研计数器</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeResearchCounter
+; 修改所属玩家的指定科研计数器。
+
+Action.Counter=(项目 ID.计数器名)
+; 指定已声明的科研计数器。
+; 必填；目标必须为 Self。
+
+Action.Amount=(非零有符号整数或公式)
+; 指定增加或减少的数值。
+; 必填；结果限制在 0–2147483647。</code></pre></figure><h3 id="page-passives-actions-catalog--属性等级与弹药">属性、等级与弹药</h3><p>这些结果改变单位属性累计值、等级或弹药。</p><h4 id="page-passives-actions-catalog--调整弹药">调整弹药</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeAmmo
+; 修改目标的有限弹药。
+
+Action.Amount=(非零有符号整数)
+; 增加或减少弹药。
+; 必填；结果限制在弹仓范围内。</code></pre></figure><h4 id="page-passives-actions-catalog--永久最大生命">永久最大生命</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeMaxHealth
+; 永久改变目标最大生命。
+
+Action.Amount=(非零有符号整数)
+; 指定最大生命的固定变化量。
+; 与 Action.MaxHealthPercent 二选一。
+
+Action.MaxHealthPercent=(正整数百分比)
+; 按原最大生命增加数值。
+; 范围：1%–10000%；只增加，与 Action.Amount 二选一。</code></pre></figure><p>增加最大生命时，当前生命也增加相同数值；减少时只将当前生命裁至新的上限。</p><h4 id="page-passives-actions-catalog--永久移速">永久移速</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeSpeed
+; 永久修改移动速度的累计值。
+
+Action.Percent=(非零有符号整数百分比或公式)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--永久火力">永久火力</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeFirepower
+; 永久修改火力的累计值。
+
+Action.Percent=(非零有符号整数百分比或公式)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--永久护甲">永久护甲</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeArmor
+; 永久修改装甲强度的累计值。
+
+Action.Percent=(非零有符号整数百分比或公式)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--永久射程">永久射程</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeWeaponRange
+; 永久修改标准武器射程的累计值。
+
+Action.Percent=(非零有符号整数百分比或公式)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--永久射速">永久射速</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeFireRate
+; 永久修改标准射速的累计值。
+
+Action.Percent=(非零有符号整数百分比或公式)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--永久体型">永久体型</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeScale
+; 永久修改移动单位绘制体型的累计值。
+
+Action.Percent=(非零有符号整数百分比)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--永久弹体体型">永久弹体体型</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeProjectileScale
+; 永久修改后续弹体、爆炸和溅射范围的体型的累计值。
+
+Action.Percent=(非零有符号整数百分比)
+; 以百分比点数增加或减少。
+; 必填。</code></pre></figure><p>属性累计值按百分比点数相加，并受<a href="#page-passives-continuous-limits">被动属性上下限</a>限制。</p><h4 id="page-passives-actions-catalog--晋升等级">晋升等级</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=Promote
+; 晋升可升级的目标单位。
+
+Action.Levels=(整数)
+; 指定晋升等级数。
+; 默认值：1；可填 1 或 2；最高精英。</code></pre></figure><h3 id="page-passives-actions-catalog--单位乘客与拾取物">单位、乘客与拾取物</h3><p>这些结果管理单位的生成、变形、所属方与移除。</p><h4 id="page-passives-actions-catalog--生成单位">生成单位</h4><p>可以生成一个指定单位，或从一个列表中按对应权重随机抽取单位生成。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SpawnUnit
+; 生成步兵、载具或飞机，位置不可用时向外搜索最多三格。
+
+Action.UnitType=(单位类型 ID)
+; 指定单一生成类型。
+; 与 Action.UnitTypes 二选一。
+
+Action.UnitTypes=(单位类型 ID 列表)
+; 指定随机候选类型。
+; 与 Action.UnitType 二选一；不支持建筑。
+
+Action.Weights=(非负整数列表)
+; 指定每个随机候选的权重。
+; 默认等权；数量与候选一致，不能全为 0；需 Action.UnitTypes。
+
+Action.RandomCount=(整数)
+; 指定随机生成次数，可重复抽中同一类型。
+; 默认值：1；范围：1–256；需 Action.UnitTypes。
+
+Action.Owner=(所属方)
+; 可填 Self、Attacker、Victim、Neutral、Player1–Player8。
+; 默认值：Self；Player 编号对应出生点。</code></pre></figure><h4 id="page-passives-actions-catalog--生成建筑">生成建筑</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SpawnBuilding
+; 在目标格或附近放置一座已完成的独立建筑。
+
+Action.BuildingType=(建筑类型 ID)
+; 指定独立建筑类型。
+; 必填；不支持升级部件、围墙覆盖物或铺地。
+
+Action.SearchRadius=(整数格数)
+; 指定寻找完整可用地基的圆形半径。
+; 默认值：3；范围：0–32。
+
+Action.Owner=(所属方)
+; 可填 Self、Attacker、Victim、Neutral、Player1–Player8。
+; 默认值：Self；Player 编号对应出生点。</code></pre></figure><h4 id="page-passives-actions-catalog--挂载子单位">挂载子单位</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[挂载结果节 ID]
+Action=AttachUnit
+; 创建一个挂载子单位。
+
+Action.UnitType=(步兵或载具类型 ID)
+; 指定子单位类型；必填。
+
+Action.Target=(目标名称)
+; 作为母体的单位或建筑；默认值：Self。
+</code></pre></figure><p>具体参数和说明详见<a href="#page-passives-actions-attachments">挂载子单位</a>。</p><h4 id="page-passives-actions-catalog--移除挂载单位">移除挂载单位</h4><p><code>Action=RemoveAttachedUnit</code> 用于移除母体上的挂载单位，参数和说明见<a href="#page-passives-actions-attachments--移除挂载单位">挂载子单位</a>。</p><h4 id="page-passives-actions-catalog--单位或建筑变形">单位或建筑变形</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=Transform
+; 将单位或建筑变形为同类别目标。
+
+Action.UnitType=(单位或建筑类型 ID)
+; 指定转换后的类型。
+; 必填。
+
+Action.LandFirst=(布尔值)
+; 使符合条件的 Jumpjet 先降落后再转换为地面载具。
+; 默认值：no；仅用于支持的 INI 事件结果序列。</code></pre></figure><p>建筑要求新旧占用地基及附属地基完全一致；正在生产、载有乘客等状态可能阻止变形。 变形后保留流火单位身份、Lua 句柄、定时任务、临时被动及剩余时间。 若启动了Phobos扩展，会先尝试使用Phobos的单位变形功能。</p><h4 id="page-passives-actions-catalog--改变所属方">改变所属方</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeOwner
+; 改变目标存活单位的所属方。
+
+Action.Owner=(所属方)
+; 可填 Self、Attacker、Victim、Neutral、Player1–Player8。
+; 默认值：Self；Player 编号对应出生点。</code></pre></figure><h4 id="page-passives-actions-catalog--生成自定义拾取物">生成自定义拾取物</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SpawnPickup
+; 在目标位置生成自定义拾取物。
+
+Action.PickupType=(拾取物 ID)
+; 指定已注册的拾取物类型。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--移除自定义拾取物">移除自定义拾取物</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=RemovePickup
+; 移除自定义拾取物，不发放奖励。
+
+Action.Range=(整数格数)
+; 0 为目标格，正整数为圆形范围，-1 为全地图。
+; 默认值：0。
+
+Action.PickupTypes=(拾取物 ID 列表或 *)
+; 筛选要移除的自定义拾取物。
+; 默认值：*；不能在 ID 列表中混用 *。</code></pre></figure><p>原版箱子不受影响。</p><h4 id="page-passives-actions-catalog--生成原版箱子">生成原版箱子</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SpawnCrate
+; 在目标附近生成原版箱子。
+
+Action.CrateType=(箱子类型)
+; 指定原版奖励类型；例如 Armor，Money等。
+; 默认值：Random，按原版权重抽取</code></pre></figure><h4 id="page-passives-actions-catalog--自毁">自毁</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SelfDestruct
+; 通过支持的正常死亡路径销毁持有者。
+
+Action.Target=(Self)
+; 指定持有者为目标。
+; 仅支持 Self。</code></pre></figure><h4 id="page-passives-actions-catalog--消耗目标">消耗目标</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ConsumeTarget
+; 直接移除目标，不产生伤害、死亡、击杀或消耗乘客事件。</code></pre></figure><p>默认目标为 Target；目标须为可移除的存活地图对象。</p><h4 id="page-passives-actions-catalog--消耗乘客">消耗乘客</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ConsumePassenger
+; 消耗首个直接乘客及其嵌套载员，并产生一次直接乘客消耗事件。</code></pre></figure><h3 id="page-passives-actions-catalog--被动信号与脚本">被动、信号与脚本</h3><p>这些结果管理被动能力、信号和 Lua 回调。</p><h4 id="page-passives-actions-catalog--授予被动">授予被动</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantPassive
+; 授予目标一项已注册被动。
+
+Action.Passive=(被动 ID)
+; 指定已注册的被动。
+; 必填。
+
+Action.Duration=(整数帧)
+; 指定临时授予时长。
+; 默认值：-1，永久；临时授予填写正整数。
+
+Action.StackOnReapply=(布尔值)
+; 目标已拥有被动时，再次授予是否增加一层手动层数。
+; 默认值：no；首次获得时有效层数为 1。</code></pre></figure><p>层数行为见<a href="#page-passives-foundation-stacks">被动层数</a>。</p><h4 id="page-passives-actions-catalog--转移被动层数">转移被动层数</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=StealPassive
+; 从目标向持有者转移被动层数。
+
+Action.Passive=(被动 ID 列表)
+; 指定要转移的被动。
+; 必填。
+
+Action.Amount=(正整数)
+; 指定每个被动最多转移的层数。
+; 默认值：1。</code></pre></figure><p>默认目标为 Target；乘客支持来源的层数不可作为手动层数转移。</p><h4 id="page-passives-actions-catalog--移除被动">移除被动</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=RemovePassive
+; 移除目标持有的指定被动。
+
+Action.Passive=(被动 ID 列表)
+; 指定要移除的已注册被动。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--调整被动层数">调整被动层数</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangePassiveStack
+; 改变目标已持有被动的手动层数。
+
+Action.Passive=(被动 ID)
+; 指定已注册的被动。
+; 必填。
+
+Action.Amount=(非零有符号整数)
+; 指定增加或减少的手动层数。
+; 普通被动减到 0 层时自动移除，扣减量超过剩余层数也会移除。
+; 乘客、科研和关联被动持续提供的层数会保留。</code></pre></figure><h4 id="page-passives-actions-catalog--重置状态计时">重置状态计时</h4><p>可以用于制作一段时间未移动或未受伤的效果，不满足时就打断计时。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ResetStateTimer
+; 重置目标持有的持续状态等待计时。
+
+Action.Passive=(被动 ID)
+; 指定已注册的被动。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--发送自定义信号">发送自定义信号</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[发送方被动 ID 或结果节 ID]
+Action=SendSignal
+; 发送信号。
+
+Action.Signal=(信号 ID)
+; 非空信号名称，不区分大小写。
+; 必填；最多 127 字节。
+
+Action.Target=(目标名称)
+; 指定接收者或广播中心单位。
+; 默认值：Self。
+
+Action.Signal.Range=(整数格数)
+; 0 直接发送；1–128 为局部广播；-1 为全地图。
+; 默认值：0。
+
+Action.Signal.Houses=(所属关系列表)
+; 相对发送者，可填 Self、Allies、Enemies、Neutral、All。
+; 默认值：Self。
+
+Action.Signal.IncludeSelf=(布尔值)
+; 广播时是否包含发送者；直接发送给自身不受此项限制。
+; 默认值：no。
+
+Action.Signal.Target=(单位目标名称)
+; 附带单位，可填 Self、Target、Attacker、Victim；OnSignal 中还可填 Sender。
+; 默认值：无。
+
+Action.Signal.Value=(数字或公式)
+; 发送时计算的数值。
+; 默认值：0。</code></pre></figure><p>发送参数和接收方式详见<a href="#page-passives-events-signals">自定义信号</a>。</p><h4 id="page-passives-actions-catalog--执行-lua-脚本">执行 Lua 脚本</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=RunScript
+; 调用 Lua 文件中导出的函数。
+
+Action.Script=(Lua 文件名)
+; 指定脚本文件。
+; 必填；省略 .lua 时自动补全。
+
+Action.Function=(函数名)
+; 指定脚本中导出的回调函数。
+; 必填。</code></pre></figure><h3 id="page-passives-actions-catalog--武器与视听">武器与视听</h3><p>这些结果控制武器、弹头和视听效果。</p><h4 id="page-passives-actions-catalog--开火前替换武器">开火前替换武器</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ReplaceWeapon
+; 替换本轮射击使用的武器。
+
+Action.Weapon=(武器 ID)
+; 指定已注册的武器。
+; 必填。
+
+Action.Target=(Self)
+; 指定持有者。
+; 仅支持 Self；仅用于 OnBeforeFire。</code></pre></figure><h4 id="page-passives-actions-catalog--发射武器">发射武器</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=FireWeapon
+; 向目标单位或位置发射指定武器。
+
+Action.Weapon=(武器 ID)
+; 指定已注册的武器。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--引爆弹头">引爆弹头</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=DetonateWarhead
+; 在目标位置引爆指定弹头。
+
+Action.Warhead=(弹头 ID)
+; 指定已注册弹头。
+; 必填。
+
+Action.Amount=(非负整数)
+; 指定基础伤害。
+; 默认值：0；此处不支持公式。</code></pre></figure><h4 id="page-passives-actions-catalog--播放动画">播放动画</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=PlayAnim
+; 播放已注册动画。
+
+Action.Anim=(动画 ID)
+; 指定要播放的动画。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--播放音效">播放音效</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=PlaySound
+; 播放原版音效或 PCM WAV 文件。
+
+Action.Sound=(音效 ID 或 WAV 路径)
+; 使用原版音效 ID，或 wav: 后接 WAV 文件路径。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--屏幕震动">屏幕震动</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ShakeScreen
+; 触发屏幕震动。
+
+Action.ShakeX=(整数)
+; 指定水平方向震动。
+; 默认值：0；范围：0–32。
+
+Action.ShakeY=(整数)
+; 指定垂直方向震动。
+; 默认值：4；范围：0–32；X、Y 不能同时为 0。
+
+Action.ShakeLocal=(布尔值)
+; 控制是否使用本地震动。
+; 默认值：yes。</code></pre></figure><h4 id="page-passives-actions-catalog--生成粒子系统">生成粒子系统</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SpawnParticleSystem
+; 创建指定粒子系统。
+
+Action.ParticleSystem=(粒子系统 ID)
+; 指定已存在的粒子系统类型。
+; 必填。</code></pre></figure><h3 id="page-passives-actions-catalog--其他结果">其他结果</h3><p>以下结果的完整参数在独立小节中。</p><h4 id="page-passives-actions-catalog--强制位移">强制位移</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ForceMove
+; 使支持的地面步兵或载具产生强制位移或击飞。
+
+Action.ForceMove.Offset=(横向格数,纵向格数)
+; 相对位移，支持小数。
+; 各分量范围：-512–512；不能与 Mode、Center、Distance 同时使用。
+
+Action.ForceMove.Mode=(Push、Pull 或 Launch)
+; 分别为推开、拉近、击飞。
+; 不填 Offset 时必填；不要填写 Offset 作为 Mode。</code></pre></figure><p>参数详见<a href="#page-passives-actions-force-move">强制位移</a>。</p><h4 id="page-passives-actions-catalog--超时空传送">超时空传送</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChronoTeleport
+; 将支持的地面移动单位传送到可用格子。
+
+Action.Destination=(X,Y 或 Target)
+; Target 取执行动作时事件目标所在的地图格。没有有效的在场目标时，本次动作失败。
+; 填固定坐标时，每个坐标范围：0–511，且必须在可游玩地图内。</code></pre></figure><p>参数详见<a href="#page-passives-actions-teleport">超时空传送</a>。</p><h4 id="page-passives-actions-catalog--载具跳跃">载具跳跃</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=JumpTo
+; 使支持的地面载具跳向目标格。</code></pre></figure><p>参数详见<a href="#page-passives-actions-jump">载具跳跃</a>。</p><h4 id="page-passives-actions-catalog--弹射乘客">弹射乘客</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=EjectPassengers
+; 依次弹射运输工具中的合格步兵乘客。</code></pre></figure><p>参数详见<a href="#page-passives-actions-ejection--弹射乘客">弹射乘客与单位</a>。</p><h4 id="page-passives-actions-catalog--弹射单位">弹射单位</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=EjectUnit
+; 将一个已在地图上的合格步兵或地面载具弹射到目的地。</code></pre></figure><p>参数详见<a href="#page-passives-actions-ejection--弹射单位">弹射乘客与单位</a>。</p><h4 id="page-passives-actions-catalog--启动持续单位指令">启动持续单位指令</h4><p>用于执行类似定点区域持续索敌轰炸的指令。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Action=StartUnitOrder
+; 启动 ActSp 注册的持续单位指令。
+; 需要 Trigger=Active。
+
+Action.Order=(指令 ID)
+; 指定已注册的单位指令。
+; 必填。</code></pre></figure><h4 id="page-passives-actions-catalog--取消持续单位指令">取消持续单位指令</h4><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=CancelUnitOrder
+; 取消目标单位当前的持续单位指令。
+
+Action.Order=(指令 ID)
+; 只取消指定 ID 的指令。
+; 默认值：不限制指令 ID。</code></pre></figure></article><article id="page-passives-actions-multiple" data-title="多结果"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>多结果</h2><p>多结果让一次触发按指定顺序执行多个结果，适合组合多种效果。</p><p>同一被动中，<code>Actions</code> 不能与 <code>Action</code> 或 <code>RandomActions</code> 同时使用。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Actions=(结果节 ID 列表)
+; 按顺序执行多个结果节；相同 ID 多次出现时会重复执行。
+; 与 Action、RandomActions 互斥。</code></pre></figure><p>每个结果节只填写一个 <code>Action</code> 及其对应的 <code>Action.*</code> 参数，不支持嵌套结果列表。多个结果共用一次计数、概率和冷却判定，至少一个结果成功即可触发冷却。已执行的结果不会回滚；部分结果失败会停止后续步骤，具体限制以该结果的说明为准。</p><p>普通事件的公式通常使用事件触发时的快照，前一个结果不会改写原始快照。</p></article><article id="page-passives-actions-random" data-title="随机结果"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>随机结果</h2><p>随机结果从指定结果列表中按权重抽取并执行，适合制作随机奖励。</p><p>同一被动中，<code>RandomActions</code> 不能与 <code>Action</code> 或 <code>Actions</code> 同时使用。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+RandomActions=(结果节 ID 列表)
+; 按权重随机抽取并执行结果节。
+; 与 Action、Actions 互斥。
+
+RandomActions.Weights=(非负整数列表)
+; 与结果列表逐项对应的权重，不得全部为 0。
+; 默认值：等权。
+
+RandomActions.Count=(整数)
+; 独立抽取的次数，允许重复抽中同一结果。
+; 默认值：1；范围：1–256。</code></pre></figure><p>抽中的结果执行失败时不重新抽取。至少一个结果成功即可触发冷却。</p></article><article id="page-passives-actions-force-move" data-title="强制位移"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>强制位移</h2><p>强制位移可推开、拉近或击飞目标，并可设置移动距离、高度及碰撞规则。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ForceMove
+; 使支持的地面步兵或载具产生强制位移或击飞。
+
+Action.ForceMove.Offset=(横向格数,纵向格数)
+; 相对位移，支持小数。
+; 各分量范围：-512–512；不能与 Mode、Center、Distance 同时使用。
+
+Action.ForceMove.Mode=(Push、Pull 或 Launch)
+; 分别为推开、拉近、击飞。
+; 不填 Offset 时必填；不要填写 Offset 作为 Mode。
+
+Action.ForceMove.Center=(Self 或 Impact)
+; 推拉中心为持有者或事件命中位置。
+; 默认值：Self；不用于 Offset。
+
+Action.ForceMove.Distance=(小数格数)
+; 推拉的水平距离。
+; 默认值：0；范围：0–512；Push 和 Pull 要求有效距离大于 0。
+
+Action.ForceMove.Height=(小数格数)
+; 抬升高度。
+; 默认值：Launch 为 1 格，其他为 0；范围：0–512。
+
+Action.ForceMove.AirborneHeight=(小数格数)
+; 当前离地高度达到此值时按空中目标索敌；0 禁用该判定。
+; 默认值：1；范围：0–512。
+
+Action.ForceMove.Duration=(正整数帧)
+; 位移持续时间。
+; 必填。
+
+Action.ForceMove.Easing=(缓动方式)
+; 水平移动进度：Linear、EaseIn、EaseOut、EaseInOut。
+; 默认值：Linear。
+
+Action.ForceMove.Tilt=(布尔值)
+; 支持的 voxel 载具在位移时倾斜并在结束后恢复。
+; 默认值：yes。
+
+Action.ForceMove.IgnoreCollision=(布尔值)
+; yes 穿过障碍并在落地时结算碰撞；no 在障碍前停止水平移动。
+; 默认值：yes。
+
+Action.ForceMove.BlowWeight=(小数)
+; 只影响原版 Weight 严格小于此值的目标。
+; 默认值：不限制重量。
+
+Action.ForceMove.AffectsIronCurtain=(布尔值)
+; 是否允许影响真正的铁幕保护目标。
+; 默认值：no。</code></pre></figure><p>水平位移或高度至少有一项有效且非零。位移过程更新实际水平坐标；高度达到阈值后使用防空目标规则，下降到阈值以下恢复地面目标。忽略碰撞时落地可能碾压单位，撞到建筑或落在不可通行地形也可能导致死亡。</p></article><article id="page-passives-actions-teleport" data-title="超时空传送"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>超时空传送</h2><p>超时空传送将符合条件的地面移动单位送到目标附近的可用格子。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChronoTeleport
+; 将支持的地面移动单位传送到可用格子。
+
+Action.Destination=(X,Y 或 Target)
+; Target 取执行动作时事件目标所在的地图格。没有有效的在场目标时，本次动作失败。
+; 填固定坐标时，每个坐标范围：0–511，且必须在可游玩地图内。
+
+Action.SearchRadius=(整数格数)
+; 目标格不可用时的圆形搜索半径。
+; 默认值：3；范围：0–32；0 只尝试目标格。
+
+Action.Instant=(布尔值)
+; yes 立即移动；no 使用原版超时空传送行为。
+; 默认值：no。</code></pre></figure><p>例如，载具受伤后传送到攻击者附近。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[WarpToAttacker]
+Trigger=OnTakeDamage
+Action=ChronoTeleport
+Action.Target=Self
+Action.Destination=Target
+Action.SearchRadius=3</code></pre></figure><p>即时传送保留单位身份、生命和效果，但会清除现有移动和命令。不要在同步伤害拦截内直接传送，应延后执行。</p></article><article id="page-passives-actions-jump" data-title="载具跳跃"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>载具跳跃</h2><p>类似镰刀机甲的跳跃移动，建议配合主动技能发动。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=JumpTo
+; 使支持的地面载具跳向目标格。
+
+Action.Destination=(X,Y 或 Target)
+; Target 取执行动作时事件目标所在的地图格。没有有效的在场目标时，本次动作失败。
+; 指定目标地图格；省略时使用事件命中点。
+; 坐标范围：0–511，且须位于可游玩地图内。
+
+Action.Jump.Range=(整数格数)
+; 最大跳跃距离。
+; 默认值：6；范围：1–128。
+
+Action.Jump.Height=(整数格数)
+; 起点与终点连线上方的跳跃弧线高度。
+; 默认值：3；范围：1–128。
+
+Action.Jump.Duration=(正整数帧)
+; 飞行持续时间。
+; 默认值：15；范围：1–3600。
+
+Action.Jump.TakeoffAnim=(动画 ID)
+; 成功起跳时播放的已注册动画。
+; 默认值：不播放。
+
+Action.Jump.TakeoffSound=(音效 ID 或 WAV 路径)
+; 成功起跳时播放的音效；WAV 路径使用 wav: 前缀。
+; 默认值：不播放。
+
+Action.Jump.LandAnim=(动画 ID)
+; 落地时播放的已注册动画。
+; 默认值：不播放。
+
+Action.Jump.LandSound=(音效 ID 或 WAV 路径)
+; 落地时播放的音效；WAV 路径使用 wav: 前缀。
+; 默认值：不播放。</code></pre></figure><p>载具跳跃落地时会发动单位原生的碾压能力，可以摧毁目标点的步兵或载具，若目标格被占据又无法碾压时会改为寻找附近空地着陆。</p><p>作为主动技能使用时，目标类型须为 Point，跳跃距离由 <code>Active.Range</code> 配置；不应在主动技能节中填写 <code>Action.Destination</code> 或 <code>Action.Jump.Range</code>。</p></article><article id="page-passives-actions-ejection" data-title="弹射乘客与单位"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>弹射乘客与单位</h2><p>弹射结果可以依次发射运输工具中的合格乘客，也可以发射一个已在地图上的单位。</p><h3 id="page-passives-actions-ejection--弹射乘客">弹射乘客</h3><p>类似牛蛙战车的载员弹射，建议配合主动技能发动。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=EjectPassengers
+; 依次弹射运输工具中的合格步兵乘客。
+
+Action.Destination=(X,Y 或 Target)
+; Target 取执行动作时事件目标所在的地图格。没有有效的在场目标时，本次动作失败。
+; 指定目的地；省略时使用事件命中点。
+; 坐标范围：0–511，且须位于可游玩地图内。
+
+Action.Eject.Range=(整数格数)
+; 弹射最大距离。
+; 默认值：8；范围：1–128。
+
+Action.Eject.OpenHeight=(整数格数)
+; 乘客在落点上方打开降落伞的高度。
+; 默认值：3；范围：1–128。
+
+Action.Eject.HorizontalSpeed=(小数格数每游戏秒)
+; 弹射的水平速度。
+; 默认值：1；最小值：1/256。
+
+Action.Eject.Interval=(正整数帧)
+; 相邻乘客发射的间隔。
+; 默认值：9；范围：1–3600。</code></pre></figure><h3 id="page-passives-actions-ejection--弹射单位">弹射单位</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=EjectUnit
+; 将一个已在地图上的合格步兵或地面载具弹射到目的地。
+
+Action.Destination=(X,Y 或 Target)
+; Target 取执行动作时事件目标所在的地图格。没有有效的在场目标时，本次动作失败。
+; 指定目的地；省略时使用事件命中点。
+; 坐标范围：0–511，且须位于可游玩地图内。
+
+Action.Eject.Range=(整数格数)
+; 弹射最大距离。
+; 默认值：8；范围：1–128。
+
+Action.Eject.OpenHeight=(整数格数)
+; 在落点上方打开降落伞的高度。
+; 默认值：3；范围：1–128。
+
+Action.Eject.HorizontalSpeed=(小数格数每游戏秒)
+; 弹射的水平速度。
+; 默认值：1；最小值：1/256。</code></pre></figure><p>作为主动技能使用的乘客弹射须选择 Point 目标，弹射距离由 <code>Active.Range</code> 配置；不应在主动技能节中填写 <code>Action.Destination</code>、<code>Action.Eject.Range</code>。<code>EjectUnit</code> 不属于主动技能可直接配置的结果。</p></article><article id="page-passives-actions-attachments" data-title="挂载子单位"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>挂载子单位</h2><p><code>AttachUnit</code> 在存活且位于地图上的步兵、载具、飞机或建筑上创建一个真实的步兵或载具子单位。每次成功执行创建一个，子单位不能继续挂载子单位。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[挂载结果节 ID]
+Action=AttachUnit
+; 创建一个挂载子单位。
+
+Action.UnitType=(步兵或载具类型 ID)
+; 指定子单位类型；必填。
+
+Action.Target=(目标名称)
+; 作为母体的单位或建筑；默认值：Self。
+
+Action.Slot=(槽位名或 Auto)
+; Auto 占用母体 AttachSlots 中第一个空槽；指定名称则保留该槽位。
+; 默认值：不占用命名槽位；与 Action.Node 互斥。
+
+Action.Node=(节点名)
+; 占用母体的指定节点；与 Action.Slot 互斥。
+
+Action.Anchor=(Body 或 Turret)
+; 自由位置相对母体本体或炮塔；默认值：Body。
+
+Action.FLH=(前,左,高整数偏移)
+; 相对锚点的偏移，命名节点时叠加到节点偏移上。
+; 默认值：0,0,0；分量范围：-8192–8192；横向一格为 256 leptons。
+
+Action.TransportFire=(FollowTransport 或 Disabled)
+; 母体在开放式运输工具中时是否允许挂载单位开火。
+; 默认值：FollowTransport。
+
+Action.ExcludeParentPassives=(被动 ID 列表)
+; 指定不从母体继承的普通状态被动；默认值：空。
+
+[母体类型 ID]
+AttachSlots=(槽位名列表)
+; 定义 Auto 安装时依次使用的命名槽位。
+
+AttachNode.节点名.FLH=(前,左,高整数偏移)
+; 设置命名节点相对母体的偏移。
+
+AttachNode.节点名.Anchor=(Body 或 Turret)
+; 设置命名节点相对本体或炮塔。</code></pre></figure><p>子单位跟随母体位置、朝向和所属方，保留自己的原生类型被动。母体销毁时子单位移除；子单位销毁后槽位释放。同占地建筑变形保留挂载单位及偏移。</p><h3 id="page-passives-actions-attachments--移除挂载单位">移除挂载单位</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[移除结果节 ID]
+Action=RemoveAttachedUnit
+; 静默移除目标母体上的挂载单位，不触发死亡或击杀事件，并立即释放槽位。
+
+Action.Target=(目标名称)
+; 作为母体的单位或建筑；默认值：Self。
+
+Action.Slot=(实际槽位名)
+; 只移除指定槽位中的单位；省略时不限制，Auto 不用于移除。
+
+Action.UnitType=(步兵或载具类型 ID)
+; 只移除指定类型的单位；省略时不限制。
+
+Action.Count=(正整数或 All)
+; 最多移除的数量；All 移除所有匹配单位。
+; 默认值：1；按安装时间从新到旧移除。</code></pre></figure><p>没有匹配项时结果失败，并停止当前有序 <code>Actions</code> 或 Lua <code>ctx:actions</code> 列表；此前已执行的结果不会回滚。</p></article><article id="page-passives-events-signals" data-title="自定义信号"><div class="crumb">被动能力 <span>/</span> 一次性结果</div><h2>自定义信号</h2><p>信号不需要注册。发送后排队交付，接收被动使用 <code>Trigger=OnSignal</code> 和匹配的 <code>Signal</code>。</p><h3 id="page-passives-events-signals--发送方">发送方</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[发送方被动 ID 或结果节 ID]
+Action=SendSignal
+; 发送信号。
+
+Action.Signal=(信号 ID)
+; 非空信号名称，不区分大小写。
+; 必填；最多 127 字节。
+
+Action.Target=(目标名称)
+; 指定接收者或广播中心单位。
+; 默认值：Self。
+
+Action.Signal.Range=(整数格数)
+; 0 直接发送；1–128 为局部广播；-1 为全地图。
+; 默认值：0。
+
+Action.Signal.Houses=(所属关系列表)
+; 相对发送者，可填 Self、Allies、Enemies、Neutral、All。
+; 默认值：Self。
+
+Action.Signal.IncludeSelf=(布尔值)
+; 广播时是否包含发送者；直接发送给自身不受此项限制。
+; 默认值：no。
+
+Action.Signal.Target=(单位目标名称)
+; 附带单位，可填 Self、Target、Attacker、Victim；OnSignal 中还可填 Sender。
+; 默认值：无。
+
+Action.Signal.Value=(数字或公式)
+; 发送时计算的数值。
+; 默认值：0。</code></pre></figure><h3 id="page-passives-events-signals--接收方">接收方</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[接收方被动 ID]
+Trigger=OnSignal
+; 收到信号时判定。
+
+Signal=(信号 ID)
+; 要匹配的信号名称。
+; 必填。
+
+Filter.SenderHouse=(所属关系列表)
+; 按接收者视角筛选发送方所属关系。
+; 默认值：All。
+
+Filter.SenderKind=(单位类别列表)
+; 筛选发送者类别，取值与 Filter.TargetKind 相同。
+; 默认值：All。</code></pre></figure><p>接收时 <code>Self</code> 是接收者，<code>Target</code> 是附带单位，<code>Sender</code> 是发送者；<code>Filter.Target*</code> 筛选附带单位。信号链接收深度最多 16 层，最多交付 1024 次，超限会停止并记录日志。</p></article><article id="page-passives-continuous-index" data-title="持续效果概述"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>持续效果概述</h2><p>这些字段用于 <code>Trigger=WhileState</code>。条件成立时生效，条件不再成立时撤销。未填写的倍率默认为 1，开关默认不产生效果。不同持续被动的倍率相乘；事件结果改变的累计值另行计算。</p></article><article id="page-passives-continuous-stats" data-title="属性倍率"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>属性倍率</h2><p>持续属性倍率在状态满足时调整单位或建筑的属性，状态失效后撤销。</p><p>以下参数用于 <code>Trigger=WhileState</code> 的被动；未填写的倍率默认为 1，开关默认不产生效果。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Modifier.SpeedMultiplier=(数字或公式)
+; 移动速度倍率；范围：大于 0 且不超过 100。
+
+Modifier.FirepowerMultiplier=(数字或公式)
+; 火力倍率；范围：大于 0 且不超过 100。
+
+Modifier.ArmorMultiplier=(数字或公式)
+; 装甲强度倍率，数值越高越耐伤害；范围：大于 0 且不超过 100。
+
+Modifier.WeaponRangeMultiplier=(数字或公式)
+; 标准武器最大射程倍率；范围：大于 0 且不超过 100。
+
+Modifier.FireRateMultiplier=(数字或公式)
+; 射速倍率；标准重新装填延迟除以此值，不改变连发内部间隔。
+; 范围：大于 0 且不超过 100。
+
+Modifier.ExperienceMultiplier=(数字或公式)
+; 持有者击杀敌人所得经验的倍率。
+; 默认值：1；范围：0–100。
+
+Modifier.PowerMultiplier=(数字或公式)
+; 建筑发电量或耗电量的倍率。
+; 默认值：1；范围：0–100。
+
+Modifier.VisualScale=(固定小数倍率)
+; 单位或建筑绘制体型，不改变建筑占地。
+; 范围：0.01–2.00。
+
+Modifier.ProjectileScale=(固定小数倍率)
+; 发射时的弹体、命中特效及已有 CellSpread 范围倍率。
+; 范围：0.50–2.00。
+
+Modifier.TooltipText=(文本，可包含公式)
+; 持续状态生效时，在单位悬停名称下显示一行文字。
+; 默认值：不显示。
+
+Modifier.TooltipDecimals=(整数)
+; 提示文字中所有公式数值的固定小数位数。
+; 范围：0–6；需配置 Modifier.TooltipText。</code></pre></figure></article><article id="page-passives-continuous-limits" data-title="被动属性上下限"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>被动属性上下限</h2><p><code>[Starfall.PassiveLimits]</code> 控制事件结果对单位属性产生的<strong>累计值</strong>的上下限。持续状态提供的倍率在累计值上继续相乘，最终结果可以超出这里的上下限。</p><p>各字段填写正整数百分比，可以省略 <code>%</code>；下限不得大于对应上限。无效值会使用默认值并写入 <code>Starfall.log</code>；如果默认下限大于上限，则按上限调整下限。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.PassiveLimits]
+Speed=(正整数百分比)
+; 移动速度累计值的上限。
+; 默认值：300%
+
+Speed.Min=(正整数百分比)
+; 移动速度累计值的下限。
+; 默认值：1%
+
+Firepower=(正整数百分比)
+; 火力累计值的上限。
+; 默认值：1000%
+
+Firepower.Min=(正整数百分比)
+; 火力累计值的下限。
+; 默认值：1%
+
+Armor=(正整数百分比)
+; 装甲累计值的上限。
+; 默认值：1000%
+
+Armor.Min=(正整数百分比)
+; 装甲累计值的下限。
+; 默认值：1%
+
+Scale=(正整数百分比)
+; 单位体型累计值的上限。
+; 默认值：300%
+
+Scale.Min=(正整数百分比)
+; 单位体型累计值的下限。
+; 默认值：25%
+
+ProjectileScale=(正整数百分比)
+; 弹体体型及溅射范围累计值的上限。
+; 默认值：300%
+
+ProjectileScale.Min=(正整数百分比)
+; 弹体体型及溅射范围累计值的下限。
+; 默认值：1%
+
+WeaponRange=(正整数百分比)
+; 武器射程累计值的上限。
+; 默认值：300%
+
+WeaponRange.Min=(正整数百分比)
+; 武器射程累计值的下限。
+; 默认值：1%
+
+FireRate=(正整数百分比)
+; 射速累计值的上限。
+; 默认值：300%
+
+FireRate.Min=(正整数百分比)
+; 射速累计值的下限。
+; 默认值：1%</code></pre></figure><p>例如，<code>Firepower=200%</code> 将事件结果累计的火力限制在基础值的两倍；若同时存在 1.5 倍的持续火力效果，最终倍率可以达到 3 倍。</p><p>科研、主动技能及子模块各自的全局参数放在对应专题，不在这里重复列出。</p></article><article id="page-passives-continuous-weapons-abilities" data-title="武器与特殊能力"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>武器与特殊能力</h2><p>这些持续效果控制武器槽、多重射击、瘫痪、隐形等战斗能力。</p><p>以下参数用于 <code>Trigger=WhileState</code> 的被动；未填写的默认不产生效果。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Modifier.MultiShot=(非负整数、公式或布尔值)
+; 每次射击额外选择的不同目标数量；yes 等同于 $(This.Stack)。
+; 也可写 MultiShot；两个别名只能选一个。
+
+Modifier.MultiShot.PreferSameLayer=(布尔值)
+; 多重射击优先选择与主目标同为空中或地面的目标。
+; 默认值：no；也可写 MultiShot.PreferSameLayer。
+
+Modifier.DisablePrimary=(布尔值)
+; 禁用标准主武器槽。
+
+Modifier.DisableSecondary=(布尔值)
+; 禁用标准副武器槽。
+
+Modifier.PrimaryWeapon=(武器 ID)
+; 替换标准主武器槽；禁用优先于替换。
+
+Modifier.SecondaryWeapon=(武器 ID)
+; 替换标准副武器槽；禁用优先于替换。
+
+Modifier.EMP=(布尔值)
+; 施加流火管理的瘫痪效果；空中单位可能坠毁。
+
+Modifier.Taunt.Target=Source
+; 强制攻击授予此被动的单位。
+
+Modifier.Taunt.Priority=(非负整数)
+; 多个有效嘲讽来源的优先级，数值越高优先级越高。
+; 默认值：0；相同时保留当前目标。
+
+Modifier.Berserk=(布尔值)
+; 为非建筑单位启用狂暴行为，可能攻击友军。
+
+Modifier.Mirage=(布尔值)
+; 为载具启用静止伪装行为。
+
+Modifier.Cloakable=(布尔值)
+; 状态生效时赋予原版隐形能力，仍遵循原版隐形规则。
+; 默认值：no。
+
+Modifier.Immune=(布尔值)
+; 赋予原版式普通生命伤害免疫。
+
+Modifier.ImmuneToMindControl=(布尔值)
+; 阻止支持的新增心灵控制，不解除已有控制。</code></pre></figure></article><article id="page-passives-continuous-projectile-shield" data-title="抛射体护盾"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>抛射体护盾</h2><p>抛射体护盾在持有者周围形成球形拦截区域，可调整护盾范围和拦截伤害。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Modifier.ProjectileShield.Radius=(小数格数)
+; 球形护盾半径。
+; 必填；大于 0 且不超过 512。
+
+Modifier.ProjectileShield.HeightOffset=(小数格数)
+; 球心相对持有者的高度偏移。
+; 默认值：0；范围：-512–512。
+
+Modifier.ProjectileShield.BlockInviso=(布尔值)
+; 是否拦截瞬时 Inviso 抛射体。
+; 默认值：no。
+
+Modifier.ProjectileShield.DamageMultiplier=(非负小数)
+; 拦截伤害倍率；0 表示完全吸收。
+; 默认值：1。</code></pre></figure></article><article id="page-passives-continuous-aura-links" data-title="关联被动与光环"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>关联被动与光环</h2><p>关联被动和光环可在状态生效时，将其他被动提供给持有者、附近单位或关联单位。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Modifier.SpawnPassives=(被动 ID 列表)
+; 授予原版 Spawns= 创建的直接子机。
+
+Modifier.LinkedPassives=(被动 ID 列表)
+; 状态有效时使持有者拥有指定被动，不额外提供层数。
+
+Modifier.TransportPassives=(被动 ID 列表)
+; 乘客将被动授予其直接搭乘的地面载具。
+
+Modifier.TransportPassives.Stack=(布尔值)
+; 每个提供者是否贡献一层；需配置 Modifier.TransportPassives。
+; 默认值：no。
+
+Modifier.Aura.Passives=(被动 ID 列表)
+; 光环授予的已注册被动。
+; 必填；不能直接授予另一个光环被动。
+
+Modifier.Aura.Range=(整数格数)
+; 光环半径；-1 表示全地图。
+; 必填；局部范围：1–32。
+
+Modifier.Aura.Houses=(所属关系列表)
+; 可填 Self、Allies、Enemies、Neutral、All。
+; 默认值：Self。
+
+Modifier.Aura.TargetTypes=(类型或科研分类列表)
+; 可填具体类型、*、@Infantry、@Vehicle、@Aircraft、@Building。
+; 默认值：*。
+
+Modifier.Aura.IncludeSelf=(布尔值)
+; 是否包含通过其他筛选条件的持有者自身。
+; 默认值：no。</code></pre></figure><p>光环每 15 帧刷新一次，来源消失或状态失效时撤销该来源。乘客对载具的支持以直接搭乘关系为准，不能使用附近空间条件。</p></article><article id="page-passives-continuous-visuals" data-title="被动动画与染色"><div class="crumb">被动能力 <span>/</span> 持续性结果</div><h2>被动动画与染色</h2><p>被动可在获得、触发或持续生效时显示动画，也可以为持有者染色。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID]
+Anim=(动画 ID)
+; 在持有者身上播放跟随体型的循环动画。
+; 默认值：无。
+
+Anim.Always=(布尔值)
+; yes 时附着动画忽略被动状态条件；仍受可见性和生命周期影响。
+; 默认值：no；需要 Anim。
+
+Anim.WhileReady=(布尔值)
+; yes 时在事件被动冷却期间隐藏附着动画。
+; 默认值：no；需要 Anim 和正数 Cooldown。
+
+GainAnim=(动画 ID)
+; 单位在地图上新获得被动时播放一次。
+; 默认值：无。
+
+TriggerAnim=(动画 ID)
+; 通过触发检查后、执行结果前播放；持续状态在等待结束并进入状态时播放。
+; 默认值：无。
+
+TriggerAnim.Target=(Self 或 Target)
+; 动画播放在持有者或事件对方处。
+; 默认值：Self。
+
+Tint.Color=(红,绿,蓝)
+; 染色目标颜色，各分量为 0–255 的整数。
+; 默认值：无。
+
+Tint.Strength=(整数百分比)
+; 原图向目标颜色混合的程度，范围 0%–100%。
+; 默认值：50%；需要 Tint.Color。</code></pre></figure><p>动画 ID 必须已在游戏中注册。纯视觉被动在满足字段限制时可不写 <code>Trigger</code>；被动消失或单位离场时附着动画会移除或隐藏。多个染色效果以强度最大的为准，铁幕或力场护盾优先显示。</p></article><article id="page-passives-formulas-index" data-title="公式语法与规则"><div class="crumb">被动能力 <span>/</span> 数值公式</div><h2>公式语法与规则</h2><p>公式使用 <code>$(...)</code> 包裹，不是 Lua。比较运算结果为 0 或 1；小数和百分比字面量均可使用，例如 <code>1.5%</code> 等于 <code>0.015</code>。</p><p>支持一元 <code>+</code>、<code>-</code>，算术 <code>+</code>、<code>-</code>、<code>*</code>、<code>/</code>，比较 <code>&gt;</code>、<code>&gt;=</code>、<code>&lt;</code>、<code>&lt;=</code>、<code>==</code>、<code>!=</code>，以及 <code>min(a,b)</code>、<code>max(a,b)</code>、<code>clamp(x,low,high)</code>、<code>floor(x)</code>、<code>if(condition,thenValue,elseValue)</code>。不支持 <code>&amp;&amp;</code>、<code>||</code>、Lua 的 <code>and/or</code> 或连续比较。</p></article><article id="page-passives-formulas-variables" data-title="常用变量"><div class="crumb">被动能力 <span>/</span> 数值公式</div><h2>常用变量</h2><p>公式变量用于读取持有者、目标、所属玩家和事件的数值；可用范围取决于触发上下文。</p><div class="table-wrap"><table><thead><tr><th scope="col">变量</th><th scope="col">含义及范围</th></tr></thead><tbody><tr><td><code>Self.Health</code>、<code>Self.MaxHealth</code>、<code>Self.Cost</code></td><td>持有者生命、最大生命和类型基础价格。</td></tr><tr><td><code>Self.Ammo</code>、<code>Self.Passengers</code></td><td>弹药数（无限弹药为 -1）、直接载员数。</td></tr><tr><td><code>Self.Rank</code></td><td>等级：0 新兵、1 老兵、2 精英；仅持续状态。</td></tr><tr><td><code>Self.GattlingStage</code>、<code>Self.MaxGattlingStage</code></td><td>当前盖特阶段及总阶段数；仅持续状态；未配置盖特阶段时均为 0。</td></tr><tr><td><code>Owner.PowerOutput</code>、<code>Owner.PowerDrain</code>、<code>Owner.PowerSurplus</code></td><td>所属玩家的总发电、耗电和剩余电力；仅持续状态。</td></tr><tr><td><code>Target.Health</code>、<code>Target.MaxHealth</code>、<code>Target.Cost</code></td><td>事件对方或当前目标的数值，并非 <code>Action.Target</code> 的数值。</td></tr><tr><td><code>This.Stack</code></td><td>当前被动的有效层数。</td></tr><tr><td><code>Event.Damage</code></td><td>实际损血或待结算损血；仅用于对应伤害事件。</td></tr><tr><td><code>Event.Distance</code></td><td>持有者到事件对方或目标点的水平格数，不计算高度。</td></tr><tr><td><code>Sender.Health</code>、<code>Sender.MaxHealth</code>、<code>Sender.Cost</code></td><td>信号发送者的数值；仅 <code>OnSignal</code>。</td></tr><tr><td><code>Event.SignalValue</code></td><td>信号携带的数值；仅 <code>OnSignal</code>。</td></tr><tr><td><code>Research.ProjectID.CounterName</code></td><td>指定科研项目计数器的当前值。</td></tr></tbody></table></div><p>事件公式通常读取事件快照，持续状态读取当前值。缺少变量、除以零、结果超出目标字段范围或产生非有限数值时，该次计算失败；公式语法错误会使被动失效。</p><p>并非每个参数都支持公式；体型和弹体体型的永久变化使用固定百分比。</p></article><article id="page-active-overview" data-title="主动技能简介"><div class="crumb">主动技能</div><h2>主动技能简介</h2><p>主动技能由玩家选中单位后操作释放，可设置无目标、选取单位、地图点、区域或方向等目标方式。</p><p>技能可以通过单位类型绑定、科研或其他效果授予。技能具有独立的目标规则和冷却，也可以配置按钮图标、名称与目标指示器。</p><p>查阅参数时，可以从<a href="#page-active-registration">注册与授予</a>开始，再按需要查看<a href="#page-active-targeting">目标与释放方式</a>、<a href="#page-active-cooldown">冷却</a>及<a href="#page-active-results">技能结果</a>。</p></article><article id="page-active-registration" data-title="主动技能注册与授予"><div class="crumb">主动技能 <span>/</span> 基础配置</div><h2>主动技能注册与授予</h2><p>主动技能由玩家选择单位后使用，与被动共用注册表和授予方式。注册只定义技能，单位还须通过类型绑定、科研或其他授予方式获得该技能。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.PassiveTypes]
+0=(主动技能 ID)
+; 注册主动技能配置节。
+; 使用未占用的非负整数编号。
+
+[主动技能 ID]
+Trigger=Active
+; 将该配置定义为由玩家操作释放的主动技能。
+Action=(结果类型)
+; 执行主动技能支持的一次性结果，例如 RunScript。
+
+[单位类型 ID]
+Starfall.Passives=(被动或主动技能 ID 列表)
+; 将已注册技能授予该类型的单位。
+; 多个 ID 用英文逗号分隔；合并时保留已有技能。</code></pre></figure><p>技能也可通过科研的 <code>GrantPassive</code> 结果或其他被动的授予结果获得。同一技能 ID 在混合选择中共用一个界面按钮；每个单位的冷却分别计算。</p><p>主动技能不支持普通被动的筛选条件、<code>Chance</code>、<code>Actions</code>、持续状态条件或 <code>Stack.Max</code>。释放时使用单个受支持的结果，具体见<a href="#page-active-results">技能结果与脚本</a>。</p></article><article id="page-active-targeting" data-title="目标选择与释放方式"><div class="crumb">主动技能 <span>/</span> 基础配置</div><h2>目标选择与释放方式</h2><p>主动技能可以无目标释放，或由玩家选择单位、地图位置、区域或方向。目标类型决定可填写的范围和筛选字段。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Active.Target=(None、Unit、Point、Area 或 Direction)
+; 依次表示无目标、单位、地图点、圆形区域和方向。
+; 默认值：None。
+
+Active.Range=(整数格数)
+; Unit、Point、Area 目标的最大选取距离。
+; 默认值：0，表示不限制；范围：0–128；None 和 Direction 必须为 0。
+
+Active.Houses=(所属关系列表)
+; Unit 目标可选的所属方：Self、Allies、Enemies、Neutral、All。
+; 默认值：All；仅用于 Unit。
+
+Active.Radius=(整数格数)
+; Area 目标的圆形半径。
+; Area 必填且范围为 1–128；其他目标必须为 0。
+
+Active.Shape=(Circle)
+; Area 目标的区域形状。
+; 默认值：圆形；如填写，必须为 Circle 且目标须为 Area。
+
+Active.Distance=(整数格数)
+; Direction 目标的投射距离。
+; Direction 必填且范围为 1–128；其他目标必须为 0。
+
+Active.CastMode=(Single 或 All)
+; Single 选择一个符合条件的施法者；All 为每个符合条件的选中单位分别释放。
+; 默认值：Single；Single 按距目标最近选择，距离相同时按单位 ID 决定。
+
+Active.InterruptOrders=(布尔值)
+; 接受释放后是否中断施法者当前的移动或攻击命令。
+; 默认值：yes。</code></pre></figure><p>释放者必须属于发出命令的玩家、拥有该技能、存活且位于地图上，并处于允许操作的状态。单位目标仍受隐形和伪装的可见性规则限制；方向目标不能与施法者位于同一格，超出地图边界时终点会缩短。</p><p><code>JumpTo</code> 和 <code>EjectPassengers</code> 需要 <code>Point</code> 目标和大于 0 的 <code>Active.Range</code>；省略时分别使用 6 格和 8 格。ActSp 的 <code>StartUnitOrder</code> 要求 <code>Area</code>，<code>CancelUnitOrder</code> 要求 <code>None</code>。</p></article><article id="page-active-cooldown" data-title="主动技能冷却"><div class="crumb">主动技能 <span>/</span> 基础配置</div><h2>主动技能冷却</h2><p>冷却按每个技能持有者分别计算，在技能成功生效后开始。界面以游戏秒显示剩余时间并向上取整。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Cooldown=(非负整数帧)
+; 指定每次成功释放后的冷却时间。
+; 默认值：普通脚本及其他技能为 0；JumpTo 和 EjectPassengers 为 120 帧。</code></pre></figure><p>多个选中单位共用按钮时，只要其中一个持有者可以释放，就不显示倒计时；否则显示最短的剩余冷却。成功执行原生结果、改变持久状态或安排任务可以使脚本释放成功，Lua 仅返回 <code>true</code> 本身不会启动冷却。</p><p><code>Active.InterruptOrders=yes</code> 在施法者和目标通过检查后、结果执行前中断命令；即使脚本最终没有产生有效结果，也可能已经中断命令。</p></article><article id="page-active-icons" data-title="主动技能名称与图标"><div class="crumb">主动技能 <span>/</span> 界面与效果</div><h2>主动技能名称与图标</h2><p>技能名称和图标用于选中持有者后显示的按钮，不改变技能的实际效果或目标规则。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Active.Name=(文本或文本 ID)
+; 主动技能按钮显示的名称。
+; 默认值：技能 ID。
+
+Active.Icon=(图片路径)
+; 技能按钮图标，支持 PNG 或游戏可加载的 PCX。
+; 默认值：内置备用图标。</code></pre></figure><p>PNG 图标支持透明通道；图片本身的不透明黑色像素不会自动变透明。图标绘制会裁切到按钮开口，重要图案应尽量放在图片中间。</p></article><article id="page-active-indicators" data-title="主动技能目标指示器"><div class="crumb">主动技能 <span>/</span> 界面与效果</div><h2>主动技能目标指示器</h2><p>目标指示器显示技能的施法范围、目标位置和方向。贴图只影响本地显示，不改变有效射程或实际命中范围。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Active.Indicator.Texture=(PNG 文件路径)
+; 设置地面目标预览贴图；Area 使用范围圈，Unit、Point、Direction 使用目标准星。
+; 默认值：内置范围圈或准星。
+
+Active.Indicator.Opacity=(整数百分比)
+; 按比例调整贴图透明度；0 隐藏贴图预览。
+; 默认值：90；范围：0–100。
+
+Active.Indicator.Arrow.Texture=(PNG 文件路径)
+; 设置 Direction 技能使用的向上箭头贴图。
+; 默认值：内置箭头。
+
+Active.Indicator.Arrow.Width=(小数格数)
+; 设置方向箭头的世界坐标宽度。
+; 默认值：0.75；范围：0.1–8。
+
+Active.Indicator.Arrow.Head=(整数百分比)
+; 设置箭头顶部端帽占裁切后图片高度的比例。
+; 默认值：25；范围：1–98；与 Tail 相加必须小于 100。
+
+Active.Indicator.Arrow.Tail=(整数百分比)
+; 设置箭头底部端帽占裁切后图片高度的比例。
+; 默认值：37；范围：1–98；与 Head 相加必须小于 100。</code></pre></figure><p>指示器使用透明 PNG 原图；范围圈和准星按地面视角投影到游戏画面。方向箭头分为头、中、尾三段，改变长度时只拉伸中段。有效目标显示亮蓝色，无效目标显示红色；范围圈自转，目标准星循环缩放。</p><p>游戏目录中的 <code>sfindicator_ring.png</code>、<code>sfindicator_target.png</code> 和 <code>sfindicator_arrow.png</code> 可覆盖内置默认图；单个技能也可通过上述字段单独指定。自定义图片缺失时回退内置图。</p></article><article id="page-active-results" data-title="主动技能结果"><div class="crumb">主动技能 <span>/</span> 界面与效果</div><h2>主动技能结果</h2><p>主动技能一次只配置一个受支持的结果。脚本技能使用 <code>RunScript</code>；原生载具跳跃、乘客弹射和 ActSp 持续指令有各自的目标要求。</p><h3 id="page-active-results--lua-脚本结果">Lua 脚本结果</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Action=RunScript
+; 在释放时调用 Lua 脚本函数。
+
+Action.Script=(Lua 文件名)
+; 指定已发现的 Lua 脚本文件。
+; 必填；省略 .lua 时自动补全。
+
+Action.Function=(函数名)
+; 指定脚本导出的回调函数。
+; 必填。
+
+Script.Param.参数名=(数值或文本)
+; 向脚本传递自定义参数，通过 ctx.params 中的小写参数名读取。
+; 可按需要配置多个不同参数名。</code></pre></figure><p>脚本通过 <code>ctx.self</code> 访问施法者；单位目标通过 <code>ctx.target</code> 访问，点目标通过 <code>ctx.point</code> 访问。区域目标提供 <code>ctx.area</code>，方向目标提供 <code>ctx.direction</code> 和终点 <code>ctx.point</code>。延迟任务若需使用原始目标数据，应将需要的数据保存到任务参数中。</p><h3 id="page-active-results--其他受支持的结果">其他受支持的结果</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Action=JumpTo
+; 支持的地面载具跳向选定地点；目标类型必须为 Point。
+
+Action=EjectPassengers
+; 从运输工具依次弹射合格步兵乘客；目标类型必须为 Point。
+
+Action=StartUnitOrder
+; 启动已注册的 ActSp 持续单位指令；目标类型必须为 Area。
+
+Action=CancelUnitOrder
+; 取消持续单位指令；目标类型必须为 None。</code></pre></figure><p>这些 <code>Action</code> 是互斥选项。<code>StartUnitOrder</code> 必须指定已注册的 <code>Action.Order</code>，<code>CancelUnitOrder</code> 可选填 <code>Action.Order</code> 限制取消的指令。跳跃和弹射的范围通过 <code>Active.Range</code> 配置；其他可用参数见<a href="#page-passives-actions-jump">载具跳跃</a>和<a href="#page-passives-actions-ejection">弹射乘客与单位</a>。</p><p>主动技能只能直接配置上面列出的受支持结果，不支持直接配置其他一次性结果或多结果列表。其他效果可通过 <a href="#page-lua-actions">Lua 结果调用</a>执行。</p></article><article id="page-research-overview" data-title="科研三选一简介"><div class="crumb">科研三选一</div><h2>科研三选一简介</h2><p>科研三选一是一套面向玩家的升级规则：玩家积累科研点后，可以从当前提供的候选项目中选择一项。项目的稀有度、获取条件和具体效果均可配置。</p><p>科研可以授予被动、修改价格、解锁建造或提供其他奖励。除普通购买外，地图和特殊效果也可以提供免费选择或随机科研；具体获取方式遵循各自的筛选规则。</p><p>查阅参数时，可以先看<a href="#page-research-projects">科研项目</a>与<a href="#page-research-effects">科研结果</a>，再按需要查看<a href="#page-research-selection">抽取与全局设置</a>和<a href="#page-research-building-free">建筑免费科研</a>。</p></article><article id="page-research-projects" data-title="科研项目"><div class="crumb">科研三选一 <span>/</span> 项目与结果</div><h2>科研项目</h2><p>科研项目需要注册并定义独立的配置节。普通科研每次消耗 100 点科研点，默认每个玩家只能获得同一项目一次；项目生效范围取决于其科研结果。</p><h3 id="page-research-projects--注册与通用参数">注册与通用参数</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.ResearchTypes]
+0=(科研项目 ID)
+; 注册科研项目。合并配置时使用未占用的非负整数编号。
+
+[科研项目 ID]
+Name=(文本或文本 ID)
+; 卡片和已获得列表中显示的项目名称。
+; 默认值：项目 ID；部分旧内置项目有专用默认值。
+
+Summary=(文本或文本 ID)
+; 科研卡片上显示的简短说明。
+; 默认值：空；部分旧内置项目有专用默认值。
+
+Detail=(文本或文本 ID)
+; 悬停时显示的详细说明，可包含受支持的公式和占位符。
+; 默认值：支持自动生成的结果会生成说明。
+
+Detail.Decimals=(整数)
+; Detail 中公式数值的固定小数位数。
+; 范围：0–6；省略时最多显示两位并去除末尾零。
+
+Icon=(图片路径)
+; 科研图标，支持 PNG 或游戏可加载的 PCX。
+; 默认值：内置备用图标。
+
+TargetLabel=(文本或文本 ID)
+; 卡片副标题中稀有度后面的作用对象名称。
+; 默认值：根据结果及目标类型自动生成。
+
+Rarity=(Common、Rare、Epic 或 Insane)
+; 项目的稀有度，分别对应普通、稀有、史诗和疯狂。
+; 默认值：Common；填写无效值会使项目不可用。
+
+Effect=(科研结果名称)
+; 指定该项目的单个结果，结果专用字段写在本节。
+; 默认值：GrantPassive。
+
+Effects=(结果节 ID 列表)
+; 按顺序执行多个科研结果节；每个结果节必须分别设置 Effect。
+; 默认值：不使用；填写后覆盖本节的单结果配置，不允许空列表。
+
+Stages=(阶段 ID 列表)
+; 指定该项目的计数或公式阶段，阶段字段写在对应阶段节中。
+; 默认值：无；有效阶段存在时可以不配置获得项目时的结果。</code></pre></figure><p>结果种类及专用参数见<a href="#page-research-effects">科研结果</a>。<code>Effects</code> 中重复的结果节 ID 只执行首次出现的一次；任一结果配置无效可能使整个项目不可用。</p><h3 id="page-research-projects--获取条件">获取条件</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID]
+Countries=(国家 ID 列表或 *)
+; 限制可以抽取或获得项目的国家；* 表示所有国家。
+; 默认值：Countries 与 UnlockWithTech 均省略时不限制国家。
+
+UnlockWithTech=(单位或建筑类型 ID 列表)
+; 拥有其中任一类型的 UnlockTech 建造许可时，也可满足国家资格。
+; 默认值：空；单独设置时要求拥有其中一项许可。
+
+Prerequisites=(科研项目 ID 列表)
+; 要求玩家已拥有列表中的所有前置科研。
+; 默认值：无。
+
+Excludes=(科研项目 ID 列表)
+; 玩家已拥有任一列出项目时，排除此项目。
+; 默认值：无；仅单向限制，双方互斥须分别配置。
+
+Replaces=(科研项目 ID 列表)
+; 获得本项目时退役列出的所有基础项目。
+; 默认值：无；首次获得前必须拥有全部列出的项目。
+
+Repeatable=(布尔值)
+; 是否允许同一玩家重复获得该项目。
+; 默认值：继承 [Starfall.Research] 的 Repeatable。
+
+GrantOnly=(布尔值)
+; yes 时只允许通过 Action=GrantResearch 指定授予。
+; 默认值：no；普通抽取、免费选择和随机奖励均跳过此类项目。</code></pre></figure><p><code>Replaces</code> 会停止基础项目的持续被动、价格和生产许可效果；已经发放的资金、单位转换等一次性结果不会撤销。项目引用无效的前置、形成循环，或依赖无效链时，会被排除。目标类型当前是否存在与国家、前置条件是分别判断的。</p></article><article id="page-research-effects" data-title="科研结果"><div class="crumb">科研三选一 <span>/</span> 项目与结果</div><h2>科研结果</h2><p>科研结果可以直接写在科研项目节中，也可以写在 <code>Effects</code> 指向的独立结果节中。以下每张参数表对应一种 <code>Effect</code>；结果节必须明确填写 <code>Effect</code>。</p><h3 id="page-research-effects--授予被动">授予被动</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=GrantPassive
+; 向符合条件的现有及后续己方单位授予被动。
+
+Passive=(被动 ID)
+; 指定已注册的被动。
+; 必填。
+
+TargetTypes=(类型 ID 或分类列表)
+; 可填具体类型、*、@Infantry、@Vehicle、@GroundVehicle、@Aircraft、@Building。
+; 必填；允许混合填写。</code></pre></figure><p><code>@GroundVehicle</code> 包含符合地面载具条件的矿车、运输车和基地车；不包含舰船及按配置归类为空中单位的载具。</p><p>这里的具体类型 ID 不会因为规则中不存在而自动使项目失效；不存在的类型不会匹配到受益单位。被动 ID 无效、目标列表为空或使用未知分类则会使结果无效。</p><h3 id="page-research-effects--获得资金">获得资金</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=GiveCredits
+; 一次性向获得科研的玩家发放资金。
+
+Credits=(正整数)
+; 指定资金数量。
+; 默认值：0；有效奖励需要正数。</code></pre></figure><h3 id="page-research-effects--解锁建造">解锁建造</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=UnlockTech
+; 授予已有单位或建筑类型的生产许可。
+
+Technology=(类型 ID)
+; 指定要解锁的单位或建筑。
+; 必填；该类型须已在游戏规则中定义。</code></pre></figure><h3 id="page-research-effects--免费科研选择">免费科研选择</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=GrantFreeResearch
+; 向玩家提供一次免费选择科研的机会。
+
+Reward.ResearchOptions=(科研项目 ID 列表)
+; 限制候选项目范围。
+; 默认值：省略时从已注册项目中筛选。
+
+Reward.Rarity=(Any、Common、Rare、Epic 或 Insane)
+; 限制候选项目的稀有度。
+; 默认值：Any，不限制。
+
+Reward.Count=(整数)
+; 指定发放的免费科研选择次数。
+; 默认值：1；此结果仅接受 1。</code></pre></figure><h3 id="page-research-effects--获得随机科研">获得随机科研</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=GrantRandomResearch
+; 立即随机获得科研项目。
+
+Reward.Rarity=(Any、Common、Rare、Epic 或 Insane)
+; 限制随机奖励的稀有度。
+; 默认值：Any，不限制。
+
+Reward.Count=(整数)
+; 直接抽取的次数。
+; 默认值：1；范围：1–256。</code></pre></figure><p>随机奖励链会排除本链中已经获得的项目，避免循环反复触发。指定稀有度没有合格项目时不会回退到其他稀有度。</p><h3 id="page-research-effects--替换生产">替换生产</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=ReplaceProduction
+; 将获得者生产列表中的一种类型替换为另一种类型。
+
+FromType=(类型 ID)
+; 原类型。
+; 必填。
+
+ToType=(类型 ID)
+; 新类型。
+; 必填；必须与原类型同类别；建筑还要求 BuildCat 相同。</code></pre></figure><p>该结果只替换生产，不直接变形已有单位；替换链不受支持。建筑生产替换不要求两个建筑占地一致。</p><h3 id="page-research-effects--步兵转换">步兵转换</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=ConvertInfantry
+; 转换获得者当前符合条件的步兵。
+
+FromType=(步兵类型 ID)
+; 原步兵类型。
+; 必填。
+
+ToType=(步兵类型 ID)
+; 目标步兵类型。
+; 必填。</code></pre></figure><h3 id="page-research-effects--载具转换">载具转换</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=ConvertVehicle
+; 转换获得者当前符合条件的载具。
+
+FromType=(载具类型 ID)
+; 原载具类型。
+; 必填。
+
+ToType=(载具类型 ID)
+; 目标载具类型。
+; 必填。</code></pre></figure><p>Drive 和可降落的 Jumpjet 载具可通过 Phobos 的转换接口相互转换；载具须静止，位于可通行地面且不在桥上。</p><h3 id="page-research-effects--修改指定类型价格">修改指定类型价格</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=ModifyTypeCost
+; 修改获得者生产指定类型时的价格。
+
+TargetTypes=(类型 ID 列表)
+; 指定受影响的具体单位或建筑类型。
+; 必填；不支持分类选择器。
+
+CostModifier=(非零有符号整数或百分比)
+; 增加或减少固定金额，或调整价格百分比。
+; 必填。</code></pre></figure><p>这里列出的具体类型 ID 必须都已在游戏规则中注册；存在未注册类型时，此结果无效。</p><h3 id="page-research-effects--修改分类价格">修改分类价格</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID 或结果节 ID]
+Effect=ModifyCategoryCost
+; 修改获得者生产某个侧栏分类的价格。
+
+Category=(Building、Defense、Infantry 或 Vehicle)
+; 分别代表普通建筑、防御建筑、步兵和载具分类。
+; 必填；Vehicle 包含舰船与飞机。
+
+CostModifier=(非零有符号百分比)
+; 增加或减少该分类的价格百分比。
+; 必填。</code></pre></figure><p>生产订单开始时锁定价格，取消时退还实际支付金额。多个科研百分比调整相加，固定金额调整随后计算。</p><h3 id="page-research-effects--变体继承科研目标">变体继承科研目标</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[变体类型 ID]
+Starfall.ResearchAs=(基础类型 ID)
+; 使以基础类型为目标的 GrantPassive 和 ModifyTypeCost 也作用于此变体。
+; 只接受一个直接基础类型 ID。</code></pre></figure><p>只针对变体的效果仍只影响变体。同一结果同时列出基础类型和变体时只应用一次，价格按各类型自身的基础价格计算。</p><h3 id="page-research-effects--结果执行规则">结果执行规则</h3><p>普通购买时，暂时无法生效的结果会跳过；至少有一个结果成功才会扣除点数并记录科研。已经执行的结果不会因后续结果失败而回滚，跳过的一次性结果也不会在之后补发。</p></article><article id="page-research-selection" data-title="科研抽取与全局设置"><div class="crumb">科研三选一 <span>/</span> 抽取与奖励</div><h2>科研抽取与全局设置</h2><p>本节配置科研总开关、点数发放、候选抽取和稀有度权重。普通购买固定消耗 100 点科研点；无效、阵营不符、前置未满足或不可重复获得的项目不会进入候选。</p><h3 id="page-research-selection--科研与点数">科研与点数</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.Research]
+Enabled=(布尔值)
+; 控制科研界面、点数发放、购买与免费科研奖励。
+; 默认值：yes；关闭时已存储的点数和科研不会删除。
+
+InitialPoints=(非负整数)
+; 每位参与玩家的开局科研点。
+; 默认值：0。
+
+PeriodicPoints=(非负整数)
+; 每个周期向参与玩家发放的科研点。
+; 默认值：0；与 PeriodicIntervalSeconds 均为正数时生效。
+
+PeriodicIntervalSeconds=(非负整数秒)
+; 科研点周期发放的间隔，单位为游戏秒。
+; 默认值：0；上限为 2147483647 除以 15 后向下取整。
+
+AllowAIResearch=(布尔值)
+; 允许电脑使用科研点并领取结果提供的免费科研选择。
+; 默认值：no。
+
+Repeatable=(布尔值)
+; 科研项目是否默认允许重复获得。
+; 默认值：no；可在单个项目节中覆盖。</code></pre></figure><h3 id="page-research-selection--候选与刷新">候选与刷新</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.Research]
+AllowCardRefresh=(布尔值)
+; 允许普通科研卡片刷新。
+; 默认值：yes；每个卡位每轮最多免费刷新一次。
+
+MixedRarityPool=(布尔值)
+; 将符合条件的不同稀有度项目混池，逐项按所属稀有度权重抽取。
+; 默认值：no；yes 时优先于 SharedRaritySequence。
+
+SharedRaritySequence=(布尔值)
+; 使所有玩家按普通科研购买轮次共用稀有度随机序列。
+; 默认值：no；免费科研和刷新不推进轮次。</code></pre></figure><p>默认抽取方式先按权重选一个有候选的稀有度，再从该档提供最多三个项目。刷新需要至少 100 科研点，但本身不扣点；没有合适候选时不消耗刷新次数。</p><p>共用稀有度序列只统一档位，不统一具体项目。如果指定档位没有可选项目，会从该玩家其他有候选且权重大于 0 的档位补选。混池模式下每个项目分别拥有其稀有度权重，同轮不会重复抽到同一项目。</p><h3 id="page-research-selection--稀有度权重">稀有度权重</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.Research]
+RarityWeight.Common=(非负整数)
+; 普通项目的抽取权重。
+; 默认值：5。
+
+RarityWeight.Rare=(非负整数)
+; 稀有项目的抽取权重。
+; 默认值：4。
+
+RarityWeight.Epic=(非负整数)
+; 史诗项目的抽取权重。
+; 默认值：1。
+
+RarityWeight.Insane=(非负整数)
+; 疯狂项目的抽取权重。
+; 默认值：0。</code></pre></figure><p>权重为 0 的档位不参加普通抽取。指定稀有度的部分奖励有自己的筛选规则，详见<a href="#page-research-effects">科研结果</a>和<a href="#page-research-free-choices">免费科研选择</a>。</p></article><article id="page-research-free-choices" data-title="免费与随机科研奖励"><div class="crumb">科研三选一 <span>/</span> 抽取与奖励</div><h2>免费与随机科研奖励</h2><p>被动结果可以为目标所属玩家提供一次免费选择，或直接获得一个随机科研项目。这些奖励不消耗普通科研点，也不推进普通科研的共用稀有度序列。</p><h3 id="page-research-free-choices--免费选择">免费选择</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantFreeResearch
+; 向目标所属玩家提供一次免费科研选择。
+
+Action.ResearchOptions=(科研项目 ID 列表)
+; 限制可选项目范围。
+; 默认值：不指定列表，从已注册项目中筛选。
+
+Action.Rarity=(All、Common、Rare、Epic 或 Insane)
+; 限制候选项目的稀有度。
+; 默认值：All，不限制。</code></pre></figure><p>不指定列表时，按全局权重抽取最多三个不同项目；指定一至三个不同项目时按配置顺序提供，超过三个时按权重抽取。指定 <code>Action.Rarity</code> 时，即使该稀有度的全局权重为 0，也可以选择其中符合条件的项目。</p><p>免费选择仍检查玩家国家、前置、项目有效性和已有科研。没有合格候选时不会提供选择。多个免费机会可以等待领取，右上角科研按钮显示待领取数量。</p><h3 id="page-research-free-choices--直接获得随机科研">直接获得随机科研</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=GrantRandomResearch
+; 向目标所属玩家立即授予一个随机科研项目。
+
+Action.Rarity=(All、Common、Rare、Epic 或 Insane)
+; 限制奖励项目的稀有度。
+; 默认值：All，不限制。</code></pre></figure><p>该结果从符合条件的项目中随机选择，不使用普通科研的 <code>RarityWeight.*</code>。指定档位没有可用项目时不会回退到其他档位。免费选择或随机奖励作为<strong>科研项目本身的结果</strong>时，应使用<a href="#page-research-effects">科研结果</a>中的 <code>Effect</code> 和 <code>Reward.*</code> 字段，而不是这里的 <code>Action.*</code> 字段。</p></article><article id="page-research-counters" data-title="科研计数器"><div class="crumb">科研三选一 <span>/</span> 进度与组合</div><h2>科研计数器</h2><p>科研计数器属于获得该项目的玩家，供其单位共同读写。计数可以用于说明文案、被动公式和科研阶段条件。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID]
+Counters=(计数器名称列表)
+; 声明本项目使用的玩家共享计数器。
+; 默认值：无；项目 ID 和计数器名使用字母、数字或下划线，最长 127 字节。
+
+Detail=(文本或文本 ID)
+; 详细说明可通过公式读取已声明的科研计数器。
+; 例如：所有步兵提升 $(Research.InfArmor.Level*10)% 的护甲</code></pre></figure><p>计数器初始值为 0，使用 <code>Research.项目ID.计数器名</code> 读取。项目未被玩家拥有时读取为 0，写入不会生效；项目被组合升级退役后，其计数器会移除。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=ChangeResearchCounter
+; 修改事件所属玩家的科研计数器。
+
+Action.Counter=(项目 ID.计数器名)
+; 指定已声明的计数器。
+; 必填；Action.Target 须为 Self。
+
+Action.Amount=(非零有符号整数或公式)
+; 增加或减少的数量。
+; 必填；结果限制在 0–2147483647，公式结果向零截断。</code></pre></figure></article><article id="page-research-stages" data-title="科研阶段"><div class="crumb">科研三选一 <span>/</span> 进度与组合</div><h2>科研阶段</h2><p>科研阶段在玩家获得项目后检查条件；条件首次成立时执行该阶段的结果。一个项目可以拥有多个阶段。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[科研项目 ID]
+Stages=(阶段 ID 列表)
+; 指定属于该项目的阶段和检查顺序。
+; 默认值：无。
+
+[阶段 ID]
+Condition.Formula=(科研公式)
+; 非零时完成该阶段，公式可读取已声明的科研计数器。
+; 例如：$(Research.SomeTask.Count&gt;100)
+
+Effect=(科研结果名称)
+; 阶段完成时执行单个科研结果，专用参数写在本节。
+
+Effects=(结果节 ID 列表)
+; 阶段完成时按顺序执行多个结果节。
+; 填写后使用结果列表而非本节单结果配置；列表不能为空。</code></pre></figure><p>阶段可使用<a href="#page-research-effects">科研结果</a>中的结果类型。每个玩家的阶段只完成一次，完成记录随存档保存；一次性结果在无有效目标时可能无法生效，且不会再次补发。</p></article><article id="page-research-bonds" data-title="科研羁绊"><div class="crumb">科研三选一 <span>/</span> 进度与组合</div><h2>科研羁绊</h2><p>科研羁绊根据玩家拥有的成员项目数量激活对应档位。持续结果在满足门槛时生效；资金、转换等一次性奖励每位玩家每档只发放一次。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.ResearchBondTypes]
+0=(羁绊 ID)
+; 注册科研羁绊。
+
+[羁绊 ID]
+Name=(文本或文本 ID)
+; 羁绊显示名称。
+; 默认值：羁绊 ID。
+
+Members=(科研项目 ID 列表)
+; 组成该羁绊的不同科研项目。
+; 必填；项目须已注册。
+
+Stages=(羁绊档位 ID 列表)
+; 指定羁绊的奖励档位。
+; 必填；至少需要一个有效档位。
+
+[羁绊档位 ID]
+RequiredCount=(正整数)
+; 激活该档所需拥有的不同成员项目数量。
+; 必填；不能超过不同成员项目的数量。
+
+Summary=(文本或文本 ID)
+; 覆盖该档自动生成的奖励说明。
+; 默认值：自动生成；界面会自行显示数量门槛。
+
+Effect=(科研结果名称)
+; 达到门槛时生效的单个科研结果。
+
+Effects=(结果节 ID 列表)
+; 按顺序执行或提供多个科研结果。
+; 填写后使用结果列表而非本节单结果配置；列表不能为空。</code></pre></figure><p>公式变量 <code>Bond.羁绊ID.Count</code> 可读取当前拥有的成员数量。门槛不再满足时会撤销该档持续效果，之后重新满足可恢复；一次性奖励不会重复发放。</p></article><article id="page-research-building-points" data-title="建筑定时产出科研点"><div class="crumb">科研三选一 <span>/</span> 建筑科研</div><h2>建筑定时产出科研点</h2><p>建筑可在正常工作期间按独立计时周期向所属玩家发放科研点。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[建筑类型 ID]
+Starfall.ResearchPoints=(正整数)
+; 每个周期完成时发放的科研点。
+; 默认值：0；与 Starfall.ResearchInterval 均为正数时启用。
+
+Starfall.ResearchInterval=(正整数帧)
+; 建筑发放科研点的周期。
+; 默认值：150 帧。</code></pre></figure><p>EMP、离线或超时空移除期间暂停计时；建造、出售或离开地图会清除当前进度。所属方改变时为新所属方重新计时。</p></article><article id="page-research-building-free" data-title="建筑免费科研"><div class="crumb">科研三选一 <span>/</span> 建筑科研</div><h2>建筑免费科研</h2><p>特殊建筑可以在被工程师成功占领或被间谍成功渗透后，向相应玩家提供一次免费科研选择。建筑仍须符合原版占领或渗透规则。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[建筑类型 ID]
+Starfall.ResearchOptions=(科研项目 ID 列表)
+; 指定此建筑提供的科研候选。
+; 默认值：空；最多三个不同项目时按配置顺序显示。
+
+Starfall.ResearchOptions.AllowEngineerCapture=(布尔值)
+; 是否允许工程师成功占领后获得免费科研资格。
+; 默认值：no。
+
+Starfall.ResearchOptions.AllowSpyInfiltration=(布尔值)
+; 是否允许间谍成功渗透后为间谍所属玩家提供资格。
+; 默认值：no。</code></pre></figure><p>候选超过三个时按全局稀有度权重抽取最多三个不同项目；混池模式采用对应的混池规则。每个实体建筑只能领取一次，普通所属权转移不会替代合法占领或渗透。</p><p>玩家通过右上角科研按钮领取，角标显示待领取次数；领取免费科研不消耗科研点。建筑奖励不检查项目的国家和前置限制，但项目仍须有效、允许获得且至少有一个结果可生效。</p></article><article id="page-research-interface" data-title="科研界面与提示"><div class="crumb">科研三选一 <span>/</span> 界面与资源</div><h2>科研界面与提示</h2><p>这些参数控制科研标题、选择公告、稀有度名称和颜色，以及按钮和选卡提示。单个项目的名称、说明、图标和作用对象文字在<a href="#page-research-projects">科研项目</a>中配置。</p><h3 id="page-research-interface--界面与公告">界面与公告</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.Research]
+Title=(文本或文本 ID)
+; 科研选择面板的标题。
+; 默认值：请选择升级。
+
+AnnounceSelection=(布尔值)
+; 玩家成功选择普通或免费科研后，向所有玩家公告玩家名和项目名。
+; 默认值：yes。
+
+ShowAvailableAnimation=(布尔值)
+; 普通科研变为可购买或新获得免费选择时，播放汇向科研按钮的动画。
+; 默认值：yes；与提示音可分别关闭。</code></pre></figure><h3 id="page-research-interface--稀有度名称">稀有度名称</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.Research]
+RarityName.Common=(文本或文本 ID)
+; 普通档显示名称。
+; 默认值：普通。
+
+RarityName.Rare=(文本或文本 ID)
+; 稀有档显示名称。
+; 默认值：稀有。
+
+RarityName.Epic=(文本或文本 ID)
+; 史诗档显示名称。
+; 默认值：史诗。
+
+RarityName.Insane=(文本或文本 ID)
+; 疯狂档显示名称。
+; 默认值：疯狂。</code></pre></figure><p>修改显示名称不改变 <code>Rarity</code> 和奖励筛选使用的英文档位 ID；留空时使用该档默认名称。</p><h3 id="page-research-interface--稀有度颜色">稀有度颜色</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.Research]
+RarityColor.Common=(红,绿,蓝)
+; 普通档界面颜色。
+; 默认值：使用该档默认配色；图标保留原图颜色。
+
+RarityColor.Rare=(红,绿,蓝)
+; 稀有档界面颜色。
+; 默认值：该档默认配色。
+
+RarityColor.Epic=(红,绿,蓝)
+; 史诗档界面颜色。
+; 默认值：该档默认配色。
+
+RarityColor.Insane=(红,绿,蓝)
+; 疯狂档界面颜色。
+; 默认值：该档默认配色。</code></pre></figure><p>颜色分量均为 0–255 的整数。颜色用于图标、卡片强调部分和提示标题，图标原有明暗及透明度会保留。</p><h3 id="page-research-interface--提示音">提示音</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.ResearchSounds]
+Button=(内置音效名或 WAV 路径)
+; 点击有效按钮时播放。
+; 默认值：空，使用游戏原版点击音。
+
+Cards=(内置音效名或 WAV 路径)
+; 展开有候选卡片的面板时播放。
+; 默认值：空，不播放。
+
+Refresh=(内置音效名或 WAV 路径)
+; 成功刷新卡片时播放。
+; 默认值：空，不播放。
+
+Select=(内置音效名或 WAV 路径)
+; 成功选择科研时播放。
+; 默认值：空，不播放。
+
+Available=(内置音效名或 WAV 路径)
+; 普通科研变为可购买或新获得免费选择时播放。
+; 普通提示默认静音；免费科研省略此字段时使用内置提示音。</code></pre></figure><p>内置音效可填 <code>builtin:cards</code>、<code>builtin:select</code> 或 <code>builtin:available</code>。外部 WAV 支持未压缩 PCM、8 或 16 位、单声道或立体声，采样率为 8000–48000 Hz，文件最大 16 MiB。<code>Starfall.ini</code> 中明确留空 <code>Available</code> 可关闭免费科研提示音。</p></article><article id="page-lua-overview" data-title="Lua 脚本简介"><div class="crumb">Lua 脚本</div><h2>Lua 脚本简介</h2><p>Lua 可为被动、主动技能、武器、弹头和地图触发编写自定义行为，也可控制支持的抛射体运动。脚本通过流火提供的上下文查询游戏状态、执行结果和安排延迟任务。</p><p>各入口提供的数据和允许执行的操作并不完全相同。查阅时可先看<a href="#page-lua-entries">脚本入口</a>，再查看<a href="#page-lua-context">上下文与事件数据</a>和需要的接口小节。</p><h3 id="page-lua-overview--接口索引">接口索引</h3><p>以下按接口用途提供查找入口；字段的适用上下文、参数和返回值以对应小节为准。</p><div class="table-wrap"><table><thead><tr><th scope="col">查找内容</th><th scope="col">小节</th></tr></thead><tbody><tr><td>被动、主动技能、武器、弹头和地图脚本入口</td><td><a href="#page-lua-entries">Lua 脚本入口</a></td></tr><tr><td><code>ctx.self</code>、<code>ctx.target</code>、<code>ctx.point</code> 和事件快照</td><td><a href="#page-lua-context">Lua 上下文与事件数据</a></td></tr><tr><td><code>unit:alive()</code>、<code>unit:health()</code>、<code>unit:stack()</code> 和载员</td><td><a href="#page-lua-units">单位句柄与属性</a></td></tr><tr><td><code>ctx:house()</code>、<code>ctx:nearbyUnits()</code></td><td><a href="#page-lua-queries">玩家与附近单位查询</a></td></tr><tr><td><code>unit:moveTo()</code>、<code>unit:attack()</code> 和持续单位指令</td><td><a href="#page-lua-orders">Lua 单位指令</a></td></tr><tr><td><code>ctx:action()</code>、<code>ctx:actions()</code>、<code>ctx:runAction()</code></td><td><a href="#page-lua-actions">Lua 结果调用</a></td></tr><tr><td><code>ctx:schedule()</code>、<code>ctx.state</code> 和同步随机</td><td><a href="#page-lua-timers">状态、定时任务与同步随机</a></td></tr><tr><td><code>ctx:spawnAnim()</code>、<code>ctx:moveAnim()</code>、<code>ctx:removeAnim()</code></td><td><a href="#page-lua-animations">Lua 可移动动画</a></td></tr><tr><td><code>p:position()</code>、<code>p:setVelocity()</code> 和抛射体回调</td><td><a href="#page-lua-projectiles">Lua 抛射体运动</a></td></tr><tr><td>标准库、任务和脚本运行上限</td><td><a href="#page-lua-limits">Lua 运行环境与限制</a></td></tr></tbody></table></div></article><article id="page-lua-entries" data-title="Lua 脚本入口"><div class="crumb">Lua 脚本 <span>/</span> 脚本入口</div><h2>Lua 脚本入口</h2><p>不同脚本入口对应不同的触发时机和上下文。脚本文件须放在游戏目录，返回包含回调函数的 Lua 表。</p><div class="table-wrap"><table><thead><tr><th scope="col">入口</th><th scope="col">配置方式</th><th scope="col">触发时机</th></tr></thead><tbody><tr><td>被动事件</td><td>在被动中配置 <code>Action=RunScript</code>。</td><td>按被动的 <code>Trigger</code> 执行。</td></tr><tr><td>主动技能</td><td>在主动技能中配置 <code>Action=RunScript</code>。</td><td>玩家释放技能时执行。</td></tr><tr><td>武器开火</td><td>在武器上设置 <code>Starfall.FireScript</code>。</td><td>支持的武器接受一轮射击时执行。</td></tr><tr><td>弹头引爆</td><td>在弹头上设置 <code>Starfall.DetonateScript</code>。</td><td>弹头在地图上引爆并结算伤害后执行。</td></tr><tr><td>地图触发</td><td>注册<a href="#page-map-lua-presets">地图 Lua 预设</a>，使用地图动作 <code>9602</code>。</td><td>对应地图触发动作执行时。</td></tr><tr><td>自定义超武</td><td>在 ActionSequence 的结果步骤中配置 <code>RunScript</code>。</td><td>对应超武步骤执行时。</td></tr><tr><td>抛射体运动</td><td>在抛射体上设置 <code>ProjectileScript</code>。</td><td>发射、飞行更新及移动路径回调。</td></tr></tbody></table></div><h3 id="page-lua-entries--被动与主动技能脚本">被动与主动技能脚本</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动或主动技能 ID]
+Action=RunScript
+; 调用指定 Lua 回调。
+
+Action.Script=(Lua 文件名)
+; 指定脚本文件。
+; 必填；省略 .lua 时自动补全。
+
+Action.Function=(函数名)
+; 指定脚本返回表中的回调函数。
+; 必填。
+
+Script.Param.参数名=(数值或文本)
+; 向脚本传递自定义参数。
+; 可配置多个参数；回调中通过 ctx.params 的小写参数名读取。</code></pre></figure><p>主动技能的目标与结果限制见<a href="#page-active-results">主动技能结果</a>。普通被动脚本的 <code>ctx.self</code> 和 <code>ctx.target</code> 取决于触发事件；伤害拦截回调的动作限制与普通事件不同。</p><h3 id="page-lua-entries--文件与参数">文件与参数</h3><p>流火使用 Lua 5.4.8。脚本使用 UTF-8 编码，每个文件最大 1 MiB。INI 配置的函数名查找不区分大小写，但仅大小写不同的重名函数会产生歧义；延迟任务填写的回调名须与返回表中的函数名完全一致。</p><p><code>Script.Param.*</code> 的数值字符串会转换成 Lua 数字；其他值作为保留大小写的字符串。每次回调都会重新初始化模块变量；需要跨回调保存的数据应使用<a href="#page-lua-timers">状态与定时任务</a>，不要依赖模块局部变量。</p></article><article id="page-lua-weapon" data-title="武器开火脚本"><div class="crumb">Lua 脚本 <span>/</span> 脚本入口</div><h2>武器开火脚本</h2><p>武器开火脚本由选中的武器触发，无需注册被动。支持的武器接受一轮射击时执行一次回调，由脚本发射该轮所需的弹体。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[武器 ID]
+Starfall.FireScript=(Lua 文件名)
+; 指定武器开火时执行的脚本。
+; 必填；地图可覆盖该字段。
+
+Starfall.FireFunction=(函数名)
+; 指定脚本导出的开火回调。
+; 默认值：onFire；地图可覆盖该字段。</code></pre></figure><p>即使武器有多发连射，一轮射击也只排队一个回调；武器自身仍决定目标规则、整轮装填时间和一次弹药消耗。<code>ctx.self</code> 是开火者，<code>ctx.target</code> 是仍然存在的单位目标，<code>ctx.point</code> 保存开火时的目标格。</p><p>无效脚本或函数会记录配置错误并保留普通开火；已接受射击后的运行错误仍会消耗本轮射击。<code>Suicide</code>、<code>Spawner</code>、<code>LimboLaunch</code> 和 <code>DiskLaser</code> 等不支持此入口。</p><p>通过 Lua 的 <code>FireWeapon</code> 结果可使用可选的 <code>Origin</code> 指定本次发射位置。地图点的横向坐标以格为单位，可使用小数；<code>height</code> 表示相对地面或桥面的高度。也可使用存活且在地图上的单位句柄。指定的发射位置只影响本次开火，并优先于武器自身的发射位置设置。</p></article><article id="page-lua-warhead" data-title="弹头引爆脚本"><div class="crumb">Lua 脚本 <span>/</span> 脚本入口</div><h2>弹头引爆脚本</h2><p>弹头引爆脚本在每次地图上的弹头引爆完成伤害结算后执行，空地引爆也会触发。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[弹头 ID]
+Starfall.DetonateScript=(Lua 文件名)
+; 指定弹头引爆后执行的脚本。
+; 必填；支持规则、Starfall.ini 和地图覆盖。
+
+Starfall.DetonateFunction=(函数名)
+; 指定脚本导出的引爆回调。
+; 默认值：onDetonate。
+
+Script.Param.参数名=(数值或文本)
+; 向该弹头回调传递自定义参数。
+; 通过 ctx.params 的小写参数名读取。</code></pre></figure><p>回调中的 <code>ctx.warhead</code> 是弹头 ID，<code>ctx.point</code> 是引爆格，<code>ctx.damage</code> 是经过目标装甲计算前的基础伤害；<code>ctx.owner</code> 为开火所属方索引，无归属时使用中立方。<code>ctx.self</code> 和 <code>ctx.target</code> 初始为空。</p><p>一次直接命中及其范围伤害共用一次回调；独立引爆各自执行。回调同步引爆自身弹头时会执行爆炸，但阻止同一回调递归进入。</p></article><article id="page-lua-context" data-title="Lua 上下文与事件数据"><div class="crumb">Lua 脚本 <span>/</span> 上下文与查询</div><h2>Lua 上下文与事件数据</h2><p>回调的 <code>ctx</code> 提供本次事件、施法者、目标和所属方等数据。字段是否存在取决于入口和触发时机，使用前应检查。</p><div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx.self</code></td><td>持有者单位句柄；无施法者的上下文可能为空。死亡事件中的句柄也可能已不存活。</td></tr><tr><td><code>ctx.target</code></td><td>当前事件对方的单位句柄，可能为 <code>nil</code>；不是最近一次动作的目标。</td></tr><tr><td><code>ctx.damage</code></td><td>当前事件伤害；伤害拦截操作可以更新该值。</td></tr><tr><td><code>ctx.stack</code></td><td>当前被动在事件或任务中的有效层数。</td></tr><tr><td><code>ctx.event.selfHealth</code>、<code>ctx.event.selfMaxHealth</code></td><td>事件记录的持有者生命与最大生命。</td></tr><tr><td><code>ctx.event.targetHealth</code>、<code>ctx.event.targetMaxHealth</code></td><td>存在事件对方生命快照时提供。</td></tr><tr><td><code>ctx.event.selfPoint</code></td><td><code>OnDeath</code> 记录的死亡地图格。</td></tr><tr><td><code>ctx.event.targetPoint</code></td><td>支持的开火事件和武器开火脚本记录的目标格，包括点地目标。</td></tr><tr><td><code>ctx.point</code></td><td>入口提供的位置；主动技能和武器开火脚本可提供目标格。</td></tr><tr><td><code>ctx.area</code></td><td>区域主动技能的区域数据，包含 <code>center</code> 和 <code>radius</code>。</td></tr><tr><td><code>ctx.direction</code></td><td>方向主动技能的单位方向向量。</td></tr><tr><td><code>ctx.params</code></td><td>配置中的脚本参数；参数名为小写。</td></tr><tr><td><code>ctx.frame</code></td><td>当前模拟帧。</td></tr><tr><td><code>ctx.taskId</code></td><td>延迟任务回调中提供的任务 ID。</td></tr><tr><td><code>ctx.owner</code></td><td>序列、地图和弹头回调的所属玩家索引。</td></tr><tr><td><code>ctx.warhead</code></td><td>弹头引爆回调及其延迟任务中的弹头 ID。</td></tr><tr><td><code>ctx.superWeapon</code>、<code>ctx.castId</code></td><td>超武 ID 和独立调用编号；地图和弹头回调也提供调用编号。</td></tr><tr><td><code>ctx.state</code></td><td>当前上下文持久状态，详见<a href="#page-lua-timers">状态与定时任务</a>。</td></tr></tbody></table></div><p>不存在通用的 <code>ctx.sender</code>、<code>ctx.trigger</code>、<code>ctx.attacker</code> 或 <code>ctx.victim</code> 字段。事件快照与实时单位属性可能不同；延迟回调需要保留原始目标或数值时，应将所需数据保存到任务参数。</p></article><article id="page-lua-units" data-title="单位句柄与属性"><div class="crumb">Lua 脚本 <span>/</span> 上下文与查询</div><h2>单位句柄与属性</h2><p>单位句柄代表游戏中的一个具体单位或建筑，可以从 <code>ctx.self</code>、<code>ctx.target</code>、附近查询及载员查询中获得。访问存活单位的属性前，应检查句柄存在且 <code>unit:alive()</code> 为真。</p><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">返回值</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>unit:id()</code></td><td>整数</td><td>当前对象的唯一 ID；对象被移除后句柄仍保留原 ID。</td></tr><tr><td><code>unit:alive()</code></td><td>布尔值</td><td>句柄当前是否仍指向存活对象。</td></tr><tr><td><code>unit:type()</code></td><td>字符串</td><td>当前规则类型 ID；Lua 字符串比较区分大小写。</td></tr><tr><td><code>unit:kind()</code></td><td>字符串</td><td>对象类别：<code>infantry</code>、<code>vehicle</code>、<code>aircraft</code>、<code>building</code> 或 <code>other</code>。</td></tr><tr><td><code>unit:position()</code></td><td>坐标表或 <code>nil</code></td><td>在地图上时返回整数格坐标；离场或处于隐藏状态时返回 <code>nil</code>。</td></tr><tr><td><code>unit:owner()</code></td><td>整数</td><td>所属玩家数组索引；无所属方为 <code>-1</code>。</td></tr><tr><td><code>unit:health()</code></td><td>整数</td><td>当前生命值。</td></tr><tr><td><code>unit:maxHealth()</code></td><td>整数</td><td>当前最大生命值，包含支持的最大生命增量。</td></tr><tr><td><code>unit:ammo()</code></td><td>整数</td><td>剩余弹药；无限弹药为 <code>-1</code>。</td></tr><tr><td><code>unit:passengers()</code></td><td>整数</td><td>直接乘客数量。</td></tr><tr><td><code>unit:occupants()</code></td><td>单位句柄数组</td><td>直接载员，包括运输工具乘客、驻军和完全进入坦克碉堡的坦克。</td></tr><tr><td><code>unit:rank()</code></td><td>整数</td><td>等级：<code>0</code> 新兵、<code>1</code> 老兵、<code>2</code> 精英。</td></tr><tr><td><code>unit:trainable()</code></td><td>布尔值</td><td>当前类型是否允许晋升。</td></tr><tr><td><code>unit:cost()</code></td><td>整数</td><td>当前类型规则中的基础价格。</td></tr><tr><td><code>unit:hasPassive(passiveId)</code></td><td>布尔值</td><td>是否拥有指定已注册被动；ID 查找不区分大小写。</td></tr><tr><td><code>unit:stack(passiveId)</code></td><td>整数</td><td>指定被动的有效层数；未拥有时为 0，拥有时至少为 1。</td></tr></tbody></table></div><p>句柄失效时，<code>id()</code> 保留原 ID，<code>alive()</code> 返回 <code>false</code>，<code>occupants()</code> 返回空数组，其余属性查询返回 <code>nil</code>。<code>occupants()</code> 每次生成直接载员快照；嵌套运输需要对内层运输工具单独查询。</p></article><article id="page-lua-queries" data-title="玩家与附近单位查询"><div class="crumb">Lua 脚本 <span>/</span> 上下文与查询</div><h2>玩家与附近单位查询</h2><p>Lua 可读取玩家状态快照，并按地图位置或单位周围的范围查找当前单位。</p><h3 id="page-lua-queries--玩家快照">玩家快照</h3><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">返回值</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx:house(index)</code></td><td>玩家快照表或 <code>nil</code></td><td>读取指定玩家；省略索引时读取持有者或本次调用所属玩家。</td></tr></tbody></table></div><p>玩家快照字段包括 <code>index</code>、<code>powerOutput</code>、<code>powerDrain</code>、<code>powerBalance</code>、<code>credits</code> 和 <code>researchPoints</code>。快照是读取时的副本；修改返回表不会改变玩家状态，需要更新数据时应重新查询。</p><h3 id="page-lua-queries--附近单位">附近单位</h3><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">返回值</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx:nearbyUnits(center, radius, filters)</code></td><td>单位句柄数组</td><td>在单位或整数地图坐标周围查找单位；半径为 0–128 格，结果按对象 ID 排序。</td></tr></tbody></table></div><p><code>filters</code> 使用以下区分大小写的键：</p><div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">含义</th><th scope="col">默认值</th></tr></thead><tbody><tr><td><code>houses</code></td><td>所属关系列表；关系相对执行上下文的所属玩家。</td><td><code>All</code></td></tr><tr><td><code>types</code></td><td>具体类型 ID 或科研分类选择器。</td><td><code>*</code></td></tr><tr><td><code>includeSelf</code></td><td>中心为单位时，是否包含该中心单位。</td><td><code>false</code></td></tr><tr><td><code>visibleOnly</code></td><td>是否排除无法被所属方侦测的敌方隐形或伪装单位。</td><td><code>false</code></td></tr></tbody></table></div><p><code>houses</code> 和 <code>types</code> 支持逗号分隔的字符串或字符串数组。<code>visibleOnly</code> 使用同步的侦测状态，不表示本地视野或迷雾是否显示。</p></article><article id="page-lua-orders" data-title="Lua 单位指令"><div class="crumb">Lua 脚本 <span>/</span> 指令与结果</div><h2>Lua 单位指令</h2><p>单位指令通过单位句柄下达，使用正常游戏命令路径。指令被接受不代表移动、开火或部署已经完成。</p><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>unit:moveTo(point)</code></td><td>命令可移动单位前往有效地图格，使用正常寻路。</td></tr><tr><td><code>unit:attack(target)</code></td><td>命令单位攻击存活地图单位，或攻击可使用武器瞄准的地图格。</td></tr><tr><td><code>unit:deploy()</code></td><td>下达原版部署命令，具体行为由单位类型决定。</td></tr><tr><td><code>unit:startOrder(id, area)</code></td><td>开始已注册的 ActSp 持续单位指令；区域包含中心格和半径。</td></tr><tr><td><code>unit:currentOrder()</code></td><td>返回当前持续单位指令 ID；没有时返回 <code>nil</code>。</td></tr><tr><td><code>unit:cancelOrder(id)</code></td><td>取消当前持续单位指令；ID 可省略，填写时须与当前指令相同。</td></tr><tr><td><code>unit:setDroneGuardCell(point)</code></td><td>为符合条件的 ActSp 母体或哨站设置子机警戒格。</td></tr></tbody></table></div><p>除 <code>currentOrder()</code> 外，上述方法返回布尔值，表示指令是否被接受或成功取消。地图点使用可游玩范围内的整数格坐标；单位失效、在载具内、受到 EMP 或处于强制位移等不兼容状态时，指令可能失败。</p><p>在 <code>OnBeforeDealDamage</code> 或 <code>OnBeforeTakeDamage</code> 的同步伤害拦截回调中，应将单位指令安排到后续帧执行。</p></article><article id="page-lua-actions" data-title="Lua 结果调用"><div class="crumb">Lua 脚本 <span>/</span> 指令与结果</div><h2>Lua 结果调用</h2><p>Lua 可以直接执行流火结果、按顺序执行结果列表，或引用已有的 INI 单结果节。各入口仍受其上下文限制。</p><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">返回值</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx:action(name, args)</code></td><td>布尔值</td><td>执行一个指定名称的流火结果。</td></tr><tr><td><code>ctx:actions(list)</code></td><td>布尔值</td><td>按数组顺序执行多个结果；至少一个成功时返回真。</td></tr><tr><td><code>ctx:runAction(section, overrides)</code></td><td>布尔值</td><td>执行已有 INI 单结果节，并覆盖该接口允许的目标或位置字段。</td></tr><tr><td><code>ctx:spawnDeathCopy()</code></td><td>单位句柄或 <code>nil</code></td><td>在 <code>OnDeath</code> 回调中于死亡位置附近创建同类型新单位；放置失败返回 <code>nil</code>。</td></tr></tbody></table></div><p><code>args</code> 中的字段名不区分大小写，通常省略 INI 中的 <code>Action.</code> 前缀；Lua 布尔值对应 <code>yes</code> 或 <code>no</code>。<code>Target</code> 可按结果要求使用单位句柄、当前上下文支持的目标名称或地图点。</p><p><code>ctx:runAction</code> 只允许覆盖受支持的目标、位置和特定结果字段，不能任意替换结果类型或数值。不要同时传入同一字段的多个别名；未知字段或重复别名会报错。</p><p>Lua 结果不能递归调用 <code>RunScript</code>，也不能使用 <code>ReplaceWeapon</code>。同步伤害拦截只能通过结果接口使用 <code>SetDamage</code> 或 <code>BlockDamage</code>；地图和序列上下文不能使用需要不受支持施法者上下文的结果。结果字段见<a href="#page-passives-actions-catalog">一次性结果参数</a>。</p><p><code>GrantPassive</code> 允许在 Lua 参数中使用 <code>TauntTarget</code> 单位句柄指定嘲讽目标；省略时使用施法者。<code>FireWeapon</code> 可选用 <code>Origin</code> 指定本次开火的起点，详见<a href="#page-lua-weapon">武器开火脚本</a>。</p></article><article id="page-lua-timers" data-title="状态、定时任务与同步随机"><div class="crumb">Lua 脚本 <span>/</span> 状态与表现</div><h2>状态、定时任务与同步随机</h2><p>回调可以通过持久状态保存数据，安排后续帧的任务，并使用与其他玩家同步的随机数。</p><h3 id="page-lua-timers--定时任务与状态">定时任务与状态</h3><div class="table-wrap"><table><thead><tr><th scope="col">方法或字段</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx:schedule(frames, callbackName, data)</code></td><td>在指定正整数帧后执行已导出的回调，返回任务 ID；回调接收新的 <code>ctx</code> 和保存的 <code>data</code>。</td></tr><tr><td><code>ctx:cancel(id)</code></td><td>取消属于当前上下文的待执行任务；任务已执行、已取消或属于其他上下文时返回 <code>false</code>。</td></tr><tr><td><code>ctx.state</code></td><td>当前上下文的持久状态；键为 1–127 字节的字符串，赋值为 <code>nil</code> 时删除该键。</td></tr><tr><td><code>ctx.taskId</code></td><td>当前回调由定时任务触发时的任务 ID。</td></tr></tbody></table></div><p>可保存 <code>nil</code>、布尔值、整数、有限小数、字符串、单位句柄及由整数或字符串键构成的普通表。不支持函数、循环引用、元表或其他 userdata；单个数据树最多 256 个节点、深度 12，字符串与键合计最多 8 KiB。</p><p>从 <code>ctx.state</code> 读取表时得到的是副本；修改副本后须重新赋值才能保存。普通状态按持有者和技能区分；超武及地图上下文按调用区分，同一次调用中的步骤共享状态。</p><p>同一任务存储中，相同帧到期的任务按创建顺序执行。普通单位被移除时其任务和状态会清理；只失去技能通常不会取消已排队任务。延迟回调读取当前对象和参数，若需要原始事件数据，应存入 <code>data</code>。</p><h3 id="page-lua-timers--同步随机">同步随机</h3><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx:randomInt(min, max)</code></td><td>从闭区间随机取整数；参数须为有序的 32 位有符号整数。</td></tr><tr><td><code>ctx:randomPoint(area)</code></td><td>在地图可用范围内的圆形区域中均匀选择地图格；区域包含整数中心格和 0–128 格半径。</td></tr></tbody></table></div><p>流火随机流会同步并随存档保存，与原版武器随机流独立。普通单位与序列／地图分别有任务和状态容量，详细上限见<a href="#page-lua-limits">运行环境与限制</a>。</p></article><article id="page-lua-animations" data-title="Lua 可移动动画"><div class="crumb">Lua 脚本 <span>/</span> 状态与表现</div><h2>Lua 可移动动画</h2><p>Lua 可创建、移动和移除由当前上下文管理的动画。动画是视觉对象，不会自行造成伤害或移动单位。</p><div class="table-wrap"><table><thead><tr><th scope="col">方法</th><th scope="col">返回值</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>ctx:spawnAnim(id, point, options)</code></td><td>动画句柄整数或 <code>nil</code></td><td>在指定位置创建已注册动画；类型、资源或位置无效时返回 <code>nil</code>。</td></tr><tr><td><code>ctx:moveAnim(handle, point, frames)</code></td><td>布尔值</td><td>将动画设为在指定帧数内线性移动到目标位置，保留高度偏移。</td></tr><tr><td><code>ctx:removeAnim(handle)</code></td><td>布尔值</td><td>移除属于当前上下文的动画；句柄失效或不属于当前上下文时返回 <code>false</code>。</td></tr></tbody></table></div><p><code>spawnAnim</code> 的 <code>options</code> 支持以下区分大小写的字段：</p><div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">含义</th><th scope="col">默认值与约束</th></tr></thead><tbody><tr><td><code>loop</code></td><td>是否循环播放。</td><td><code>false</code>。</td></tr><tr><td><code>duration</code></td><td>动画存续帧数。</td><td><code>150</code>；整数 1–54000。</td></tr><tr><td><code>height</code></td><td>相对地面的高度偏移，单位为格。</td><td><code>0</code>；有限数值 -64–64。</td></tr></tbody></table></div><p>动画目标点可使用小数格坐标；移动时长为 1–54000 帧。全局最多管理 2048 个 Lua 动画。普通单位移除时会清理其动画；动画的寿命和移动状态随存档保留。非循环原版动画可能在指定时长之前自然结束。</p></article><article id="page-lua-projectiles" data-title="Lua 抛射体运动"><div class="crumb">Lua 脚本 <span>/</span> 状态与表现</div><h2>Lua 抛射体运动</h2><p>抛射体脚本为每个飞行中的弹体独立控制路径。它属于 ActSp 的抛射体运动功能，与普通 <code>ctx</code> 回调使用不同的 <code>p</code> 上下文。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[抛射体类型 ID]
+ProjectileScript=(Lua 文件名)
+; 指定抛射体运动脚本。
+; 必填；需要可见抛射体，不能同时使用 Phobos Trajectory 控制器。
+
+ProjectileScript.Life=(整数帧)
+; 每发脚本抛射体的最大存续时间。
+; 默认值：90；范围：1–1000000。</code></pre></figure><p>脚本可提供 <code>onLaunch(p)</code>、<code>onTick(p)</code> 和 <code>onTravel(p, from, to)</code> 回调。发射回调在第 0 帧执行；飞行更新从第 1 帧开始。移动路径回调在每个非零移动步长执行，即使飞行更新暂时休眠也会触发。飞行期间需要保存的数据放在 <code>p.state</code>。</p><h3 id="page-lua-projectiles--抛射体上下文">抛射体上下文</h3><div class="table-wrap"><table><thead><tr><th scope="col">字段或方法</th><th scope="col">含义</th></tr></thead><tbody><tr><td><code>p.age</code>、<code>p.life</code></td><td>已经过的帧数和最大存续帧数。</td></tr><tr><td><code>p:weaponSpeed()</code></td><td>发射武器的原始 INI <code>Speed</code>。</td></tr><tr><td><code>p:speed()</code>、<code>p:launchSpeed()</code></td><td>当前速度和发射初速度的大小，单位为格／帧。</td></tr><tr><td><code>p:position()</code>、<code>p:velocity()</code></td><td>三维位置和速度；位置的 Z 为世界绝对高度。</td></tr><tr><td><code>p:heightAboveGround()</code></td><td>当前相对地面的高度，单位为格。</td></tr><tr><td><code>p:target()</code>、<code>p:targetPoint()</code></td><td>存活地图目标句柄及三维瞄准点；失去目标后保留最后瞄准点。目标句柄支持 <code>id</code>、<code>alive</code>、<code>position</code> 和 <code>type</code>。</td></tr><tr><td><code>p:firer()</code></td><td>存活的原始开火者句柄，否则为 <code>nil</code>。</td></tr><tr><td><code>p:groundPoint(point)</code></td><td>返回指定位置的地面或桥面坐标；省略时使用当前位置。</td></tr><tr><td><code>p:nearbyUnits(point, radius, filter)</code></td><td>查询附近单位；半径 0–128 格，结果按对象 ID 排序。</td></tr><tr><td><code>p:setVelocity(x, y, z)</code></td><td>从当前帧开始修改持续速度。</td></tr><tr><td><code>p:moveTo(x, y, z)</code></td><td>指定当前帧的移动终点；下一帧恢复持续速度。</td></tr><tr><td><code>p:steerTo(point, speed, maxTurn)</code></td><td>向三维位置转向，单次最大转角为 0–180 度。</td></tr><tr><td><code>p:detonate()</code></td><td>在当前位置结束飞行；具体结束弹头取决于普通或穿透抛射体配置。</td></tr><tr><td><code>p:action(name, fields)</code></td><td>在抛射体上下文执行受支持的结果，返回是否成功。</td></tr></tbody></table></div><p>抛射体动作支持 <code>DetonateWarhead</code>、<code>PlayAnim</code>、<code>PlaySound</code>、<code>SpawnParticleSystem</code> 和 <code>FireWeapon</code>。脚本路径仍会检查支持的墙体、障碍和护盾；启用 <code>Piercing.Enabled</code> 时沿实际运动路径判定穿透。</p></article><article id="page-lua-limits" data-title="Lua 运行环境与限制"><div class="crumb">Lua 脚本</div><h2>Lua 运行环境与限制</h2><p>流火使用受限制的 Lua 运行环境，脚本只能访问提供的标准库和流火接口。运行错误会记录在 <code>Starfall.log</code> 并结束当前回调，已执行的结果不会回滚。</p><h3 id="page-lua-limits--标准库">标准库</h3><p>可用环境包含受限基础函数及 <code>table</code>、<code>string</code>、<code>math</code>、<code>utf8</code> 库；可以使用 <code>ipairs</code>。</p><p>以下功能不可用：<code>io</code>、<code>os</code>、<code>package</code>、<code>debug</code>、<code>coroutine</code>、<code>require</code>、<code>load</code>、<code>loadfile</code>、<code>dofile</code>、<code>collectgarbage</code>、<code>print</code>、<code>warn</code>、<code>getmetatable</code>、<code>setmetatable</code>、<code>pcall</code>、<code>xpcall</code>、<code>pairs</code>、<code>next</code>、<code>tostring</code>、<code>rawset</code>、<code>math.random</code>、<code>math.randomseed</code>、<code>string.dump</code> 和 <code>string.format</code>。同步随机数使用<a href="#page-lua-timers">同步随机接口</a>。</p><h3 id="page-lua-limits--运行上限">运行上限</h3><div class="table-wrap"><table><thead><tr><th scope="col">项目</th><th scope="col">上限</th></tr></thead><tbody><tr><td>单个 Lua 文件</td><td>1 MiB。</td></tr><tr><td>单次模块加载或回调的 Lua 分配内存</td><td>8 MiB。</td></tr><tr><td>单次模块加载或回调的 Lua 虚拟机指令</td><td>约 100000 条。</td></tr><tr><td>单次回调的原生动作与查询预算</td><td>4096；某些查询消耗多于一次。</td></tr><tr><td>待执行任务</td><td>普通单位和序列／地图各自最多 1024 个。</td></tr><tr><td>持久状态键</td><td>普通单位和序列／地图各自最多 2048 个。</td></tr><tr><td>Lua 管理的动画</td><td>全局最多 2048 个。</td></tr></tbody></table></div><p>这些数值是失败边界，不是性能目标。联机时，脚本不应根据本地界面显示、音效结果、系统时间或其他不同步的数据改变游戏状态。</p></article><article id="page-map-trigger-actions" data-title="地图触发动作"><div class="crumb">地图与小队 <span>/</span> 地图触发与小队脚本</div><h2>地图触发动作</h2><p>地图触发可通过动作编号发放科研点、授予预设中的被动，或执行地图 Lua 预设。动作需要配置在已有的地图触发器中，并配合原版事件和标签使用。</p><p>配置位置：地图文件（<code>.map</code>）中的触发动作，或地图编辑器对应的触发动作界面。</p><div class="table-wrap"><table><thead><tr><th scope="col">动作编号</th><th scope="col">功能</th><th scope="col">参数 3</th><th scope="col">参数 4</th></tr></thead><tbody><tr><td><code>9600</code></td><td>发放科研点</td><td>要发放的正整数点数</td><td>玩家选择值</td></tr><tr><td><code>9601</code></td><td>授予被动预设</td><td>已注册的<a href="#page-map-grant-presets">授予预设编号</a></td><td>接收对象选择值</td></tr><tr><td><code>9602</code></td><td>执行地图 Lua</td><td>已注册的<a href="#page-map-lua-presets">地图 Lua 预设编号</a></td><td>玩家选择值</td></tr></tbody></table></div><h3 id="page-map-trigger-actions--玩家选择值">玩家选择值</h3><div class="table-wrap"><table><thead><tr><th scope="col">参数 4</th><th scope="col">选择范围</th></tr></thead><tbody><tr><td><code>0</code></td><td>触发器所属玩家。</td></tr><tr><td><code>4475</code>–<code>4482</code></td><td>地图出生位置 1–8 对应的玩家，按顺序对应。</td></tr></tbody></table></div><p>动作 <code>9600</code> 向选择的有效玩家发放科研点；动作 <code>9602</code> 将选择的玩家作为 Lua 回调所属方。该数字是出生位置选择值，不是 Lua 或 DLL 接口中的玩家数组索引。</p><h3 id="page-map-trigger-actions--被动接收对象">被动接收对象</h3><p><code>9601</code> 除上述玩家选择值外，还接受以下参数 4：</p><div class="table-wrap"><table><thead><tr><th scope="col">参数 4</th><th scope="col">选择范围</th></tr></thead><tbody><tr><td><code>-1</code></td><td>与本次触发关联的对象；须为可接收被动的单位或建筑。</td></tr><tr><td><code>-2</code></td><td>地图上标签关联到该触发器的单位或建筑。</td></tr></tbody></table></div><p>使用玩家选择值时，<code>9601</code> 选择该玩家当前在地图上的单位和建筑，再由预设的类型条件筛选；不会自动授予之后新建的单位。预设参数见<a href="#page-map-grant-presets">被动授予预设</a>。</p></article><article id="page-map-team-actions" data-title="小队脚本动作"><div class="crumb">地图与小队 <span>/</span> 地图触发与小队脚本</div><h2>小队脚本动作</h2><p>小队脚本可以调用被动授予预设，对当前符合条件的小队成员授予被动，完成后继续执行下一条小队指令。</p><p>配置位置：地图文件（<code>.map</code>）或已加载规则中的小队脚本节。</p><div class="table-wrap"><table><thead><tr><th scope="col">动作编号</th><th scope="col">功能</th><th scope="col">动作参数</th></tr></thead><tbody><tr><td><code>9601</code></td><td>向当前符合条件的小队成员授予被动</td><td>已注册的授予预设编号</td></tr></tbody></table></div><p>实际授予仍受<a href="#page-map-grant-presets">被动授予预设</a>的持续时间和类型筛选约束。只处理执行动作时的小队成员；成员须存活且位于地图上。预设编号无效时不会授予被动，小队脚本仍会继续执行。</p></article><article id="page-map-grant-presets" data-title="被动授予预设"><div class="crumb">地图与小队 <span>/</span> 预设与单位绑定</div><h2>被动授予预设</h2><p>被动授予预设将被动列表、持续时间和接收类型组合起来，供地图触发动作和小队脚本动作 <code>9601</code> 使用。</p><p>配置位置：<code>rulesmd.ini</code> 或 <code>Starfall.ini</code>。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.PassiveGrants]
+1=(授予预设 ID)
+; 用编号注册预设，供动作 9601 的预设参数引用。
+; 编号使用不带前导零的非负十进制整数；合并时使用未占用的编号。
+
+[授予预设 ID]
+Passives=(被动或主动技能 ID 列表)
+; 指定要授予的已注册被动或主动技能。
+; 必填；列表中存在无效 ID 时预设无效。
+
+Duration=(整数帧)
+; 指定授予的持续时间。
+; 默认值：-1，永久；临时授予填写正整数帧。
+
+TargetTypes=(单位或建筑类型 ID 列表)
+; 限制可以接收授予的具体类型。
+; 默认值：不限制类型；不支持科研分类选择器，类型 ID 须存在。</code></pre></figure><p>预设只作用于执行时存活、在地图上且状态允许的对象；满足条件的建筑也可以接收。不填写 <code>TargetTypes</code> 时不会为后续出生的单位自动补发。</p></article><article id="page-map-lua-presets" data-title="地图 Lua 预设"><div class="crumb">地图与小队 <span>/</span> 预设与单位绑定</div><h2>地图 Lua 预设</h2><p>地图 Lua 预设把动作编号 <code>9602</code> 的数值参数关联到 Lua 脚本和回调函数。Lua 回调所属玩家由地图触发动作的参数 4 指定。</p><p>配置位置：<code>rulesmd.ini</code>、<code>Starfall.ini</code>，或地图文件（<code>.map</code>）中的对应节。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.MapScripts]
+1=(地图 Lua 预设 ID)
+; 用编号注册预设，供地图触发动作 9602 引用。
+; 编号使用不带前导零的非负十进制整数；预设 ID 最长 100 字节。
+
+[地图 Lua 预设 ID]
+Script=(Lua 文件名)
+; 指定已发现的 Lua 脚本文件。
+; 必填；省略 .lua 时自动补全。
+
+Function=(函数名)
+; 指定脚本导出的回调函数。
+; 必填；函数必须存在。
+
+Script.Param.参数名=(数值或文本)
+; 向回调传递自定义参数，通过 ctx.params 中的小写参数名读取。
+; 可配置多个不同参数名。</code></pre></figure><p>回调可读取 <code>ctx.owner</code>；触发关联的对象可用时提供 <code>ctx.self</code>，有效触发位置可用时提供 <code>ctx.point</code>。回调开始时没有 <code>ctx.target</code>。延迟任务不依赖关联单位存活，但之后访问该单位前仍应检查其有效性。</p><p>Lua 接口见<a href="#page-lua-context">上下文与事件数据</a>和<a href="#page-lua-actions">结果调用</a>。地图回调遵循序列上下文的结果限制，不能直接假定所有普通被动目标都存在。</p></article><article id="page-map-unit-bindings" data-title="地图单位被动绑定"><div class="crumb">地图与小队 <span>/</span> 预设与单位绑定</div><h2>地图单位被动绑定</h2><p>地图可以为某一单位或建筑类型追加被动或主动技能绑定，而不改变该地图以外的类型配置。</p><p>配置位置：地图文件（<code>.map</code>）中的单位或建筑类型节。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[单位或建筑类型 ID]
+Starfall.Passives=(被动或主动技能 ID 列表)
+; 向该地图上此类型的单位追加已注册的被动或技能。
+; 多个 ID 用英文逗号分隔；引用的技能须已注册并定义。</code></pre></figure><p>地图绑定与已有的类型绑定合并，同名 ID 不会重复添加。绑定作用于该地图上的类型，不是单独指定某一个地图对象；地图绑定会随存档保留。</p></article><article id="page-actsp-drones" data-title="子机与地面守卫"><div class="crumb">特殊行为 <span>/</span> 单位与建筑</div><h2>子机与地面守卫</h2><p>子机行为扩展原版飞行器子机的警戒、跟随和绕行；建筑也可以单独管理一个使用普通地面移动方式的守卫。飞行子机仍使用原版子机槽位。</p><h3 id="page-actsp-drones--子机行为">子机行为</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[母体类型 ID]
+Drone.Mode=(Native、Guard、Follow 或 Orbit)
+; 分别使用原版行为、固定格警戒、跟随偏移或围绕母体运行。
+; 默认值：Native。
+
+Drone.GuardCell=(整数 X,整数 Y)
+; Guard 模式的初始警戒格。
+; 默认值：未设置。
+
+Drone.Offset=(整数 X,整数 Y)
+; Follow 模式相对母体的地图轴偏移。
+; 默认值：2,0；每个分量范围：-32–32 格。
+
+Drone.Radius=(整数格数)
+; Orbit 模式的绕行半径。
+; 默认值：3；范围：1–32。
+
+Drone.Period=(整数帧)
+; Orbit 模式的绕行周期。
+; 默认值：180；范围：30–3600。
+
+Drone.GuardRange=(整数格数)
+; 警戒位置周围的索敌半径。
+; 默认值：5；范围：1–32。
+
+Drone.UseBuildingDocks=(布尔值)
+; 允许符合条件的建筑子机或地面守卫使用建筑停机位。
+; 默认值：no。</code></pre></figure><p>飞行子机需要原版子机槽位；没有攻击目标时主动起飞，需要母体当前使用的发射武器配置 <code>Spawner=yes</code>。母体指定的目标优先；飞行子机弹药耗尽后使用原版返航和补给。</p><h3 id="page-actsp-drones--建筑地面守卫">建筑地面守卫</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[建筑类型 ID]
+Drone.GroundUnit=(地面步兵或载具类型 ID)
+; 为 Guard 模式建筑指定一个地面守卫。
+; 默认值：未设置；飞行子机管理器存在时优先使用原版子机槽位。
+
+Drone.GroundRespawnDelay=(整数帧)
+; 守卫失去或建筑所属方改变后的补充等待时间。
+; 默认值：300；范围：0–1000000。</code></pre></figure><p>地面守卫使用自身寻路和武器，每个建筑管理一个；出口没有空位时等待。建筑被占领时，旧守卫归原玩家，新所属方在等待后补充守卫；建筑销毁或出售后存活守卫变为普通单位。</p><h3 id="page-actsp-drones--警戒格与停靠">警戒格与停靠</h3><p>可用建筑集合点或 Lua 的 <code>unit:setDroneGuardCell(point)</code> 设置警戒格，后一次设置覆盖前一次。地面守卫应选择可到达的格子；警戒格和守卫状态随存档保留。</p><p>启用建筑停靠时，飞行子机须满足建筑停机位及飞机 <code>Dock</code> 等原版要求。地面守卫向建筑地基附近设置集合点可召回停靠；向更远处设置集合点可派出警戒。</p></article><article id="page-actsp-garrison" data-title="高级驻军"><div class="crumb">特殊行为 <span>/</span> 单位与建筑</div><h2>高级驻军</h2><p>高级驻军让建筑内的步兵使用各自可在运输中使用的武器向外开火，并分别装填。全局启用后，可以按建筑类型覆盖开关及倍率。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[General]
+BetterGarrison.Enabled=(布尔值)
+; 为支持驻军开火的建筑启用高级驻军。
+; 默认值：no。
+
+BetterGarrison.DamageMultiplier=(小数倍率)
+; 驻军武器伤害倍率。
+; 默认值：1.20；范围：0–100。
+
+BetterGarrison.RangeBonus=(整数格数)
+; 索敌和开火射程增加的格数。
+; 默认值：1；限制在 -128–128。
+
+BetterGarrison.FireRateMultiplier=(小数倍率)
+; 射速倍率，整轮装填时间除以该值。
+; 默认值：1.0；范围：0.01–100。
+
+[建筑类型 ID]
+BetterGarrison.Enabled=(布尔值)
+; 针对该建筑类型覆盖启用状态。
+; 默认值：继承全局；全局开关关闭时不能单独启用。
+
+BetterGarrison.DamageMultiplier=(小数倍率)
+; 覆盖该建筑类型的驻军伤害倍率。
+; 默认值：继承全局。
+
+BetterGarrison.RangeBonus=(整数格数)
+; 覆盖该建筑类型的射程加成。
+; 默认值：继承全局。
+
+BetterGarrison.FireRateMultiplier=(小数倍率)
+; 覆盖该建筑类型的驻军射速倍率。
+; 默认值：继承全局。</code></pre></figure><p>驻军武器遵循 <code>OpenTransportWeapon</code>、<code>FireInTransport</code> 等原有配置。手动攻击的可选目标由当前最早进入的驻军武器决定；各驻军优先攻击可攻击的指定目标，否则按自身武器规则索敌。可手动攻击符合武器条件的中立对象，按住 Ctrl 可对可攻击的空地强制开火。</p></article><article id="page-actsp-platform" data-title="建筑高台"><div class="crumb">特殊行为 <span>/</span> 单位与建筑</div><h2>建筑高台</h2><p>建筑高台为高于周围地面的建筑平台，可承载地面单位和普通建筑。新配置使用完整矩形外围地基，中间留空作为台面。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[高台建筑类型 ID]
+HighPlatform.Enabled=(布尔值)
+; 为使用受支持地基的建筑启用高台行为。
+; 默认值：no。
+
+HighPlatform.AllowLand=(布尔值)
+; 允许在完全由可建造陆地组成的区域放置。
+; 默认值：yes。
+
+HighPlatform.AllowWater=(布尔值)
+; 允许在完全由开阔水面组成的区域放置。
+; 默认值：no；不支持陆地与水面混合地基。
+
+HighPlatform.Enter=(布尔值)
+; 允许符合条件的友方步兵和载具进入该高台。
+; 默认值：yes。
+
+[步兵或载具类型 ID]
+HighPlatform.Enter=(布尔值)
+; 是否允许此类型进入启用入口的友方高台。
+; 默认值：yes。</code></pre></figure><p>高台的地基参数写在 <code>artmd.ini</code> 对应的建筑图像节中：<code>Foundation=Custom</code>，<code>Foundation.X</code> 和 <code>Foundation.Y</code> 指定外部宽度与长度，两个尺寸均至少为 3；<code>Foundation.n</code> 列出完整的一格宽外围，内部留空。台面抬高四级地形高度；外围与台面必须平坦、同高且满足地形和占用检查。</p><p>单位可从高台外围进入空闲台面；选择高台并部署可让台面单位下来。出售或摧毁高台会恢复原地形，同时摧毁台面上的建筑并使地面单位坠落死亡。高台图像可在 <code>artmd.ini</code> 配置 <code>CanHideThings=no</code>，以避免遮住台面单位。</p></article><article id="page-actsp-build-nodes" data-title="移动建造节点"><div class="crumb">特殊行为 <span>/</span> 单位与建筑</div><h2>移动建造节点</h2><p>移动建造节点让指定步兵、载具或符合条件的旋翼飞机在当前位置提供建造范围，节点随单位移动。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[步兵、载具或飞机类型 ID]
+BuildNode.Enabled=(布尔值)
+; 允许该单位为所属玩家提供建筑放置范围。
+; 默认值：no。</code></pre></figure><p>建筑仍使用自身的 <code>Adjacent</code> 和原版地基、地形检查。被运输、驻军或处于坠落状态的单位不提供节点；空中 Jumpjet、Hover 单位及旋翼飞机使用其正下方的地图格。</p></article><article id="page-actsp-walls" data-title="实体围墙"><div class="crumb">特殊行为 <span>/</span> 单位与建筑</div><h2>实体围墙</h2><p>实体围墙使用真实建筑作为端点和连接段；同所属方、同分组且位于同一高度的端点可沿地图轴连接。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[建筑类型 ID]
+EntityWall.Enabled=(布尔值)
+; 启用该建筑的实体围墙行为。
+; 默认值：no；端点和连接段须为支持的独立 1×1 建筑。
+
+EntityWall.SegmentType=(建筑类型 ID)
+; 指定连接时自动生成的围墙段类型。
+; 默认值：本类型；围墙段也须启用该功能并将段类型指向自身。
+
+EntityWall.Group=(分组 ID)
+; 指定能相互连接的围墙分组。
+; 默认值：围墙段类型 ID。
+
+EntityWall.MaxGap=(整数格数)
+; 指定两个端点之间允许的空格数量。
+; 默认值：4；范围：0–32。
+
+EntityWall.BlocksProjectiles=(布尔值)
+; 对 SubjectToWalls=yes 的武器应用普通围墙索敌与阻挡规则。
+; 默认值：传统围墙为 yes；启用 ProjectileBlocker 时为 no。
+
+EntityWall.HighWall=(布尔值)
+; 对 SubjectToCliffs=yes 的武器阻止跨墙瞄准。
+; 默认值：no。
+
+EntityWall.ConnectionFrames=(布尔值)
+; 按四方向邻接状态选择围墙图像帧。
+; 默认值：围墙段为 yes，端点为 no。</code></pre></figure><p>实体围墙使用建筑类型而非原版覆盖物围墙；类型需设置 <code>Wall=no</code>。使用 <code>BaseNormal=no</code> 可避免围墙扩展普通建造范围。各段独立承受伤害，连接路径受阻时不会在受阻方向生成围墙段。</p></article><article id="page-actsp-orders" data-title="持续单位指令"><div class="crumb">特殊行为 <span>/</span> 单位与建筑</div><h2>持续单位指令</h2><p>持续单位指令使单位按照选定区域持续执行攻击或自动进入行为，可由命令栏、主动技能或 Lua 启动。</p><h3 id="page-actsp-orders--区域打击">区域打击</h3><p>区域打击让单位留在当前位置，持续搜索并攻击指定圆形区域内的合格目标。目标还须位于单位当前武器射程内；每个单位独立选择目标，一轮连发期间会保持同一合格目标。区域内暂时没有目标时，指令仍会等待并继续搜索。</p><p>选择新区域会替换之前的打击区域；对单位下达移动、攻击、停止或部署等手动指令可接管单位。</p><h3 id="page-actsp-orders--自动进驻">自动进驻</h3><p>自动进驻让步兵或载具在指定圆形区域内寻找最近的合适容器，并为单位分配可用位置。容器可配置为运输工具、驻军建筑或坦克碉堡；实际能否进入仍取决于单位类型、所属关系和剩余空间。</p><p>一次指令只分配当时可用的位置，没有分到位置的单位会原地转入警戒。前往途中如果目标失效，或单位连续 180 帧没有移动进展，也会返回警戒；手动移动或停止可取消前往。之后出现空位时，需要重新下达指令。</p><h3 id="page-actsp-orders--注册与参数">注册与参数</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.UnitOrders]
+0=(指令 ID)
+; 注册持续单位指令。
+
+[指令 ID]
+Type=(AreaAttack 或 AutoEnter)
+; AreaAttack 为区域攻击；AutoEnter 为自动进入运输工具、驻军建筑或坦克碉堡。
+; 必填。
+
+CommandBar.Button=(命令按钮名)
+; 为指令指定命令栏按钮名称。
+; 默认值：无；需在 uimd.ini 对应 ButtonList 中加入该名称才能显示。
+
+CommandBar.Image=(SHP 文件名)
+; 指定按钮图像。
+; 默认值：按钮名称加 .shp；文件缺失时使用内置准星。
+
+CommandBar.Tooltip=(文本或 TIP: 标签)
+; 设置命令栏提示文字。
+; 默认值：显示指令名称及半径；无效标签也使用默认值。
+
+Radius=(整数格数)
+; 设置命令栏按钮选择的区域半径。
+; 默认值：6；范围：1–128。
+
+ScanInterval=(正整数帧)
+; 设置区域索敌或自动进入接近检查间隔。
+; 默认值：15。
+
+AreaAttack.Houses=(所属关系列表)
+; 区域攻击可选择 Enemies、Neutral。
+; 默认值：Enemies。
+
+AreaAttack.Kinds=(单位类别列表)
+; 区域攻击目标类别，可填 Infantry、Vehicle、Aircraft、Building、All。
+; 默认值：All。
+
+AreaAttack.Select=(Random)
+; 设置区域攻击的目标选择方式。
+; 默认值：Random。
+
+AutoEnter.Kinds=(容器类别列表)
+; 设置自动进入的容器，可填 Transport、Garrison、TankBunker。
+; 默认值：三种均允许。</code></pre></figure><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[主动技能 ID]
+Action=StartUnitOrder
+; 启动指定指令；需要 Trigger=Active 和 Active.Target=Area。
+
+Action=CancelUnitOrder
+; 取消当前指令；作为主动技能时需要 Active.Target=None。
+
+Action.Order=(指令 ID)
+; 指定要启动或限制取消的已注册指令。
+; StartUnitOrder 必填；CancelUnitOrder 可省略。</code></pre></figure><p>移动、攻击、停止或部署等手动指令可以接管单位。指令随存档保留，单位死亡或所属方改变时结束。Lua 方法见<a href="#page-lua-orders">Lua 单位指令</a>。</p></article><article id="page-actsp-projectile-blocker" data-title="建筑拦截抛射体"><div class="crumb">特殊行为 <span>/</span> 武器与抛射体</div><h2>建筑拦截抛射体</h2><p>建筑和实体围墙可按地基及指定高度拦截飞行中的实体抛射体。低弹道可能击中建筑侧面，高弹道可以越过顶部。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[建筑类型 ID]
+ProjectileBlocker.Enabled=(布尔值)
+; 启用建筑地基范围内的抛射体拦截。
+; 默认值：no。
+
+ProjectileBlocker.Height=(整数地形高度)
+; 从建筑基底向上计算的拦截高度，每级为 104 leptons。
+; 默认值：4；小于 1 时按 1 处理。
+
+ProjectileBlocker.BlockAllied=(布尔值)
+; 是否拦截本方及盟友的飞行弹体。
+; 默认值：no；开火建筑始终允许自身弹体射出。</code></pre></figure><p>接触时使用弹体原有弹头在碰撞位置引爆，并以建筑作为目标。瞬时抛射体、激光和电弧不使用此飞行碰撞检查。实体围墙的索敌限制仍由 <code>EntityWall.BlocksProjectiles</code> 和 <code>EntityWall.HighWall</code> 控制。</p></article><article id="page-actsp-projectile-script" data-title="Lua 抛射体路径"><div class="crumb">特殊行为 <span>/</span> 武器与抛射体</div><h2>Lua 抛射体路径</h2><p>可见实体抛射体可以由 Lua 按帧控制速度、位置和转向，并在飞行路径上执行支持的结果。该功能也可与穿透抛射体一起使用。</p><p>配置字段、回调和 <code>p</code> 上下文接口见<a href="#page-lua-projectiles">Lua 抛射体运动</a>；穿透范围和伤害参数见<a href="#page-actsp-piercing">穿透抛射体</a>。</p></article><article id="page-actsp-piercing" data-title="穿透抛射体"><div class="crumb">特殊行为 <span>/</span> 武器与抛射体</div><h2>穿透抛射体</h2><p>穿透抛射体沿飞行路径检测多个合格对象，每发弹体对同一对象最多直接命中一次。可结合 Lua 抛射体脚本控制路径。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[抛射体类型 ID]
+Piercing.Enabled=(布尔值)
+; 启用可见实体抛射体的穿透检测。
+; 默认值：no。
+
+Piercing.Lifetime=(正整数帧)
+; 内置直线飞行的持续帧数。
+; 默认值：30；脚本飞行改用 ProjectileScript.Life。
+
+Piercing.Radius=(小数格数)
+; 飞行路径的检测半径。
+; 默认值：0.5；范围：0–512。
+
+Piercing.DamageFalloff=(小数倍率)
+; 每次有效命中后对后续伤害施加的倍率。
+; 默认值：1；范围：0–1。
+
+Piercing.MinDamageMultiplier=(小数倍率)
+; 后续伤害倍率的下限。
+; 默认值：0；范围：0–1。
+
+Piercing.EndWarhead=(弹头 ID)
+; 飞行结束或被拦截时使用的结束弹头。
+; 默认值：无。</code></pre></figure><p>首个有效命中使用完整伤害，之后按衰减和下限计算；每个目标仍单独应用装甲。飞行结束默认没有结束爆炸；配置结束弹头后使用剩余伤害。脚本路径接口见<a href="#page-lua-projectiles">Lua 抛射体运动</a>。</p></article><article id="page-actsp-fire-origin" data-title="相对目标的武器发射位置"><div class="crumb">特殊行为 <span>/</span> 武器与抛射体</div><h2>相对目标的武器发射位置</h2><p>武器可以从目标位置附近发射，而不是从开火单位的武器出口发射。该设置不改变原有射程检查、归属或目标跟踪。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[武器 ID]
+FireOrigin=(Firer 或 Target)
+; 选择原版武器出口，或使用目标瞄准点作为发射位置。
+; 默认值：Firer。
+
+FireOrigin.Offset=(整数 X,整数 Y,整数 Z)
+; 对相对目标的发射位置添加固定地图轴偏移，单位为 leptons。
+; 默认值：0,0,0；水平方向 256 leptons 为一格，Z 向上。</code></pre></figure><p>目标为地面时使用目标格表面，包括桥面；偏移后位置超出地图网格时回退普通武器出口。部分特殊武器使用自己的发射系统，不受此设置控制。Lua <code>FireWeapon</code> 的 <code>Origin</code> 可单独覆盖一次射击的位置。</p></article><article id="page-artsp-tracers" data-title="武器曳光"><div class="crumb">视觉效果 <span>/</span> 武器与单位表现</div><h2>武器曳光</h2><p>武器曳光在开火时绘制从武器出口飞向瞄准点的短光迹。武器绑定写在规则中，颜色和运动样式写在 art 配置中。</p><p>配置位置：<code>rulesmd.ini</code> 的武器节。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[武器 ID]
+Tracer=(art 样式节 ID)
+; 指定曳光样式。
+; 默认值：未设置，不绘制曳光。
+
+Tracer.Every=(正整数)
+; 每隔多少次射击绘制一次曳光。
+; 默认值：1；范围：1–2147483647。</code></pre></figure><p>配置位置：<code>artmd.ini</code> 的曳光样式节。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[曳光样式 ID]
+Gradient=(布尔值)
+; 是否从尾部颜色渐变到头部颜色并淡出尾部。
+; 默认值：no，整条曳光使用 Color。
+
+Color=(红,绿,蓝)
+; 曳光整体颜色；启用渐变时为头部颜色。
+; 默认值：255,205,96；每个分量范围：0–255。
+
+TailColor=(红,绿,蓝)
+; 启用渐变时的尾部颜色。
+; 默认值：210,92,28；每个分量范围：0–255。
+
+Length=(正整数 leptons)
+; 曳光最大可见长度。
+; 默认值：96；范围：1–4096；256 leptons 为一格。
+
+Width=(正整数像素)
+; 曳光宽度。
+; 默认值：2；范围：1–8。
+
+Speed=(正整数 leptons 每帧)
+; 曳光的视觉移动速度。
+; 默认值：192。</code></pre></figure><p>每个单位按武器分别统计射击次数，原版连发的每一发分别计数。曳光终点使用开火时的目标位置，不跟随目标后续移动；武器伤害和命中时间仍由原版射击逻辑决定。</p></article><article id="page-artsp-beams" data-title="持续光束"><div class="crumb">视觉效果 <span>/</span> 武器与单位表现</div><h2>持续光束</h2><p>持续光束让支持的武器在两次射击之间继续显示连接到目标的视觉效果；伤害和弹药仍按原有武器节奏结算。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[武器 ID]
+ContinuousBeam=(布尔值)
+; 在有效锁定目标的装填间隔内维持光束显示。
+; 默认值：no；武器须启用 IsLaser、IsElectricBolt 或 IsRadBeam。</code></pre></figure><p>同时启用多个原版光束标记时，按激光、电弧、辐射光束的顺序选择。失去目标、脱离射程、切换目标或停止后连接结束；再次开火建立新的连接。点地开火使用原有单次视觉效果。</p></article><article id="page-artsp-labels" data-title="单位头顶注释"><div class="crumb">视觉效果 <span>/</span> 武器与单位表现</div><h2>单位头顶注释</h2><p>单位头顶注释为可见的单位或建筑显示一行类型文字，未选中时也可见。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[步兵、载具、飞机或建筑类型 ID]
+TipsLabel=(文本或文本 ID)
+; 设置生命条上方显示的注释。
+; 默认值：空，不显示；地图可在同名类型节覆盖。</code></pre></figure></article><article id="page-misc-pickups" data-title="自定义拾取物"><div class="crumb">杂项 <span>/</span> 独立规则</div><h2>自定义拾取物</h2><p>自定义拾取物放置在地图格上，地面步兵或载具进入后触发配置结果。它与原版箱子的数量和有效期相互独立。</p><h3 id="page-misc-pickups--注册与配置">注册与配置</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[Starfall.PickupTypes]
+0=(拾取物 ID)
+; 注册拾取物配置节。
+; 合并时使用未占用的键。
+
+[拾取物 ID]
+Image=(SHP 文件名)
+; 指定拾取物图像，使用当前地形的单位调色板。
+; 默认值：内置图像；透明色索引为 0，每四帧播放一帧。
+
+Lifetime=(整数帧)
+; 指定拾取物在地图上的存在时间。
+; 默认值：-1，永久；临时存在时填写正整数帧。
+
+Action=(结果名称)
+; 拾取时执行单个结果，参数使用 Action. 前缀。
+
+Actions=(结果节 ID 列表)
+; 拾取时按顺序执行多个结果节。
+
+RandomActions=(结果节 ID 列表)
+; 拾取时按权重随机执行结果节。
+
+RandomActions.Weights=(非负整数列表)
+; 与随机结果逐项对应的权重。
+; 默认值：等权；不得全部为 0。
+
+RandomActions.Count=(整数)
+; 随机抽取次数，允许重复。
+; 默认值：1；范围：1–256。</code></pre></figure><p><code>Action</code>、<code>Actions</code> 和 <code>RandomActions</code> 是互斥的结果配置方式。拾取时 <code>Self</code> 和 <code>Target</code> 指拾取单位，<code>VictimLocation</code> 指拾取格；同格有多个单位时由对象 ID 最小者拾取。</p><h3 id="page-misc-pickups--生成与移除">生成与移除</h3><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=SpawnPickup
+; 在目标位置生成自定义拾取物。
+
+Action.PickupType=(拾取物 ID)
+; 指定已注册的拾取物类型。
+; 必填。</code></pre></figure><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[被动 ID 或结果节 ID]
+Action=RemovePickup
+; 移除匹配的自定义拾取物，不发放拾取奖励。
+
+Action.Range=(整数格数)
+; 0 表示目标格，正数表示圆形半径，-1 表示全地图。
+; 默认值：0。
+
+Action.PickupTypes=(拾取物 ID 列表或 *)
+; 限制要移除的拾取物类型。
+; 默认值：*；不能将 * 与其他 ID 混用。</code></pre></figure><p>生成位置不可用时会在附近搜索；移除结果不影响原版箱子。拾取物随存档保留。</p></article><article id="page-misc-superweapons" data-title="自定义超武"><div class="crumb">杂项 <span>/</span> 独立规则</div><h2>自定义超武</h2><p>ActionSequence 是由流火提供的点选超武类型，可以顺序执行位置类结果、玩家奖励或 Lua 脚本。超武通过原版超武注册和建筑授权使用。</p><figure><figcaption><span><b>INI</b> 参数格式</span><button class="copy" type="button">复制</button></figcaption><pre><code>[SuperWeaponTypes]
+注册键=(超武 ID)
+; 按原版规则注册超武类型。
+
+[建筑类型 ID]
+SuperWeapon=(超武 ID)
+; 按原版规则为建筑授权超武。
+
+SuperWeapon2=(超武 ID)
+; 按原版规则为建筑授权第二个超武。
+
+[超武 ID]
+Type=ActionSequence
+; 使用流火的点选结果序列。
+
+Starfall.Actions=(结果节 ID 列表)
+; 指定按顺序执行的结果节。
+; 必填且不能为空；重复 ID 保留为重复步骤。
+
+Starfall.Target=(Point)
+; 指定以地图点为目标。
+; 默认值：Point；仅支持 Point。
+
+RechargeTime=(数字)
+; 原版超武充能时间，单位为游戏分钟。</code></pre></figure><p>位置类 INI 结果使用 <code>Point</code>，资金和科研点结果使用 <code>Owner</code>；<code>RunScript</code> 不显式指定目标。需要治疗、伤害或移动具体单位时，可由 Lua 查询单位后传递句柄。</p><p>超武脚本可读取 <code>ctx.point</code>、<code>ctx.owner</code>、<code>ctx.superWeapon</code> 和 <code>ctx.castId</code>；初始 <code>ctx.self</code>、<code>ctx.target</code> 为空。状态和延迟任务属于该次超武调用，详见<a href="#page-lua-context">Lua 上下文</a>。</p></article><article id="page-resources-reference" data-title="素材引用"><div class="crumb">额外说明</div><h2>素材引用</h2><p>本节汇总图标、界面文字、音效和动画的引用规则。各功能的具体参数见对应小节。</p><h3 id="page-resources-reference--图标与贴图">图标与贴图</h3><p>科研和主动技能支持 PNG 或游戏可加载的 PCX 图标，目标指示器使用透明 PNG。PNG 的透明区域由 alpha 通道决定，不透明的黑色像素不会自动透明。主动技能图标会裁切到按钮开口，重要内容应放在中央。</p><p>配置字段见<a href="#page-research-projects">科研项目</a>、<a href="#page-active-icons">主动技能图标</a>、<a href="#page-active-indicators">目标指示器</a>和<a href="#page-artsp-tracers">武器曳光</a>。</p><h3 id="page-resources-reference--文本与名称">文本与名称</h3><p>科研、主动技能和单位头顶注释可配置文本或文本 ID。科研项目的 <code>Name</code>、<code>Summary</code>、<code>Detail</code> 和 <code>TargetLabel</code> 分别用于名称、简述、详情和作用对象显示。</p><p>部分单被动科研详情支持 <code>{amount}</code>、<code>{count}</code>、<code>{chance}</code>、<code>{cooldown}</code> 等占位符，资金奖励支持 <code>{credits}</code>。多结果被动的金额占位符取首个结果；持续状态和组合科研的自定义详情不按每个子结果展开。</p><p>配置字段见<a href="#page-research-projects">科研项目</a>、<a href="#page-active-icons">主动技能名称</a>和<a href="#page-artsp-labels">单位头顶注释</a>。</p><h3 id="page-resources-reference--音效">音效</h3><p>科研界面可使用内置提示音或外部 WAV；<code>PlaySound</code> 结果使用原版音效 ID，或以 <code>wav:</code> 开头的文件路径。外部 WAV 支持未压缩 PCM、8 或 16 位、单声道或立体声，采样率为 8000–48000 Hz，文件最大 16 MiB。</p><p>配置字段见<a href="#page-research-interface">科研提示音</a>和<a href="#page-passives-actions-catalog">一次性结果参数</a>。</p><h3 id="page-resources-reference--动画与染色">动画与染色</h3><p>流火可引用游戏或模组已注册的动画类型，也可通过 Lua 创建和移动动画。动画类型 ID 与图像文件名是不同概念。</p><p>配置字段见<a href="#page-passives-continuous-visuals">被动动画与染色</a>、<a href="#page-passives-actions-catalog">一次性结果参数</a>和 <a href="#page-lua-animations">Lua 可移动动画</a>。</p></article><article id="page-resources-log" data-title="Starfall.log 日志"><div class="crumb">额外说明</div><h2>Starfall.log 日志</h2><p><code>Starfall.log</code> 是流火的诊断日志，位于游戏目录中。遇到配置不生效、技能未出现或 Lua 脚本异常时，可以先查看这个文件。</p><h3 id="page-resources-log--日志内容">日志内容</h3><ul><li><strong>配置问题</strong>：无效的字段、数值或组合，以及未注册的被动、单位类型和其他引用。</li><li><strong>科研问题</strong>：可能包含项目节、字段、数值和错误原因；能确定来源时也会记录文件行号。</li><li><strong>Lua 问题</strong>：脚本加载或执行错误，以及相关文件、回调函数和错误位置。</li><li><strong>资源问题</strong>：部分图像、音效或曳光样式缺失及配置无效信息。</li></ul><p>日志通常以追加方式写入，文件中可能包含之前运行留下的信息。检查时应结合最近一次运行的记录及对应配置；合并规则中的问题不一定能定位到原始文件或具体行号。被动配置无效时，依赖它的科研或授予预设也可能无法使用。</p><p>日志用于辅助定位问题，并不保证记录所有游戏异常。Lua 的配置和运行限制见 <a href="#page-lua-entries">Lua 脚本入口</a>与 <a href="#page-lua-limits">Lua 运行环境与限制</a>。</p></article></main></div><script>
+(() => {
+  const nav=document.querySelector('.sidebar'), input=document.querySelector('#search'), articles=[...document.querySelectorAll('main article')], results=document.querySelector('.results'), list=results.querySelector('.list');
+  function route(){const hash=decodeURIComponent(location.hash.slice(1)), id=hash.split('--')[0]||'start';const target=document.getElementById(id)||document.getElementById('start');articles.forEach(a=>a.classList.toggle('active',a===target));results.hidden=true;nav.querySelectorAll('[aria-current]').forEach(a=>a.removeAttribute('aria-current'));const link=[...nav.querySelectorAll('a')].find(a=>a.getAttribute('href')==='#'+target.id);if(link)link.setAttribute('aria-current','page');nav.classList.remove('open');if(hash.includes('--'))requestAnimationFrame(()=>document.getElementById(hash)?.scrollIntoView());else window.scrollTo(0,0);}
+  function search(){const q=input.value.trim().toLowerCase();if(!q){route();return;}articles.forEach(a=>a.classList.remove('active'));results.hidden=false;list.replaceChildren();let count=0;for(const a of articles){const text=a.textContent.replace(/\s+/g,' '),pos=text.toLowerCase().indexOf(q);if(pos<0)continue;count++;const link=document.createElement('a'),title=document.createElement('strong'),excerpt=document.createElement('span');link.href='#'+a.id;title.textContent=a.dataset.title;excerpt.textContent=text.slice(Math.max(0,pos-45),pos+110);link.append(title,excerpt);list.append(link)}results.querySelector('[role=status]').textContent='找到 '+count+' 个章节';}
+  input.addEventListener('input',search);window.addEventListener('hashchange',route);document.querySelector('.menu').addEventListener('click',()=>nav.classList.toggle('open'));document.querySelector('#print').addEventListener('click',()=>window.print());document.addEventListener('keydown',e=>{if(e.key==='/'&&e.target!==input&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();input.focus()}if(e.key==='Escape'){input.value='';route()}});document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',async()=>{const code=b.closest('figure').querySelector('code');try{await navigator.clipboard.writeText(code.textContent);b.textContent='已复制'}catch{const range=document.createRange();range.selectNodeContents(code);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);b.textContent='已选中，请手动复制'}setTimeout(()=>b.textContent='复制',1800)}));document.documentElement.classList.add('js');route();
+})();</script></body></html>

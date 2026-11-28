@@ -4,7 +4,7 @@
 
 Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的复仇》的 32 位 DLL 扩展。通过 INI 配置单位被动、科研选项、国家限制和前置项目。玩家可通过地图触发器或建筑获取科研点，每 100 点购买一项研究。
 
-当前版本：**0.39**。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。自定义点选超武可用 `Type=ActionSequence` 执行 INI 结果和 Lua 脚本。[超武配置说明](docs/manual.html#super-action-sequence) · [规则手册](https://windswhisper.github.io/starfall/docs/manual.html)
+当前版本：**0.40**。支持事件触发与持续状态、可叠加被动、信号联动，以及可配置的科研三选一。自定义点选超武可用 `Type=ActionSequence` 执行 INI 结果和 Lua 脚本。[超武配置说明](docs/manual.html#super-action-sequence) · [0.40 中文规则手册](https://windswhisper.github.io/starfall/docs/zh-cn/starfall.html)
 
 ![科研三选一界面示意图](docs/images/research-selection.png)
 
@@ -15,6 +15,8 @@ Starfall Lab（流火实验室，简称流火）是《红色警戒 2：尤里的
 ## 在 Windows 上编译
 
 **ActSp 特殊行为子模块**随 `Starfall.dll` 一起构建，提供飞行子机巡逻、建筑地面守卫、高级驻军和可建造高台。[配置与示例](modules/ActSp/README.md)
+
+**ArtSp 视觉效果子模块**随同一 DLL 提供武器曳光。在 `rulesmd.ini` 的武器段引用样式，在 `artmd.ini` 定义颜色、长度、宽度与速度。[曳光配置](docs/manual/artsp.md)
 
 安装 Git 和 Visual Studio 2022（Community 或 Build Tools）。勾选“使用 C++ 的桌面开发”，包含 MSVC v143 x86/x64 工具和 Windows SDK。编译本身无需安装游戏。
 
@@ -43,7 +45,7 @@ cd starfall
 
 从双 DLL 版本升级时，将旧 `ActSp.dll` 移出游戏目录，并删除启动配置中的 `-i=ActSp.dll`。原有特殊行为配置可直接使用。
 
-查字段、默认值和配置示例，可以访问 [在线规则手册](https://windswhisper.github.io/starfall/docs/manual.html)，也可以下载项目后用浏览器打开 [中文 HTML 查询手册](docs/manual.html)。面向 AI 和模组开发者的 [英文 Markdown 参考手册](docs/manual.md) 按当前实现整理了字段类型、默认值、适用范围、Lua 接口和配置示例。保持科研项目 ID 稳定可以让后续版本继续识别存档中的研究记录。
+查字段、默认值和配置示例，可以访问 [在线规则手册](https://windswhisper.github.io/starfall/docs/manual.html)，也可以下载项目后用浏览器打开 [中文 HTML 查询手册](docs/zh-cn/starfall.html)。面向 AI 和模组开发者的 [英文 Markdown 参考手册](docs/manual.md) 按当前实现整理了字段类型、默认值、适用范围、Lua 接口和配置示例。保持科研项目 ID 稳定可以让后续版本继续识别存档中的研究记录。
 
 其他 32 位游戏扩展可调用 `Starfall_GetOwnedResearch`，按玩家读取已获得的科研项目 ID。[公共头文件](src/StarfallAPI.h) · [调用示例](docs/manual.md#native-research-query)
 

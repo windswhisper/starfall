@@ -82,15 +82,15 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
         Research::unlocked[h].insert("stackresearch");
         check(skills.contains("hoverrange") && skills.contains("hoverbonus") && !skills.contains("badhover"),"tooltip config validation");
         grantToUnit(unit,PassiveGrant{{"hoverrange"},150});
-        changeStacks(id,"hoverrange",5,10);
+        changeStacks(id,"hoverrange",4,10);
         tickStates();
         const std::wstring name=unit->GetUIName();
         check(nativeHoverMatches(unit,name+L"\n射程+5"),"native hover five stacks");
         check(nativeHoverMatches(peer,peer->GetUIName()),"native hover peer unchanged");
-        changeStacks(id,"hoverrange",-5,10);
+        changeStacks(id,"hoverrange",-4,10);
         tickStates();
         check(nativeHoverMatches(unit,name),"native hover inactive condition");
-        changeStacks(id,"hoverrange",3,10);
+        changeStacks(id,"hoverrange",2,10);
         grantToUnit(unit,PassiveGrant{{"hoverbonus"},5});
         tickStates();
         std::wstring text=unitHoverText(unit,name.c_str());
@@ -99,38 +99,38 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
         grantToUnit(unit,PassiveGrant{{"stackbuff"},20});
         grantToUnit(unit,PassiveGrant{{"stackgain","stackvictim","stackreduce","stackstrip","selfgrowth"},-1});
         grantToUnit(peer,PassiveGrant{{"stackgain"},-1});
-        check(stackCount(id,"stackbuff")==0 && stackCount(peer->UniqueID,"stackbuff")==0,"initial zero");
+        check(unitStacks(unit,"stackbuff")==1 && unitStacks(peer,"stackbuff")==1,"initial one");
         for(int n=0;n<4;++n) trigger("onkill",unit,enemy);
         tickStates();
-        check(stackCount(id,"stackbuff")==3 && stackCount(peer->UniqueID,"stackbuff")==0 &&
+        check(unitStacks(unit,"stackbuff")==3 && unitStacks(peer,"stackbuff")==1 &&
             std::abs(unit->FirepowerMultiplier-1.15)<0.00001,"cap and unit isolation");
-        check(stackCount(enemy->UniqueID,"stackbuff")==0,"absent target skipped");
+        check(unitStacks(enemy,"stackbuff")==0,"absent target skipped");
         grantToUnit(enemy,PassiveGrant{{"stackbuff"},5});
         trigger("onkill",unit,enemy);
-        check(stackCount(enemy->UniqueID,"stackbuff")==1 && stackCount(id,"stackbuff")==3,"modify another unit");
+        check(unitStacks(enemy,"stackbuff")==2 && unitStacks(unit,"stackbuff")==3,"modify another unit");
         grantToUnit(enemy,PassiveGrant{{"deathstack","markdeathstack"},-1});
         trigger("onfire",enemy,unit);trigger("onfire",enemy,unit);
         int beforeDeath=Research::balance(foe->ArrayIndex);
         queueDeath(enemy,unit);passiveStacks.erase(enemy->UniqueID);dispatch();
-        check(Research::balance(foe->ArrayIndex)==beforeDeath+20,"death stack snapshot");
+        check(Research::balance(foe->ArrayIndex)==beforeDeath+30,"death stack snapshot");
         trigger("ondeploy",unit,enemy);tickStates();
-        check(stackCount(id,"stackbuff")==1 && std::abs(unit->FirepowerMultiplier-1.05)<0.00001,"decrement and formula");
+        check(unitStacks(unit,"stackbuff")==1 && std::abs(unit->FirepowerMultiplier-1.05)<0.00001,"decrement and formula");
         trigger("ondeploy",unit,enemy);tickStates();
-        check(stackCount(id,"stackbuff")==0 && std::abs(unit->FirepowerMultiplier-1.0)<0.00001,"minimum zero");
+        check(unitStacks(unit,"stackbuff")==1 && std::abs(unit->FirepowerMultiplier-1.05)<0.00001,"research layer survives excess reduction");
         trigger("onkill",unit,enemy);
         trigger("onkill",peer,enemy);
-        check(stackCount(peer->UniqueID,"stackbuff")==1,"peer stack");
+        check(unitStacks(peer,"stackbuff")==2,"peer stack");
         check(peer->SetOwningHouse(foe,false),"owner change");
         reconcileUnitStacks(peer);
-        check(stackCount(peer->UniqueID,"stackbuff")==0,"lost research clears stack");
+        check(unitStacks(peer,"stackbuff")==0,"lost research clears stack");
         check(peer->SetOwningHouse(house,false),"owner restored");
         Research::points[h]=0;
         trigger("onfire",unit,enemy);trigger("onfire",unit,enemy);
-        check(stackCount(id,"selfgrowth")==2 && Research::balance(h)==10 && std::abs(unit->ArmorMultiplier-1.01)<0.00001,"event stack snapshot");
+        check(unitStacks(unit,"selfgrowth")==3 && Research::balance(h)==30 && std::abs(unit->ArmorMultiplier-1.03)<0.00001,"event stack snapshot");
     }
     if(frame==25) {
         Research::unlocked[h].erase("stackresearch");reconcileAllStacks();
-        check(stackCount(id,"stackbuff")==1,"overlapping source retained");
+        check(unitStacks(unit,"stackbuff")==2,"overlapping source retained");
         check(skills.contains("steallist") && skills.contains("striplist") &&
               !skills.contains("invalidstealcount") && !skills.contains("invalidsteallist"),"steal list validation");
         grantToUnit(enemy,PassiveGrant{{"loota","lootb","striplist"},15});
@@ -138,19 +138,19 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
         grantToUnit(peer,PassiveGrant{{"steallist"},-1});
         trigger("ondealdamage",peer,enemy);
         auto receiver=peer->UniqueID,donor=enemy->UniqueID;
-        check(stackCount(receiver,"loota")==2 && stackCount(donor,"loota")==2 &&
-              ownsPassive(enemy,"loota") && ownsPassive(peer,"lootb") && !ownsPassive(enemy,"lootb"),"partial and zero stack theft");
+        check(unitStacks(peer,"loota")==2 && unitStacks(enemy,"loota")==2 &&
+              ownsPassive(enemy,"loota") && ownsPassive(peer,"lootb") && !ownsPassive(enemy,"lootb"),"partial and single stack theft");
         check(std::any_of(pending.begin(),pending.end(),[&](const Event& e) {
             return e.holder==receiver && e.trigger=="onpassivegained" && e.stackSnapshot.at("loota")==2;
         }),"acquisition sees stolen stacks");
         changeStacks(receiver,"loota",1,4);
         trigger("ondealdamage",peer,enemy);
         trigger("ondealdamage",peer,enemy);
-        check(stackCount(receiver,"loota")==4 && stackCount(donor,"loota")==1 &&
+        check(unitStacks(peer,"loota")==4 && unitStacks(enemy,"loota")==1 &&
               triggerTotals[receiver]["steallist"]==2,"steal respects capacity");
         changeStacks(receiver,"loota",-1,4);
         trigger("ondealdamage",peer,enemy);
-        check(stackCount(receiver,"loota")==4 && !ownsPassive(enemy,"loota") &&
+        check(unitStacks(peer,"loota")==4 && !ownsPassive(enemy,"loota") &&
               ownsPassive(enemy,"striplist"),"last stack removes only matching passive");
     }
     if(frame==28) {
@@ -159,26 +159,35 @@ DEFINE_HOOK(0x55B4EB,SF_TestPassiveStacks,5) {
         check(ScenarioClass::SaveGame("Saved Games\\PassiveStacks.sav",L"PassiveStacks"),"saved");
     }
     if(frame==31) {
-        check(ownsPassive(peer,"loota") && ownsPassive(peer,"lootb") && stackCount(peer->UniqueID,"loota")==4 &&
+        check(ownsPassive(peer,"loota") && ownsPassive(peer,"lootb") && unitStacks(peer,"loota")==4 &&
               !ownsPassive(enemy,"loota") && !ownsPassive(enemy,"lootb"),"transferred ownership retained");
         // Capture a defensive event with the opposing unit as its attacker.
         capture("ontakedamage",enemy,peer,peer,enemy,5);dispatch();
         check(!ownsPassive(peer,"loota") && !ownsPassive(peer,"lootb") &&
-              stackCount(peer->UniqueID,"loota")==0 && ownsPassive(peer,"steallist"),"batch remove skips absent and clears all matches");
+              unitStacks(peer,"loota")==0 && ownsPassive(peer,"steallist"),"batch remove skips absent and clears all matches");
         tickStates();
-        check(stackCount(id,"stackbuff")==1 && std::abs(unit->FirepowerMultiplier-1.05)<0.00001,"stack retained");
-        check(stackCount(id,"selfgrowth")==4 && Research::balance(h)==30 && std::abs(unit->ArmorMultiplier-1.03)<0.00001,"queued stack snapshot retained");
+        check(unitStacks(unit,"stackbuff")==2 && std::abs(unit->FirepowerMultiplier-1.10)<0.00001,"stack retained");
+        check(unitStacks(unit,"selfgrowth")==5 && Research::balance(h)==60 && std::abs(unit->ArmorMultiplier-1.06)<0.00001,"queued stack snapshot retained");
     }
     if(frame==46) {
-        check(stackCount(id,"stackbuff")==0,"last source expired");
+        check(unitStacks(unit,"stackbuff")==0,"last source expired");
         grantToUnit(unit,PassiveGrant{{"stackbuff"},5});
-        check(stackCount(id,"stackbuff")==0,"reacquire starts zero");
+        check(unitStacks(unit,"stackbuff")==1,"reacquire starts one");
         trigger("onkill",unit,enemy);
-        check(stackCount(id,"stackbuff")==1,"reacquire can gain");
-        trigger("onpromote",unit,enemy);
-        check(stackCount(id,"stackbuff")==0,"explicit removal clears");
+        check(unitStacks(unit,"stackbuff")==2,"reacquire can gain");
+        trigger("ondeploy",unit,enemy);
+        tickStates();
+        check(!ownsPassive(unit,"stackbuff") && std::abs(unit->FirepowerMultiplier-1.0)<0.00001,"exact reduction removes passive and modifier");
+        trigger("onkill",unit,enemy);
+        check(!ownsPassive(unit,"stackbuff"),"stack gain cannot recreate a removed passive");
         grantToUnit(unit,PassiveGrant{{"stackbuff"},5});
-        check(stackCount(id,"stackbuff")==0,"explicit reacquire starts zero");
+        trigger("ondeploy",unit,enemy);
+        check(!ownsPassive(unit,"stackbuff"),"excess reduction removes ordinary base layer");
+        grantToUnit(unit,PassiveGrant{{"stackbuff"},5});
+        trigger("onpromote",unit,enemy);
+        check(unitStacks(unit,"stackbuff")==0,"explicit removal clears");
+        grantToUnit(unit,PassiveGrant{{"stackbuff"},5});
+        check(unitStacks(unit,"stackbuff")==1,"explicit reacquire starts one");
     }
     if(frame==120) {
         // The native tooltip is suppressed during the initial load-screen transition.

@@ -4,19 +4,22 @@
 #include <charconv>
 #include <cmath>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 // The INI reader already lowercases values. Compile once when rules are loaded.
 class HealthFormula {
-    enum class Op { Literal, Health, MaxHealth, SelfCost, SelfAmmo, SelfPassengers, TargetHealth, TargetMaxHealth, TargetCost, SenderHealth, SenderMaxHealth, SenderCost, SignalValue, Stack, Damage, Distance, Neg, Add, Sub, Mul, Div, Min, Max, Clamp, Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, JumpIfFalse, Jump, Floor, SelfRank, GattlingStage, MaxGattlingStage, PowerOutput, PowerDrain, PowerSurplus };
+    enum class Op { Literal, Health, MaxHealth, SelfCost, SelfAmmo, SelfPassengers, TargetHealth, TargetMaxHealth, TargetCost, SenderHealth, SenderMaxHealth, SenderCost, SignalValue, Stack, Damage, Distance, Neg, Add, Sub, Mul, Div, Min, Max, Clamp, Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, JumpIfFalse, Jump, Floor, SelfRank, GattlingStage, MaxGattlingStage, PowerOutput, PowerDrain, PowerSurplus, ResearchCounter };
     struct Instruction { Op op; double number; };
     static constexpr size_t limit=96;
     std::vector<Instruction> code;
+    std::vector<std::string> counters;
 
     struct Parser {
         std::string_view input;
         std::vector<Instruction>& output;
+        std::vector<std::string>& counters;
         void spaces() { input.remove_prefix(std::min(input.size(),input.find_first_not_of(" \t"))); }
         bool take(char c) {
             spaces();
@@ -81,9 +84,22 @@ class HealthFormula {
                 input.remove_prefix(parsed.ptr-input.data());
                 return emit(Op::Literal,take('%') ? n/100 : n);
             }
-            const auto len=input.find_first_not_of("abcdefghijklmnopqrstuvwxyz.");
+            const auto len=input.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_.");
             const auto name=input.substr(0,len);
             input.remove_prefix(name.size());
+            if(name.starts_with("bond.") && name.ends_with(".count") && name.size()>11) {
+                const auto id=name.substr(5,name.size()-11);
+                if(id.find('.')!=id.npos) return false;
+                counters.emplace_back("#"+std::string(id));
+                return emit(Op::ResearchCounter,static_cast<double>(counters.size()-1));
+            }
+            if(name.starts_with("research.")) {
+                auto key=name.substr(9);
+                auto dot=key.find('.');
+                if(dot==0 || dot==key.npos || dot+1>=key.size() || key.find('.',dot+1)!=key.npos) return false;
+                counters.emplace_back(key);
+                return emit(Op::ResearchCounter,static_cast<double>(counters.size()-1));
+            }
             if(name=="self.health") return emit(Op::Health);
             if(name=="self.maxhealth") return emit(Op::MaxHealth);
             if(name=="self.cost") return emit(Op::SelfCost);
@@ -133,10 +149,27 @@ public:
     bool usesDistance() const { return std::any_of(code.begin(),code.end(),[](const auto& i){return i.op==Op::Distance;}); }
     bool usesTargetValues() const { return std::any_of(code.begin(),code.end(),[](const auto& i){return i.op==Op::TargetHealth || i.op==Op::TargetMaxHealth || i.op==Op::TargetCost;}); }
     bool usesSignal() const { return std::any_of(code.begin(),code.end(),[](const auto& i){return i.op==Op::SenderHealth || i.op==Op::SenderMaxHealth || i.op==Op::SenderCost || i.op==Op::SignalValue;}); }
+    bool validForResearch() const {
+        return !empty() && std::all_of(code.begin(),code.end(),[](const Instruction& i) {
+            switch(i.op) {
+                case Op::Literal: case Op::ResearchCounter: case Op::Neg: case Op::Add: case Op::Sub:
+                case Op::Mul: case Op::Div: case Op::Min: case Op::Max: case Op::Clamp: case Op::Floor:
+                case Op::Less: case Op::LessEqual: case Op::Greater: case Op::GreaterEqual:
+                case Op::Equal: case Op::NotEqual: case Op::Jump: case Op::JumpIfFalse: return true;
+                default: return false;
+            }
+        });
+    }
+    const auto& counterNames() const {return counters;}
+    using CounterReader=int (*)(int,const std::string&);
+    std::optional<double> evaluateResearch(int house,CounterReader readCounter) const {
+        return evaluate(0,0,0,std::nullopt,0,std::nullopt,nullptr,std::nullopt,std::nullopt,
+            std::nullopt,std::nullopt,std::nullopt,std::nullopt,house,readCounter);
+    }
     bool compile(std::string_view text) {
-        code.clear();
+        code.clear();counters.clear();
         if(text.size()>512 || !text.starts_with("$(")) return false;
-        Parser parser{text.substr(2),code};
+        Parser parser{text.substr(2),code,counters};
         if(parser.comparison(0) && parser.take(')')) {
             parser.spaces();
             if(parser.input.empty()) return true;
@@ -144,7 +177,7 @@ public:
         code.clear();
         return false;
     }
-    std::optional<double> evaluate(int hp,int maximum,int damage=0,std::optional<double> distance=std::nullopt,int stacks=0,std::optional<Values> target=std::nullopt,bool* missing=nullptr,std::optional<int> selfCost=std::nullopt,std::optional<int> selfAmmo=std::nullopt,std::optional<int> selfPassengers=std::nullopt,std::optional<Values> sender=std::nullopt,std::optional<double> signalValue=std::nullopt,std::optional<LiveState> live=std::nullopt) const {
+    std::optional<double> evaluate(int hp,int maximum,int damage=0,std::optional<double> distance=std::nullopt,int stacks=0,std::optional<Values> target=std::nullopt,bool* missing=nullptr,std::optional<int> selfCost=std::nullopt,std::optional<int> selfAmmo=std::nullopt,std::optional<int> selfPassengers=std::nullopt,std::optional<Values> sender=std::nullopt,std::optional<double> signalValue=std::nullopt,std::optional<LiveState> live=std::nullopt,int house=-1,CounterReader readCounter=nullptr) const {
         if(missing) *missing=false;
         if(empty()) return {};
         std::array<double,limit> stack;
@@ -152,6 +185,9 @@ public:
         for(size_t pc=0;pc<code.size();) {
             auto ins=code[pc++];
             switch(ins.op) {
+                case Op::ResearchCounter:
+                    if(!readCounter || house<0) {if(missing) *missing=true;return {};}
+                    stack[used++]=readCounter(house,counters[static_cast<size_t>(ins.number)]);break;
                 case Op::Literal: stack[used++]=ins.number; break;
                 case Op::SelfRank:
                     if(!live) {if(missing) *missing=true;return {};}

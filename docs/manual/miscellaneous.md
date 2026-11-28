@@ -1,10 +1,45 @@
 # Miscellaneous
 
-[Manual home](../manual.md) · [Configuration reference](reference.md)
+[Manual home](../manual.md)
 
-## Contents
+## Custom ground pickups
 
-- [ActionSequence superweapons](#actionsequence-superweapons)
+Register each type in `[Starfall.PickupTypes]`. Its section accepts `Image` (optional theater unit-palette SHP, transparent index 0, one animation frame per four game frames), `Lifetime` (positive game frames, default `-1` for permanent), and one of `Action`, `Actions`, or `RandomActions` with the usual action parameters. The default art is used when the custom image is omitted or unavailable. Native crate limits and expiration are independent. Pickups skip native crate overlays. Targeted native crates whose final cell contains a pickup search within three cells for a legal alternative, failing if none exists. Random crate refreshes skip occupied cells through the normal retry path.
+
+To clear all remaining wave tokens, use `Action=RemovePickup`, `Action.Range=-1`, and `Action.PickupTypes=SF_WaveToken`. Range uses the actual landing cell. Unknown IDs invalidate the action. Lua accepts the same fields, for example `ctx:action("RemovePickup", {Target=ctx.point, Range=5, PickupTypes={"SF_MedKit","SF_SupplyBox"}})`. It returns true if at least one pickup was removed.
+
+A ground infantry or vehicle on the cell collects it once, regardless of owner. Self and Target resolve to the collector, VictimLocation to the pickup cell. If several units occupy the same cell, the lowest object ID wins. A full-health collector still consumes a healing pickup. Ground pickups persist in saves.
+
+```ini
+[Starfall.PickupTypes]
+0=SF_MedKit
+
+[SF_MedKit]
+Image=sfmedkit.shp
+Lifetime=900
+Actions=SF_KitHeal,SF_KitMoney
+
+[SF_KitHeal]
+Action=Heal
+Action.Target=Self
+Action.Amount=50
+
+[SF_KitMoney]
+Action=GiveCredits
+Action.Amount=200
+
+[Starfall.PassiveTypes]
+100=SF_DropKit
+
+[SF_DropKit]
+Trigger=OnKill
+Filter.TargetHouse=Enemies
+Action=SpawnPickup
+Action.Target=VictimLocation
+Action.PickupType=SF_MedKit
+```
+
+`Action.CrateType` accepts `Random,Money,Unit,HealBase,Cloak,Explosion,Napalm,Squad,Darkness,Reveal,Armor,Speed,Firepower,ICBM,Invulnerability,Veteran,IonStorm,Gas,Tiberium,Pod`. `Random` uses the current native `[Powerups]` weights.
 
 ## ActionSequence superweapons
 

@@ -39,7 +39,7 @@ Terminology:
 | Frame | Simulation frame. Starfall's seconds-based settings use 15 frames per game second; wall-clock duration varies with game speed. |
 | Snapshot | Data captured for an event. It can remain usable after the original object disappears. |
 | Unit handle | Lua reference to a unit ID. Check `unit:alive()` before relying on live properties. |
-| Owned passive | A passive available through at least one source. Owning it does not imply a positive stack count. |
+| Owned passive | A passive available through at least one source. Its effective stack count is at least one while it is held. |
 
 ## Installation and configuration sources
 
@@ -206,6 +206,8 @@ Implementation index:
 | [ConfigText.cpp](../../src/ConfigText.cpp) | Shared text/number/list normalization and diagnostics. |
 | [Research.h](../../src/Research.h), [Research.cpp](../../src/Research.cpp) | Research data types/state, points, offers, refresh, purchase, reset. |
 | [ResearchConfig.cpp](../../src/ResearchConfig.cpp) | Research file/merged-rule parsing and prerequisite validation. |
+| [ResearchBonds.cpp](../../src/ResearchBonds.cpp) | Research bond membership, threshold transitions, and per-house reward history. |
+| [ResearchStages.cpp](../../src/ResearchStages.cpp) | Counter-indexed stage evaluation, ordered rewards and persistent grants per house. |
 | [ResearchEffects.cpp](../../src/ResearchEffects.cpp) | Research validation/execution, production permissions and prices. |
 | [ResearchInternal.h](../../src/ResearchInternal.h) | Narrow internal research/runtime interfaces. |
 | [ResearchUI.cpp](../../src/ResearchUI.cpp), [ActiveSkillUI.inc](../../src/ActiveSkillUI.inc) | UI, input, image rendering. |
@@ -214,7 +216,7 @@ Implementation index:
 | [LuaRuntime.h](../../src/LuaRuntime.h), [LuaSkillActions.inc](../../src/LuaSkillActions.inc) | Restricted Lua environment, contexts, actions, queries, scheduling. |
 | [LuaTimers.h](../../src/LuaTimers.h), [LuaTaskData.h](../../src/LuaTaskData.h) | Saved task/state values and deterministic RNG. |
 | [LuaNearby.inc](../../src/LuaNearby.inc), [LuaAnim.inc](../../src/LuaAnim.inc) | Query support and managed Lua animations. |
-| [ActionSequence.inc](../../src/ActionSequence.inc) | Superweapon/map scripts, casts, map overlay, sequence persistence. |
+| [ActionSequence.cpp](../../src/ActionSequence.cpp) | Superweapon/map scripts, casts, map overlay, sequence persistence. |
 | [ForceMove.cpp](../../src/ForceMove.cpp) | Forced displacement, eligibility, collision, and landing. |
 | [BuildingSpawn.h](../../src/BuildingSpawn.h), [BuildingSpawn.cpp](../../src/BuildingSpawn.cpp) | Complete building-foundation checks and deterministic nearby placement for SpawnBuilding. |
 | [BuildingTransform.h](../../src/BuildingTransform.h), [BuildingTransform.cpp](../../src/BuildingTransform.cpp) | Same-foundation validation, guarded native replacement and identity handoff for building Transform. |

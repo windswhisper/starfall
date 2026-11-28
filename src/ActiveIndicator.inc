@@ -34,12 +34,11 @@ Vec screen(CoordStruct p) {
     return {static_cast<double>(point.X),static_cast<double>(point.Y)};
 }
 std::shared_ptr<const PngImage> texture(const std::string& custom,const char* fallback,int resource) {
-    auto common=Research::Rarity::Common;
     if(!custom.empty()) {
-        auto image=imageFor(custom,0,common,true);
+        auto image=imageFor(custom,0,std::nullopt,true);
         if(!image->pixels.empty() && image->content.Width>0) return image;
     }
-    return imageFor(fallback,resource,common,true);
+    return imageFor(fallback,resource,std::nullopt,true);
 }
 struct Region {double x,y,w,h;};
 Region content(const PngImage& image) {

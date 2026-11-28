@@ -121,6 +121,8 @@ DEFINE_HOOK(0x55B4EB,SF_TestBuildingTransform,5) {
             check(ownsPassive(unit,"temporarybuilding") && stackCount(id,"temporarybuilding")==2 && unit->IsIronCurtained() &&
                   counts.at(id).at("transformscript").next==100,"effects and cooldown persist across second conversion");
             check(house->PowerOutput>0 && findBuilding(second)->Type==to,"converted buildings participate in power");
+            check(Research::producers.contains(id) && Research::producers.at(id).elapsed>0 &&
+                  !Research::producers.contains(second),"research income follows the transformed type and retained ID");
         } else {
             tickStates();
             check(!ownsPassive(unit,"temporarybuilding") && !unit->IsIronCurtained() && !unit->IsCloakable() &&

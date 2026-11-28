@@ -1,5 +1,6 @@
 #pragma once
 #include "ForceMoveSpec.h"
+#include "ProjectileShield.h"
 #include "HealthFormula.h"
 #include "Research.h"
 #include <GeneralStructures.h>
@@ -42,7 +43,8 @@ struct ConfigFormula {
 
     bool compile(const string& section,const string& field,const string& value) {
         label="["+section+"] "+field+"="+value;
-        return expression.compile(value);
+        return expression.compile(value) && std::all_of(expression.counterNames().begin(),expression.counterNames().end(),
+            [](const string& key){return Research::knownResearchVariable(key);});
     }
     void report() const {
         if(reported) return;
@@ -55,6 +57,7 @@ struct TooltipSegment {
     ConfigFormula number;
 };
 struct PassiveAction {
+    string counter;
     ConfigFormula formula;
     ConfigFormula amountFormula;
     ConfigFormula signalFormula;
@@ -82,36 +85,44 @@ struct PassiveAction {
     int randomCount=1,randomWeightTotal=0;
     BuildingTypeClass* buildingType=nullptr;
     string owner;
-    string action, target, passive, weapon;
+    string action, target, passive, weapon, order;
     WarheadTypeClass* warhead=nullptr;
     AnimTypeClass* playAnim=nullptr;
     ParticleSystemTypeClass* particleSystem=nullptr;
     string sound;
     int shakeX=0,shakeY=4;
     bool shakeLocal=true;
+    bool showText=true;
     string script,function,skillId;
     vector<string> passiveList;
     ForceMove::Spec forceMove;
-    CellStruct teleportCell{};
+    ForceMove::JumpSpec jump;
+    ForceMove::EjectSpec eject;
+    CellStruct teleportCell{-1,-1};
+    bool destinationIsEventTarget=false;
     bool teleportInstant=false;
+    bool landFirst=false;
     int searchRadius=3;
     bool targetIsEventTarget=false,stackOnReapply=false;
-    int amount=0, damagePercent=0, maxHealthPercent=0, duration=-1;
+    int amount=0, maxHealthPercent=0, duration=-1;
 };
 enum class DeployPosture { None, Undeployed, Deployed };
 
-constexpr std::array<std::string_view,6> stateMultiplierKeys={"modifier.speedmultiplier","modifier.firepowermultiplier",
+constexpr std::array<std::string_view,7> stateMultiplierKeys={"modifier.speedmultiplier","modifier.firepowermultiplier",
     "modifier.armormultiplier","modifier.weaponrangemultiplier","modifier.fireratemultiplier",
-    "modifier.powermultiplier"};
+    "modifier.powermultiplier","modifier.experiencemultiplier"};
 constexpr size_t powerMultiplierIndex=5;
+constexpr size_t experienceMultiplierIndex=6;
 struct Skill {
     DeployPosture deployPosture=DeployPosture::None;
     int visualScale=100,projectileScale=100;
-    std::array<double,stateMultiplierKeys.size()> multipliers={1,1,1,1,1,1};
+    std::array<double,stateMultiplierKeys.size()> multipliers={1,1,1,1,1,1,1};
     ConfigFormula conditionFormula;
     bool passengerCombat=false;
     int extraShotCount=0;
     bool multiShotPreferSameLayer=false;
+    bool taunt=false;
+    int tauntPriority=0;
     ConfigFormula multiShotFormula;
     bool hasMultiShot() const { return extraShotCount>0 || !multiShotFormula.expression.empty(); }
     vector<std::pair<size_t,ConfigFormula>> stateFormulas;
@@ -119,6 +130,7 @@ struct Skill {
     int tooltipDecimals=-1;
     NearbyRule nearby;
     AuraRule aura;
+    ProjectileShield::Rules shield;
     AnimTypeClass* anim=nullptr;
     AnimTypeClass* triggerAnim=nullptr;
     AnimTypeClass* gainAnim=nullptr;

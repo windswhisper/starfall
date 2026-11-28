@@ -9,6 +9,8 @@ English reference for mod authors, AI assistants, and maintainers. Configure pro
 - [Quick start](#quick-start)
 - [Research projects](#research-projects)
 - [Project schema](#project-schema)
+- [Stage rewards](#stage-rewards)
+- [Research bonds](#research-bonds)
 - [Effect catalog](#effect-catalog)
 - [Selection, refresh, and global settings](#selection-refresh-and-global-settings)
 - [Periodic research points from buildings](#periodic-research-points-from-buildings)
@@ -65,7 +67,11 @@ For a complete three-choice setup with starting points, see the [research starte
 
 ### Project schema
 
-Register every project in `[Starfall.ResearchTypes]`. Ordinary purchase costs exactly **100 research points** per project, once per house/project ID. There is no configurable `Price` field.
+Set `Repeatable=yes` or `no` in a project section to override `[Starfall.Research] Repeatable` (default `no`). Each purchase costs 100 points. Ordinary and free offers, AI, named grants and random grants honor the setting. A board and its refreshes still offer each project at most once per round. An automatic random reward chain can visit each project only once per house.
+
+Immediate rewards apply on every acquisition. Base price adjustments add per copy: two purchases at −10% give −20%. Each repeatable project granting a matching passive supplies one `This.Stack` layer per acquisition, including the first, to current and future eligible units. For example, `Modifier.FirepowerMultiplier=$(1+This.Stack*10%)` gives 1.2× firepower at two layers. `Stack.Max` caps the total. Licenses, stage rewards, counters and bond membership remain tied to the distinct project. Counts persist across saves.
+
+Register every project in `[Starfall.ResearchTypes]`. Ordinary purchase costs exactly **100 research points** per project, once per house/project ID by default. There is no configurable `Price` field.
 
 ```ini
 [ResearchProjectID]
@@ -82,8 +88,11 @@ Summary=(text or ID)
 ; Default: empty, except legacy defaults
 
 Detail=(text or ID)
-; Hover description; supported placeholders below.
+; Hover description. Embed $(Research.ProjectID.CounterName) and numeric expressions in the text.
 ; Default: generated where supported
+
+Detail.Decimals=(integer from 0 to 6)
+; Fixed decimal places for all $(...) values in this project's Detail. If omitted, display up to two decimal places and trim trailing zeros.
 
 Icon=(text or ID)
 ; PNG or engine-loadable PCX path.
@@ -97,13 +106,21 @@ UnlockWithTech=(comma-separated type IDs)
 ; Alternative to a country match. A player who has acquired an UnlockTech production license for any listed type qualifies. With only this field, a license is required. Countries=* admits every country. Other project conditions still apply. Example: Countries=British and UnlockWithTech=SNIPE. Building rewards keep their existing country-filter exemption.
 ; Default: empty
 
+Counters=(comma-separated counter names)
+; Each owner starts at zero and shares progress across their units. Names and the project ID may contain letters, digits and underscores (up to 127 characters each).
+; Default: none
+
 Prerequisites=(comma-separated research IDs)
 ; Research project IDs, all owned by the purchasing house.
 ; Default: none
 
 Replaces=(list)
-; Comma-separated project IDs. The recipient must currently own all of them. Acquiring the upgrade retires those projects for this house, including their ongoing passive, price and production grants. Retired IDs cannot be drawn again or satisfy prerequisites. Prior credits, conversions and effects already applied to units remain. The upgrade defines its complete effects.
+; Comma-separated project IDs. The recipient must own all of them for the first acquisition. A repeat purchase of the same upgrade accepts the bases it already consumed. Acquiring the upgrade retires those projects for this house, including their ongoing passive, price and production grants. Retired IDs cannot be drawn again or satisfy prerequisites. Prior credits, conversions and effects already applied to units remain. The upgrade defines its complete effects.
 ; Default: empty
+
+Repeatable=(boolean)
+; yes allows this project to be acquired again. no limits it to one acquisition per house.
+; Omit to inherit Repeatable from [Starfall.Research].
 
 GrantOnly=(boolean)
 ; Set this field in the project section. With yes, only Action=GrantResearch with that project ID can grant it. Ordinary offers, refreshes, AI purchases, building and free choices (even explicit lists), and random rewards of any or specified rarity skip it.
@@ -121,6 +138,9 @@ Effect=(research effect)
 ; One effect from the next table.
 ; Default: GrantPassive
 
+Stages=(comma-separated stage IDs)
+; Each stage section defines Condition.Formula and Effect or Effects. Acquisition effects are optional for a project with valid stages.
+
 Effects=(list)
 ; Ordered list of effect sections; overrides the single-effect fields when present. Empty list is invalid.
 ; Default: absent
@@ -129,6 +149,119 @@ Effects=(list)
 
 Unknown prerequisites, cycles, and chains depending on invalid references block affected projects. Country restrictions and prerequisites are evaluated separately from immediate target availability. A valid conversion project may be visible while temporarily having no eligible conversion targets.
 
+
+### Shared research counters
+
+This project counts enemy vehicle kills by any of the owner's units. At 100 kills, all of that player's Grizzly Tanks gain 25% firepower, including later reinforcements. If an action spends the counter below 100, the bonus ends at the next state update.
+
+```ini
+[Starfall.ResearchTypes]
+0=AntiArmor
+
+[AntiArmor]
+Counters=Vehicle_Kills
+Detail=Enemy vehicles destroyed $(Research.AntiArmor.Vehicle_Kills)/100. Remaining $(max(0, 100 - Research.AntiArmor.Vehicle_Kills)).
+Effects=TrainObservers,TrainGrizzlies
+
+[TrainObservers]
+Effect=GrantPassive
+Passive=TrackKills
+TargetTypes=*
+
+[TrainGrizzlies]
+Effect=GrantPassive
+Passive=VeteranFire
+TargetTypes=MTNK
+
+[Starfall.PassiveTypes]
+0=TrackKills
+1=VeteranFire
+
+[TrackKills]
+Trigger=OnKill
+Filter.TargetHouse=Enemies
+Filter.TargetKind=Vehicle
+Action=ChangeResearchCounter
+Action.Counter=AntiArmor.Vehicle_Kills
+Action.Amount=1
+
+[VeteranFire]
+Trigger=WhileState
+Condition.Formula=$(Research.AntiArmor.Vehicle_Kills >= 100)
+Modifier.FirepowerMultiplier=1.25
+```
+
+The card and acquired-project tooltips use the local player's progress. The diplomacy tooltip uses the player whose projects are open. A description can mix plain text, multiple formulas and existing effect placeholders such as `{credits}`. Formulas accept declared research counters (including other projects), constants, arithmetic, comparisons and numeric functions. An invalid or unavailable expression displays an em dash. Configuration errors are logged once when rules are loaded.
+
+Counters persist across saves. Retiring a project discards its counters. Reading a declared counter for an unowned project returns zero; writing it has no effect.
+
+### Stage rewards
+
+Register the parent in Starfall.ResearchTypes. Stages are local to that project. Give the kill-counting passive from the previous example to the units contributing to the counter. VeteranFire is a registered passive.
+
+```ini
+[AntiArmor]
+Counters=Vehicle_Kills
+Stages=AntiArmor_50,AntiArmor_100
+Effect=GrantPassive
+Passive=TrackKills
+TargetTypes=*
+Detail=Enemy vehicles destroyed: $(Research.AntiArmor.Vehicle_Kills).
+
+[AntiArmor_50]
+Condition.Formula=$(Research.AntiArmor.Vehicle_Kills >= 50)
+Effect=GiveCredits
+Credits=500
+
+[AntiArmor_100]
+Condition.Formula=$(Research.AntiArmor.Vehicle_Kills >= 100)
+Effects=PermitSniper,TrainGrizzly
+
+[PermitSniper]
+Effect=UnlockTech
+Technology=SNIPE
+
+[TrainGrizzly]
+Effect=GrantPassive
+Passive=VeteranFire
+TargetTypes=MTNK
+```
+
+Stage formulas accept research counters, constants, comparisons and numeric functions. On acquisition the house checks its stages, including progress in other projects. Changes to a counter check stages that reference it. A nonzero value completes a stage. Simultaneous stages run in configured order and each player's completion survives saving and loading.
+
+Every research effect is supported. Conversions use current units, and rewards without eligible targets or candidates consume their single opportunity. Permanent grants apply to current and future eligible units until the parent retires. Retirement retains previously issued credits, conversions, free choices and independently acquired projects. Invalid stage definitions generate a configuration warning and are skipped.
+
+### Research bonds
+
+Register each bond in `[Starfall.ResearchBondTypes]`. In its section set `Name`, the distinct registered project IDs in `Members`, and tier IDs in `Stages`. Every tier has a positive `RequiredCount` up to its member count and uses `Effect` or `Effects`. Optional tier `Summary` overrides the generated reward description.
+
+```ini
+[Starfall.ResearchBondTypes]
+0=ArmorHunter
+
+[ArmorHunter]
+Name=Armor Hunter
+Members=PiercingRounds,TargetMarking,FireControlRadar
+Stages=Hunter3
+
+[Hunter3]
+RequiredCount=3
+Summary=Grizzlies gain Tank Hunter. First completion awards 500 credits.
+Effects=HunterTraining,HunterBonus
+
+[HunterTraining]
+Effect=GrantPassive
+Passive=TankHunter
+TargetTypes=MTNK
+
+[HunterBonus]
+Effect=GiveCredits
+Credits=500
+```
+
+Ownership is per player, across all acquisition paths. Replacements count as one ownership change. Each eligible tier grants permanent effects while the threshold is met; credits, conversions, random research and free selections trigger once per house and tier, including across saves. Reacquisition restores ongoing effects. `$(Bond.ArmorHunter.Count)` reads the current member count in formula fields.
+
+Hovering a member shows the project details plus a separate panel for each bond in registry order. Each panel shows a single row of project icons in `Members` order. Owned icons are lit and missing ones are dim. Each reward starts with its threshold in parentheses. Its text is gray until the threshold is met, then bright. Write only the effect in `Summary`. The UI adds the threshold from `RequiredCount`. Space-limited layouts rotate pages every five seconds. Diplomacy uses the selected player's ownership.
 
 ### Effect catalog
 
@@ -244,6 +377,8 @@ ToType=(infantry type ID)
 [ResearchProjectID or EffectSectionID]
 Effect=ConvertVehicle
 ; Converts eligible existing vehicles owned by the acquiring house.
+; Drive and landable Jumpjet vehicles can switch in either direction via the public
+; Phobos conversion API. Each vehicle must be stationary on passable ground off bridges.
 
 FromType=(vehicle type ID)
 ; Existing vehicle type.
@@ -252,6 +387,30 @@ FromType=(vehicle type ID)
 ToType=(vehicle type ID)
 ; Destination vehicle type.
 ; Required
+```
+
+#### Research targeting for variants
+
+Set this field in the variant's type section in `rulesmd.ini` or `Starfall.ini`:
+
+```ini
+[VariantTypeID]
+Starfall.ResearchAs=(base type ID)
+; Makes research effects targeting the base type also apply to this variant.
+; Accepts one direct base type ID.
+```
+
+This applies to `GrantPassive` and `ModifyTypeCost` effects for the acquiring house:
+
+- An effect targeting the variant alone remains specific to the variant.
+- Listing both the base and variant IDs in one effect applies it only once.
+- Cost calculations use each type's own production cost.
+
+Example:
+
+```ini
+[SF_HX_GiantYAGGUN]
+Starfall.ResearchAs=YAGGUN
 ```
 
 #### ModifyTypeCost
@@ -303,13 +462,15 @@ Use canonical `UnlockTech`. The parser retains `UnlockTeck` as a compatibility s
 
 ### Selection, refresh, and global settings
 
-Candidates exclude owned, invalid, wrong-country, and unmet-prerequisite projects. First select one nonempty rarity according to its weight, then offer up to three projects from that rarity. Opening the local panel does not consume the simulation RNG. Chosen project IDs, seen cards, and used refresh slots are saved.
+Candidates exclude owned nonrepeatable, invalid, wrong-country, and unmet-prerequisite projects. By default, first select one nonempty rarity according to its weight, then offer up to three projects from that rarity. Opening the local panel does not consume the simulation RNG. Chosen project IDs, seen cards, and used refresh slots are saved.
 
-Refresh requires a balance of at least 100, but is free. Each card slot may refresh once per offer round, only to an eligible unseen project of the same rarity. No alternative means no refresh allowance is consumed. Closing/reopening retains the board. Purchasing starts the next round.
+Refresh requires a balance of at least 100, but is free. Each card slot may refresh once per offer round, only to an eligible unseen project. The default mode stays within the original rarity. Mixed mode allows another rarity. No alternative means no refresh allowance is consumed. Closing/reopening retains the board. Purchasing starts the next round.
 
-With `SharedRaritySequence=yes`, every house uses the same weighted rarity sequence for ordinary research: the first purchase uses sequence entry 1, the second uses entry 2, etc. The sequence depends on the match seed and the house's completed ordinary purchase count, never on its country, house index, selected project IDs, panel opening order, or other players' progress. All cards in a round share that rarity; individual projects remain country/prerequisite/ownership-filtered and are drawn separately for each house. AI research follows the same rule. The sequence is random according to `RarityWeight.*`; it does not force an Epic-first or Rare-second order.
+With `MixedRarityPool=yes`, every eligible project gets its own `RarityWeight.*` weight. Each pick removes that project before drawing again. For example, four Common projects at weight 1 and one Rare project at weight 3 give the Rare project a 3/7 chance on the first pick. Zero-weight tiers are excluded. This also applies to AI offers and randomized free-choice boards. Direct grants, fixed short lists and explicit rarity filters keep their own rules.
 
-If a house has no eligible project at the designated rarity, it draws from its own remaining nonempty, positive-weight tiers instead. This exception can differ from other houses, but does not skip sequence entries or change anyone else's sequence. Zero-weight tiers remain excluded. A refresh, failed/duplicate purchase, or a free research choice does not advance the counter. Successful ordinary purchases advance exactly once, even while the switch is off. The sequence seed, counter and current board survive saves, including saves before the first purchase. Older saves without this data use the current match seed and resume after the total number of owned projects (including free rewards, which those saves cannot distinguish). For predictable initial boards, configure the switch before starting the match; already saved eligible boards are retained when reloading configuration.
+With the default draw mode and `SharedRaritySequence=yes`, every house uses the same weighted rarity sequence for ordinary research: the first purchase uses sequence entry 1, the second uses entry 2, etc. The sequence depends on the match seed and the house's completed ordinary purchase count, never on its country, house index, selected project IDs, panel opening order, or other players' progress. All cards in a round share that rarity; individual projects remain country/prerequisite/ownership-filtered and are drawn separately for each house. AI research follows the same rule. The sequence is random according to `RarityWeight.*`; it does not force an Epic-first or Rare-second order.
+
+If a house has no eligible project at the designated rarity, it draws from its own remaining nonempty, positive-weight tiers instead. This exception can differ from other houses, but does not skip sequence entries or change anyone else's sequence. Zero-weight tiers remain excluded. A refresh, a failed purchase, or a free research choice does not advance the counter. Successful ordinary purchases advance exactly once, even while the switch is off. The sequence seed, counter and current board survive saves, including saves before the first purchase. Older saves without this data use the current match seed and resume after the total number of owned projects (including free rewards, which those saves cannot distinguish). For predictable initial boards, configure the switch before starting the match; already saved eligible boards are retained when reloading configuration.
 
 Fields in `[Starfall.Research]`:
 
@@ -325,6 +486,14 @@ ShowAvailableAnimation=(boolean)
 
 AllowAIResearch=(boolean)
 ; Enable computer-controlled houses to claim action-granted free choices and buy ordinary research. Every 15 simulation frames each AI first tries to claim one applicable free choice. Otherwise, an AI with at least 100 points randomly chooses an applicable card from its ordinary offer. A successful purchase costs 100 points and follows AnnounceSelection. If no card can take effect, the AI keeps its points.
+; Default: no
+
+Repeatable=(boolean)
+; Default for newly configured projects. A project can override this field in its own section.
+; Default: no
+
+MixedRarityPool=(boolean)
+; Draw across rarities without replacement, with each project inheriting its tier weight. Takes precedence over SharedRaritySequence.
 ; Default: no
 
 SharedRaritySequence=(boolean)
@@ -358,6 +527,14 @@ PeriodicIntervalSeconds=(number)
 RarityWeight.Common=(number)
 ; Nonnegative integer.
 ; Default: 5
+
+RarityColor.Common=(R,G,B)
+RarityColor.Rare=(R,G,B)
+RarityColor.Epic=(R,G,B)
+RarityColor.Insane=(R,G,B)
+; Optional per-tier RGB integers from 0 to 255. Example: RarityColor.Rare=150,105,245.
+; Colors project icons, card accents and tooltip titles. Icon shading and transparency are preserved.
+; Default: original tier palette, with original artwork colors for Common.
 
 RarityName.Common=(text or ID)
 ; Global display name for each tier. Omitted or blank names use that tier's default. Project Rarity and reward filters still take the tier IDs.
@@ -484,9 +661,9 @@ Starfall.ResearchOptions.AllowSpyInfiltration=(boolean)
 
 Open the top-right research button to claim a free choice at any point balance. Its badge counts pending building rewards and choices granted by `GrantFreeResearch`, including building rewards outside the viewport. Free choices open first. Use the button below the cards to cycle through pending rewards and, with sufficient points, return to ordinary research.
 
-In a list of more than three distinct IDs, each slot draws a nonempty rarity tier using `RarityWeight.*`, then picks a project uniformly from that tier without replacement. Invalid, owned and zero-weight candidates are excluded. The board may mix rarities and has fewer than three cards when the pool runs out. It is stable across reopening and save/load with the same configuration and ownership. A building’s fixed list of up to three IDs can explicitly offer zero-weight tiers.
+With the default draw mode and a list of more than three distinct IDs, each slot draws a nonempty rarity tier using `RarityWeight.*`, then picks a project uniformly from that tier without replacement. With `MixedRarityPool=yes`, every project in the eligible list contributes its tier weight and draws are without replacement. Invalid, owned nonrepeatable and zero-weight candidates are excluded. The board may mix rarities and has fewer than three cards when the pool runs out. It is stable across reopening and save/load with the same configuration and ownership. A building’s fixed list of up to three IDs can explicitly offer zero-weight tiers.
 
-Each physical reward building can be claimed once. Ownership change invalidates old authorization; generic ownership transfer is not a substitute for an authorized capture/infiltration. Claiming is free and ignores project country/prerequisite restrictions, but still requires a valid unowned project and applicable effect. Existing claimed state persists. Older unclaimed authorization without a recorded acquisition source is cleared on load. The building must separately support native capture/infiltration mechanics.
+Each physical reward building can be claimed once. Ownership change invalidates old authorization; generic ownership transfer is not a substitute for an authorized capture/infiltration. Claiming is free and ignores project country/prerequisite restrictions, but still requires a valid project eligible for first or repeat acquisition and an applicable effect. Existing claimed state persists. Older unclaimed authorization without a recorded acquisition source is cleared on load. The building must separately support native capture/infiltration mechanics.
 
 
 ### Free research choices
@@ -519,13 +696,13 @@ External game extensions can read the resulting ownership through the [native re
 
 `Action=GrantRandomResearch` awards exactly one registered project to the target unit's owner (`Action.Target=Self` by default). It also supports the owner context of map scripts and ActionSequence superweapons, and Lua `ctx:action("GrantRandomResearch", {Rarity="Epic"})`. For a research project's own reward, use the separate `Effect=GrantRandomResearch` described below.
 
-Research effects accept `Reward.Rarity=Any` (default; also `Common`, `Rare`, `Epic`, `Insane`) and `Reward.Count=1` (default, range 1..256). These fields work both directly on a project and in an `Effects` entry. The source is recorded as owned before drawing rewards, excluding itself and every other owned project. Other reward projects may be drawn and enqueue their own rewards; each project's direct draws finish before queued chains are processed. The whole chain is synchronous, deterministic and saved through the resulting ownership and RNG state. Loading a save or creating a unit never awards these rewards again. Only the original ordinary purchase costs points and advances its round. Empty specified tiers never fall back; a partially exhausted pool awards only the remaining eligible projects. A reward-only cycle with no usable terminal project cannot be selected.
+Research effects accept `Reward.Rarity=Any` (default; also `Common`, `Rare`, `Epic`, `Insane`) and `Reward.Count=1` (default, range 1..256). These fields work both directly on a project and in an `Effects` entry. The source is recorded before the draw. Each draw excludes projects already acquired in this reward chain and any owned project with repeats disabled. Repeatable projects from earlier acquisitions remain eligible. Other reward projects may be drawn and enqueue their own rewards; each project's direct draws finish before queued chains are processed. The whole chain is synchronous, deterministic and saved through the resulting ownership and RNG state. Loading a save or creating a unit never awards these rewards again. Only the original ordinary purchase costs points and advances its round. Empty specified tiers never fall back; a partially exhausted pool awards only the remaining eligible projects. A reward-only cycle with no usable terminal project cannot be selected.
 
 The infantry/reward additions are Super Body Armor (Epic, all owned infantry armor x3 and speed x0.85), Hua Tuo Scroll (Rare, all owned on-map infantry heal 25 HP every 30 frames, capped at maximum), Chaos Destiny (Epic, 2 random projects of any rarity), Epic Transmutation (Rare, 1 Epic project), and Rare Transmutation (Common, 1 Rare project). Both infantry bonuses cover existing and future infantry and follow current ownership. Install the updated DLL with either icon configuration; these five projects do not require Lua.
 
-`Action.Rarity=Common`, `Rare`, `Epic`, or `Insane` restricts the draw to that rarity. Omit the field or set `All` to draw uniformly from all eligible projects across all rarities. `RarityWeight.*` only controls ordinary offers and is not used by this reward; a zero-weight tier can still be awarded. A specified empty tier fails without falling back to another rarity. The pool excludes owned projects, wrong-country projects, unmet/invalid prerequisite chains, invalid effects, and projects whose effects cannot currently apply. No eligible project means no award and no RNG draw; Lua reports `false`. Otherwise the draw uses the saved, synchronized extension RNG shared with Lua random calls; it does not advance the native game RNG. The project's normal effects execute before ownership and acquisition order are recorded.
+`Action.Rarity=Common`, `Rare`, `Epic`, or `Insane` restricts the draw to that rarity. Omit the field or set `All` to draw uniformly from all eligible projects across all rarities. `RarityWeight.*` only controls ordinary offers and is not used by this reward; a zero-weight tier can still be awarded. A specified empty tier fails without falling back to another rarity. The pool excludes owned nonrepeatable projects, wrong-country projects, unmet/invalid prerequisite chains, invalid effects, and projects whose effects cannot currently apply. No eligible project means no award and no RNG draw; Lua reports `false`. Otherwise the draw uses the saved, synchronized extension RNG shared with Lua random calls; it does not advance the native game RNG. The project's normal effects execute before ownership and acquisition order are recorded.
 
-This result respects `Enabled` and `AnnounceSelection`, costs no points, and does not advance `SharedRaritySequence` or ordinary purchase counts. After an award, ordinary offers are rebuilt on every peer to exclude acquired projects; already-used refresh slots remain used. Ownership and effects persist through saves like other acquired research. `AllowAIResearch` controls autonomous purchases only and does not prevent this explicit reward for an AI house.
+This result respects `Enabled` and `AnnounceSelection`, costs no points, and does not advance `SharedRaritySequence` or ordinary purchase counts. After an award, every peer rebuilds ordinary offers using the configured repeat settings. Previously used refresh slots stay used. Ownership and effects persist through saves like other acquired research. `AllowAIResearch` controls autonomous purchases only and does not prevent this explicit reward for an AI house.
 
 ```ini
 [SF_RandomEpicReward]

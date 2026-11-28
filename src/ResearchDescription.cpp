@@ -39,6 +39,7 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
         if(a.action=="shakescreen") return L"屏幕抖动";
         if(a.action=="spawnparticlesystem") return L"生成粒子系统 "+displayText(a.particleSystem->ID);
         if(a.action=="forcemove") return L"强制位移 "+std::to_wstring(a.forceMove.duration)+L" 帧";
+        if(a.action=="chronoteleport" && a.destinationIsEventTarget) return L"超时空传送至事件目标附近";
         if(a.action=="chronoteleport") return L"超时空传送至 ("+std::to_wstring(a.teleportCell.X)+L", "+std::to_wstring(a.teleportCell.Y)+L") 附近";
         if(a.action=="applyironcurtain") return L"施加铁幕 "+std::to_wstring(a.duration)+L" 帧";
         if(a.action=="changeammo") return L"弹药变化："+std::to_wstring(a.amount);
@@ -56,6 +57,7 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
         if(a.action=="grantrandomresearch") {
             return a.researchRarity?std::wstring(L"随机获得一项")+Research::rarityName(*a.researchRarity)+L"科技":L"随机获得一项科技（全部稀有度）";
         }
+        if(a.action=="changeresearchcounter") return L"修改科研计数："+displayText(a.counter);
         if(a.action=="runscript") return L"执行技能脚本："+displayText(a.script)+L"."+displayText(a.function);
         if(a.action=="removepassive") return L"移除目标的指定被动";
         if(a.action=="stealpassive") return L"夺取目标的指定被动，每项最多 "+std::to_wstring(a.amount)+L" 层";
@@ -71,16 +73,29 @@ static std::wstring describeAction(const PassiveAction& a,std::wstring text) {
         if(a.action=="detonatewarhead") return L"在目标位置引爆指定弹头";
         text=a.action=="heal"?L"恢复生命":a.action=="damage"?L"造成伤害":a.action=="giveresearchpoints"?L"获得科研点":L"获得资金";
         if(!a.amountFormula.expression.empty()) return text+L"（按公式计算）";
-        text+=a.amount?L"：{amount}":L"：实际伤害的 {percent}%";
+        text+=L"：{amount}";
     }
-    replaceNumber(text,L"{amount}",a.amount); replaceNumber(text,L"{percent}",a.damagePercent);
+    replaceNumber(text,L"{amount}",a.amount);
     return text;
 }
-static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&conditions)[96]) {
+static std::wstring formatDetail(const Research::Option& option,int house) {
+    if(option.detailFormulas.empty()) return option.detail;
+    std::wstring text;
+    size_t pos=0;
+    for(const auto& part:option.detailFormulas) {
+        text.append(option.detail,pos,part.start-pos);
+        auto value=part.expression.evaluateResearch(house,Research::counter);
+        if(!value || !ConfigText::appendTooltipNumber(text,*value,option.detailDecimals)) text+=L'—';
+        pos=part.end;
+    }
+    text.append(option.detail,pos);
+    return text;
+}
+static std::wstring describeResearchEffect(const Research::Option& o,const std::wstring& custom,wchar_t (&conditions)[96]) {
     using Research::Effect;
     if(o.effect!=Effect::Passive) {
         swprintf_s(conditions,L"即时生效  ·  每位玩家限购一次");
-        auto detail=o.detail;
+        auto detail=custom;
         if(o.effect==Effect::TypeCost || o.effect==Effect::CategoryCost) {
             if(!detail.empty()) return detail;
             return std::wstring(L"生产价格")+(o.cost.delta<0?L"降低 ":L"提高 ")+
@@ -98,19 +113,19 @@ static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&c
     const auto* existing=findSkill(o.passive);
     if(!existing) {
         swprintf_s(conditions,L"原被动配置不可用");
-        return o.detail.empty()?L"已研究项目的被动配置不存在":o.detail;
+        return custom.empty()?L"已研究项目的被动配置不存在":custom;
     }
     const auto& s=*existing;
     if(s.trigger.empty()) {
         swprintf_s(conditions,L"持有被动期间显示");
-        return o.detail.empty()?L"在单位身上挂载动画":o.detail;
+        return custom.empty()?L"在单位身上挂载动画":custom;
     }
     if(s.trigger=="whilestate") {
         if(s.stateDelayFrames) swprintf_s(conditions,L"连续满足 %u 帧后生效，条件中断即重置",s.stateDelayFrames);
         else swprintf_s(conditions,L"条件满足期间持续生效");
-        if(!o.detail.empty()) return o.detail;
+        if(!custom.empty()) return custom;
         wchar_t info[96]{};
-        constexpr std::array names={L"移速",L"火力",L"护甲",L"武器射程",L"射速",L"建筑电力"};
+        constexpr std::array names={L"移速",L"火力",L"护甲",L"武器射程",L"射速",L"建筑电力",L"击杀经验"};
         static_assert(names.size()==stateMultiplierKeys.size());
         std::wstring summary;
         for(size_t k=0;k<s.multipliers.size();++k) if(s.multipliers[k]!=1.0) {
@@ -148,9 +163,9 @@ static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&c
     swprintf_s(conditions,L"每 %d 次%s  ·  概率 %d%%  ·  冷却 %d 帧",s.count,event,s.chance,s.cooldown);
     std::wstring text;
     if(s.actions.empty()) {
-        text=o.detail.empty()?(s.triggerAnim?L"触发时播放动画":L"持有期间显示动画"):o.detail;
-    } else if(!o.detail.empty()) {
-        text=describeAction(s.actions.front(),o.detail);
+        text=custom.empty()?(s.triggerAnim?L"触发时播放动画":L"持有期间显示动画"):custom;
+    } else if(!custom.empty()) {
+        text=describeAction(s.actions.front(),custom);
     } else {
         for(const auto& action:s.actions) {
             if(!text.empty()) text+=L'\n';
@@ -162,18 +177,34 @@ static std::wstring describeResearchEffect(const Research::Option& o,wchar_t (&c
 }
 } // namespace
 
-std::wstring Research::describe(int option,wchar_t (&conditions)[96]) {
+std::wstring Research::bondRewardText(const StageEffect& e) {
+    switch(e.effect) {
+        case Effect::Passive: return L"赋予被动 "+displayText(e.passive);
+        case Effect::Technology: return L"解锁 "+displayText(e.technology);
+        case Effect::ConvertInfantry: case Effect::ConvertVehicle: return displayText(e.from)+L" 转换为 "+displayText(e.to);
+        case Effect::ReplaceProduction: return L"生产替换 "+displayText(e.from)+L" → "+displayText(e.to);
+        default: {
+            Option part;part.effect=e.effect;part.cost=e.cost;part.reward=e.reward;part.credits=e.credits;
+            wchar_t requirement[96]{};
+            return describeResearchEffect(part,{},requirement);
+        }
+    }
+}
+std::wstring Research::describe(int option,int house) {
+    wchar_t conditions[96]{};
     const auto& o=options[option];
-    if(!o.effectList) return describeResearchEffect(o,conditions);
+    const auto custom=formatDetail(o,house);
+    if(o.stagesOnly) return custom.empty()?L"达成阶段条件后获得科研奖励":custom;
+    if(!o.effectList) return describeResearchEffect(o,custom,conditions);
     swprintf_s(conditions,L"多个效果按顺序生效");
-    if(!o.detail.empty()) return o.detail;
+    if(!custom.empty()) return custom;
     std::wstring result;
     for(const auto& effect:o.effects) {
         Option part;part.effect=effect.effect;part.passive=effect.passive;part.types=effect.types;
         part.cost=effect.cost;part.reward=effect.reward;part.credits=effect.credits;part.technology=effect.technology;part.from=effect.from;part.to=effect.to;
         wchar_t requirement[96]{};
         if(!result.empty()) result+=L'\n';
-        result+=describeResearchEffect(part,requirement);
+        result+=describeResearchEffect(part,{},requirement);
         if(effect.effect==Effect::Passive) {result+=L"（";result+=requirement;result+=L"）";}
     }
     return result;

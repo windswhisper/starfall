@@ -1,4 +1,11 @@
 namespace ActiveSkills {
+bool orderArea(unsigned long unit,CellStruct& center,int& radius,MouseCursorType& style) {
+    auto it=UnitOrders::orders.find(unit);
+    if(it==UnitOrders::orders.end()) return false;
+    center=it->second.center;radius=it->second.radius;
+    style=UnitOrders::isAutoEnter(it->second.id)?MouseCursorType::Enter:MouseCursorType::Attack;
+    return true;
+}
 std::vector<int> held(TechnoClass* unit) {
     std::vector<int> result;
     if(specs.empty() || !alive(unit)) return result;
@@ -11,7 +18,7 @@ std::vector<int> held(TechnoClass* unit) {
 }
 bool readyCaster(TechnoClass* unit,HouseClass* house) {
     return alive(unit) && unit->Owner==house && unit->IsOnMap && !unit->InLimbo && !unit->Transporter &&
-           !ForceMove::locked(unit) && !empLocked(unit) && !unit->Deactivated && !unit->IsUnderEMP() && !unit->IsSinking && !unit->IsBeingWarpedOut();
+           !ForceMove::locked(unit) && !empLocked(unit) && !Taunt::targetOf(unit) && !unit->Deactivated && !unit->IsUnderEMP() && !unit->IsSinking && !unit->IsBeingWarpedOut();
 }
 int remaining(TechnoClass* unit,const Spec& spec) {
     auto owner=counts.find(unit->UniqueID);
@@ -71,7 +78,21 @@ bool execute(int sender,int index,unsigned long casterId,unsigned long targetId,
     auto target=spec.kind==Kind::Unit?findLive(live,targetId):nullptr;
     CellStruct end{};
     if(!aim(spec,caster,target,cursor,end)) return false;
+    const auto& action=skills.at(spec.id).actions.front();
+    if(action.action=="startunitorder" || action.action=="cancelunitorder") {
+        bool ok=action.action=="startunitorder"?UnitOrders::start(caster,action.order,end,spec.radius):UnitOrders::cancel(caster,action.order);
+        if(ok) counts[casterId][spec.id].next=static_cast<unsigned>(Unsorted::CurrentFrame)+skills.at(spec.id).cooldown;
+        return ok;
+    }
+    if(spec.jump || spec.eject) {
+        const bool started=spec.jump?ForceMove::jump(caster,end,*spec.jump):ForceMove::eject(caster,end,*spec.eject);
+        if(!started) return false;
+        UnitOrders::orders.erase(casterId);
+        counts[casterId][spec.id].next=static_cast<unsigned>(Unsorted::CurrentFrame)+skills.at(spec.id).cooldown;
+        return true;
+    }
     if(spec.interruptOrders) {
+        UnitOrders::cancel(caster);
         if(auto foot=abstract_cast<FootClass*>(caster)) {
             foot->ClearMegaMissionData();
             foot->NavQueue.Count=0;
@@ -86,7 +107,7 @@ bool execute(int sender,int index,unsigned long casterId,unsigned long targetId,
     e.hasImpact=true;e.impact=MapClass::Instance.GetCellAt(end)->GetCoordsWithBridge();
     e.castAim=cursor;
     auto prev=activeObjects;activeObjects=&live;
-    bool success=runScript(skill.actions.front(),e,live,stackCount(casterId,spec.id));
+    bool success=runScript(skill.actions.front(),e,live,unitStacks(caster,spec.id));
     activeObjects=prev;
     if(success && findLive(live,casterId))
         counts[casterId][spec.id].next=static_cast<unsigned>(Unsorted::CurrentFrame)+skill.cooldown;

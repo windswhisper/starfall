@@ -36,7 +36,8 @@ DEFINE_HOOK(0x4235D3,SF_PassiveTintBuildingAnim,6) {
 DEFINE_HOOK(0x466507,SF_ProjectileLaunchScale,6) {
     auto bullet=R->ECX<BulletClass*>();
     if(auto owner=bullet->Owner) {
-        if(owner->Owner && ActionSequence::warheadScripts.contains(bullet->WH))
+        if(owner->Owner && (ActionSequence::warheadScripts.contains(bullet->WH) || ProjectileShield::configured || Piercing::enabled(bullet->Type) ||
+           (!bullet->Type->Inviso && EntityWalls::hasProjectileBlockers())))
             passiveBulletOwners[bullet->UniqueID]=owner->Owner->ArrayIndex;
         auto fixed=projectileBase.find(owner->UniqueID);
         auto state=projectileState.find(owner->UniqueID);
@@ -46,6 +47,17 @@ DEFINE_HOOK(0x466507,SF_ProjectileLaunchScale,6) {
     }
     VisualScale::projectiles.erase(bullet->UniqueID);
     return 0;
+}
+bool Piercing::allowed(WarheadTypeClass* wh,HouseClass* house,TechnoClass* u) {
+    if(!wh || u->IsIronCurtained() || u->GetTechnoType()->Immune || immuneUnits.contains(u->UniqueID)) return false;
+    bool allowed=warheadHouses.contains(wh)?warheadAllows(wh,house,u->Owner):
+        (!house || !house->IsAlliedWith(u->Owner) || wh->AffectsAllies);
+    return allowed && MapClass::GetTotalDamage(10000,wh,u->GetTechnoType()->Armor,0)!=0;
+}
+HouseClass* EntityWalls::firingHouse(BulletClass* bullet) {
+    auto it=passiveBulletOwners.find(bullet->UniqueID);
+    if(it!=passiveBulletOwners.end()) return HouseClass::Array.GetItemOrDefault(it->second);
+    return bullet->Owner?bullet->Owner->Owner:nullptr;
 }
 DEFINE_HOOK(0x469BD4,SF_ExplosionBegin,8) {
     auto bullet=R->ESI<BulletClass*>();
@@ -165,7 +177,7 @@ DEFINE_HOOK(0x46A290,SF_ImpactLeave,5) {
     finishWarheadScript(frame);
     return 0;
 }
-DEFINE_HOOK(0x4665E9,SF_BulletDestroyed,10) {auto id=R->ESI<BulletClass*>()->UniqueID;VisualScale::projectiles.erase(id);passiveBullets.erase(id);passiveBulletOwners.erase(id);return 0;}
+DEFINE_HOOK(0x4665E9,SF_BulletDestroyed,10) {auto id=R->ESI<BulletClass*>()->UniqueID;Piercing::forget(id);ProjectileScript::forget(id);VisualScale::projectiles.erase(id);passiveBullets.erase(id);passiveBulletOwners.erase(id);return 0;}
 void queueDeath(TechnoClass* victim,TechnoClass* killer) {
     vector<string> deathSkills;
     if(victim && interested(victim,"ondeath",&deathSkills) && reportedDeaths.insert(victim->UniqueID).second) {
@@ -178,6 +190,28 @@ DEFINE_HOOK(0x702E4E, SF_Kill, 6) {
     auto killer=R->EDI<TechnoClass*>(), victim=R->ESI<TechnoClass*>();
     if(victim && victim->Health<=0) queueDeath(victim,killer);
     if(victim) capture("onkill",killer,victim,killer,victim,0);
+    return 0;
+}
+// The engine has ruled out allied kills. Supply the rank-adjusted victim value
+// to the shared entry of vanilla and Ares experience distribution.
+DEFINE_HOOK(0x702E79,SF_KillExperience,6) {
+    if(experienceState.empty() || R->EBP<int>()<=0) return 0;
+    const auto killer=R->EDI<TechnoClass*>();
+    const auto factor=experienceState.find(killer->UniqueID);
+    if(factor==experienceState.end()) return 0;
+    const auto& rank=R->ESI<TechnoClass*>()->Veterancy;
+    const int weight=rank.IsElite()?3:(rank.IsVeteran()?2:1);
+    const auto points=static_cast<long long>(R->EBP<int>())*weight;
+    unscaledKillScores[R->ESP()]=static_cast<int>(points);
+    R->EBP(static_cast<int>(std::lround(std::min(static_cast<double>(INT_MAX),points*factor->second))));
+    return 0x702E9D;
+}
+DEFINE_HOOK(0x702FF5,SF_RestoreKillScore,7) {
+    auto original=unscaledKillScores.find(R->ESP());
+    if(original!=unscaledKillScores.end()) {
+        R->EBP(original->second);
+        unscaledKillScores.erase(original);
+    }
     return 0;
 }
 // Only full rearm passes through these exits. Burst cadence is calculated
@@ -283,6 +317,7 @@ std::optional<Event> firingEvent(TechnoClass* unit,AbstractClass* aim) {
 // ordinary projectile commit. This point is reached once per launched missile.
 DEFINE_HOOK(0x6B75BC,SF_SpawnMissileFired,6) {
     auto manager=R->ESI<SpawnManagerClass*>();
+    UnitOrders::shot(manager->Owner,manager->Target,true);
     if(auto e=firingEvent(manager->Owner,manager->Target)) pending.push_back(std::move(*e));
     return 0;
 }
@@ -290,6 +325,12 @@ DEFINE_HOOK(0x6FDD7D,SF_StartFiring,5) {
     auto u=R->ESI<TechnoClass*>(); auto key=R->EBP();shots.erase(key);
     int slot=R->Base<int>(12);
     if(ForceMove::locked(u) || empLocked(u)) return 0x6FDE03;
+    if(auto it=UnitOrders::orders.find(u->UniqueID);it!=UnitOrders::orders.end() && !Taunt::targetOf(u) &&
+       (!it->second.target || it->second.target!=R->Base<AbstractClass*>(8) || !UnitOrders::fixedPosition(u))) return 0x6FDE03;
+    if(auto lock=Taunt::targetOf(u)) {
+        auto aim=R->Base<AbstractClass*>(8);
+        if(!aim || aim->UniqueID!=lock) return 0x6FDE03;
+    }
     if(auto rule=slotRule(u->UniqueID,slot);rule && rule->disabled) return 0x6FDE03;
     if(slot>=0 && slot<2 && !applyingDamage && passiveDetonations.empty() && alive(u) &&
        (volleyWeapons.contains(u->UniqueID) || interested(u,"onbeforefire"))) {
@@ -369,6 +410,7 @@ DEFINE_HOOK(0x6FDE0E,SF_ScriptedVolley,6) {
     unit->RearmTimer.Start(delay);
     unit->LastFireBulletFrame=Unsorted::CurrentFrame;
     unit->DecreaseAmmo();
+    UnitOrders::shot(unit,aim);
     commitFiringEvents(R->EBP(),unit);
     if(weapon->DecloakToFire && unit->CloakState!=CloakState::Uncloaked) unit->Uncloak(false);
     if(weapon->FireOnce) unit->SetTarget(nullptr);
@@ -376,11 +418,46 @@ DEFINE_HOOK(0x6FDE0E,SF_ScriptedVolley,6) {
 }
 // TechnoClass::Fire reaches this branch only after the original bullet's MoveTo succeeds.
 DEFINE_HOOK(0x6FF031,SF_MultiShotLaunch,10) {
-    if(anyMultiShot && !applyingDamage && passiveDetonations.empty())
-        multiShot(R->ESI<TechnoClass*>(),R->EBX<BulletClass*>(),R->Base<AbstractClass*>(8),R->Base<int>(12),R->Stack<CoordStruct>(0x44));
+    auto unit=R->ESI<TechnoClass*>();
+    auto bullet=R->EBX<BulletClass*>();
+    auto origin=R->Stack<CoordStruct>(0x44);
+    auto tracer=ArtSp::Tracers::onShot(unit->UniqueID,bullet,origin,Unsorted::CurrentFrame);
+    ArtSp::ContinuousBeam::takeExtras(R->EBP());
+    if(anyMultiShot && !applyingDamage && passiveDetonations.empty()) {
+        const int slot=R->Base<int>(12);
+        const auto muzzle=FireOrigin::enabled(bullet->WeaponType)?unit->GetFLH(slot,CoordStruct::Empty):origin;
+        multiShot(R->EBP(),unit,bullet,R->Base<AbstractClass*>(8),slot,muzzle,tracer);
+    }
     return 0;
 }
+// Weapon visual dispatch, after the muzzle flash and before shot bookkeeping.
+// EDI is the visual target (potentially replaced by a blocking cell).
+DEFINE_HOOK(0x6FF4D2,SF_ContinuousBeam,8) {
+    auto extras=ArtSp::ContinuousBeam::takeExtras(R->EBP());
+    auto firer=R->ESI<TechnoClass*>();
+    auto weapon=R->EBX<WeaponTypeClass*>();
+    int slot=R->Base<int>(12);
+    auto origin=R->Stack<CoordStruct>(0x44);
+    const bool relative=FireOrigin::enabled(weapon);
+    const auto muzzle=relative?firer->GetFLH(slot,CoordStruct::Empty):origin;
+    if(ArtSp::ContinuousBeam::onShot(firer,R->EDI<AbstractClass*>(),weapon,slot,muzzle,extras)) return 0x6FF656;
+    for(auto target:extras)
+        drawExtraWeaponVisual(firer,target,slot,weapon,FireOrigin::resolve(weapon,target,muzzle));
+    if(!R->AL() && weapon->IsElectricBolt && relative) {
+        // A native attached bolt updates its muzzle from the firer on every draw.
+        drawDetachedBolt(firer,R->EDI<AbstractClass*>(),weapon,origin);
+        return 0x6FF656;
+    }
+    return R->AL()?0x6FF4DA:0x6FF57D;
+}
 DEFINE_HOOK(0x6FF660,SF_ShotCommitted,6) {
+    auto firer=R->ESI<TechnoClass*>();
+    if(UnitOrders::controlled(firer)) {
+        auto mount=firer->GetWeapon(R->Base<int>(12));
+        if(mount && mount->WeaponType && !(mount->WeaponType->Spawner && firer->SpawnManager &&
+           firer->SpawnManager->SpawnType && firer->SpawnManager->SpawnType->MissileSpawn))
+            UnitOrders::shot(firer,R->Base<AbstractClass*>(8));
+    }
     commitFiringEvents(R->EBP(),R->ESI<TechnoClass*>());
     return 0;
 }
@@ -397,8 +474,10 @@ DEFINE_HOOK(0x739956,SF_DeployedInto,6) {
 // those as construction notifications. Both points follow native/Phobos Unlimbo.
 void buildingProduced(TechnoClass* unit) {
     if(alive(unit) && unit->IsOnMap && !unit->InLimbo && unit->WhatAmI()==AbstractType::Building &&
-       BuildingSpawn::supported(static_cast<BuildingClass*>(unit)->Type))
+       BuildingSpawn::supported(static_cast<BuildingClass*>(unit)->Type)) {
+        EntityWalls::built(static_cast<BuildingClass*>(unit));
         capture("onbuilt",unit,nullptr,unit,unit,0);
+    }
 }
 DEFINE_HOOK(0x4FB248,SF_BuildingProducedHuman,6) {
     buildingProduced(R->ESI<TechnoClass*>());return 0;

@@ -218,6 +218,15 @@ DEFINE_HOOK(0x55B4EB,SF_TestHexDefense,5) {
         check(owner->CanBuild(giant(4),false,false)!=CanBuildResult::Buildable,"French grand cannon country restriction retained");
         for(int i=0;i<9;++i) objects[i]=place(giant(i),owner)->UniqueID;
         for(int i:voxelTowers) originals[i]=place(BuildingTypeClass::Find(ids[i]),owner);
+        // The pack targets only the ordinary cannon in this research.
+        auto& projects=Research::unlocked[owner->ArrayIndex];
+        projects.insert("sf_hx_gatlingdownpour");
+        for(auto cannon:{originals[7],find(objects[7])}) {
+            vector<string> passives;
+            researchSkills(cannon,&passives);
+            check(includes(passives,"sf_hx_gatlingdownpour_p"),"Gatling Downpour reaches ordinary and giant cannons");
+        }
+        projects.erase("sf_hx_gatlingdownpour");
         for(auto id:objects) {
             auto b=find(id);auto cell=b->GetMapCoords();int occupied=0;
             for(int dy=-5;dy<=5;++dy) for(int dx=-5;dx<=5;++dx) {

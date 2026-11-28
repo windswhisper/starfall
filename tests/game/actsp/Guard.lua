@@ -3,6 +3,8 @@ return {
         local unit = ctx.self
         if unit:type() == "ASGNDPOST" then
             assert(unit:setDroneGuardCell({x=88, y=90}))
+        elseif unit:type() == "ASINFPOST" then
+            assert(unit:setDroneGuardCell({x=56, y=81}))
         elseif unit:type() == "GAPILL" then
             assert(unit:setDroneGuardCell({x=71, y=82}))
         elseif unit:type() == "BFRT" then

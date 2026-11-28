@@ -132,12 +132,22 @@ DEFINE_HOOK(0x55B4EB,SF_TestResearchCost,5) {
             "licensed follow-up offered in ordinary research");
         std::ifstream snapshot("prices.txt");
         for(int i=0;i<6;++i) snapshot>>base[i]>>opponent[i];
-        int percent[]={85,80,80,125,50,0};
+        int percent[]={85,85,80,125,50,0};
         for(int i=0;i<6;++i) {
-            int expected=(base[i]*percent[i]+50)/100-(i==0?100:0);
+            int expected=(base[i]*percent[i]+50)/100-(i<=1?100:0);
             std::ofstream("prices.log",std::ios::app)<<ids[i]<<" "<<types[i]->GetActualCost(house)<<" expected "<<expected<<"\n";
             check(types[i]->GetActualCost(house)==expected,"stacked price and category");
             check(types[i]->GetActualCost(other)==opponent[i],"other player unchanged");
+        }
+        for(auto owner:{house,other}) for(int i=0;i<2;++i) {
+            auto tank=static_cast<TechnoClass*>(types[i]->CreateObject(owner));
+            check(tank!=nullptr,"create passive recipient");
+            vector<string> grants;
+            researchSkills(tank,&grants);
+            check(includes(grants,"basemark")==(owner==house) &&
+                  includes(grants,"variantmark")==(owner==house && i==1),
+                  "base research applies to variant once and variant research stays specific to its owner");
+            tank->UnInit();
         }
         check(Research::owns(h,"bulk") && Research::owns(h,"grizzly") && Research::owns(h,"support"),"ownership");
         Research::award(other->ArrayIndex,150);

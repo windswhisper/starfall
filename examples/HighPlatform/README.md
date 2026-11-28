@@ -4,7 +4,9 @@
 
 1. 按 [ActSp 安装说明](../../docs/manual/actsp.md#overview-and-installation)加载模块。
 2. 将 `HighPlatform.rules.ini` 和 `HighPlatform.art.ini` 分别加入规则和美术包含列表。将本目录的两张 SHP 和 `aspl*.pal` 放在 `gamemd.exe` 旁。
-3. 在同高的 6×6 空地或道路上建造。台面位于建筑地基原点的 `(1,1)` 偏移处。
+3. 选择一片平坦、同高且可建造的 6×6 区域。陆上地基可以横跨不同的可建地形。台面位于建筑地基原点的 `(1,1)` 偏移处。
+
+高台默认只能建在陆地。要允许海上建造，在建筑段设置 `HighPlatform.AllowWater=yes`。若要做成海上专用高台，同时设置 `HighPlatform.AllowLand=no`（默认 `yes`）。台面和外圈必须全海或全陆，不能跨岸。海上高台拆除后恢复原海面。
 
 台面真实升高四级。地面单位可在台面内移动，其他建筑的整个地基须落在台面内，同时遵守原版建造距离。外圈禁止地面单位通行和建造。下方地面单位使用 `SubjectToCliffs=yes` 的抛射体时，无法自动索敌或向台面上的地面目标开火，强制攻击台面格也受此限制。高台被出售或摧毁后，外圈恢复通行，地形恢复原高度，上方建筑被摧毁，地面单位坠地阵亡。
 
@@ -17,6 +19,16 @@
 `concrete-platform-source.png` 是贴图原稿。游戏通过建筑类型的 `Image=ASHIGHPL` 加载 SHP。
 
 高台美术节使用 `CanHideThings=no`，避免台面单位被误标为躲在建筑后方。
+
+### 自定义占地
+
+在高台的美术节中使用 `Foundation=Custom`。用 `Foundation.X` 和 `Foundation.Y` 指定外圈宽高，每边至少 3 格，再用 `Foundation.n` 列出一格宽的完整外圈。占地采用 8×5 时，内侧台面为 6×3。
+
+在项目根目录运行以下命令生成地基和摆放轮廓，把输出填入美术节，并使用与新尺寸匹配的 SHP。
+
+```powershell
+powershell -File tools/art/Write-HighPlatformFoundation.ps1 -Width 8 -Height 5
+```
 
 ### 地面阴影
 
